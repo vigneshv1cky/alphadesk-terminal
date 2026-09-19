@@ -1,0 +1,43 @@
+name: CLA
+
+# The contributor licence agreement check (.github/cla/check.js, CLA.md).
+# Records a signature when someone comments the signing sentence, and marks
+# each pull request with a "CLA" status.
+#
+# SECURITY: pull_request_target runs with a write token even on pull requests
+# from forks. That is safe here ONLY because nothing from the pull request is
+# checked out or run: the check is read from the base branch and talks to the
+# API. Do not add a step that checks out or builds the pull request's code.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write        # the signatures file, on the cla-signatures branch
+  pull-requests: read
+  issues: write          # the sign-here comment
+  statuses: write        # the CLA status on the head commit
+
+# One run at a time, so two signatures never race on the file.
+concurrency:
+  group: cla
+  cancel-in-progress: false
+
+jobs:
+  cla:
+    if: github.event_name == 'pull_request_target' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    steps:
+      # The default branch's copy of the check — never the pull request's.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/cla
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const cla = require(`${process.env.GITHUB_WORKSPACE}/.github/cla/check.js`)
+            await cla.run({ github, context, core })
