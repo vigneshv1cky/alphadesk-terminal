@@ -157,8 +157,8 @@ on your instance has full access.
 ## Design principles
 
 These are the product. Much of what might look missing was built,
-measured and removed on purpose; before proposing to bring something back,
-open an issue.
+measured and removed on purpose — **[DECISIONS.md](DECISIONS.md)** says what
+and why. Bring evidence and open an issue.
 
 1. **Nothing is paraphrased.** Every panel and agent tool returns what a
    vendor or EDGAR actually said — a filing in pages, a statement series, a
@@ -484,9 +484,9 @@ cd alphadesk/ui && pnpm install && pnpm dev
 - **Dashboard tiles**: register a widget in `ui/src/widgets/`, or serve tiles
   from an external JSON backend (`ALPHADESK_WIDGET_BACKENDS`) —
   **[docs/widgets.md](docs/widgets.md)**.
-- Conventions and checks: **[CONTRIBUTING.md](CONTRIBUTING.md)**. Several
-  obvious improvements were tried and deliberately undone; open an issue
-  before changing behaviour.
+- Conventions and checks: **[CONTRIBUTING.md](CONTRIBUTING.md)**; the rules
+  and what was tried and undone: **[DECISIONS.md](DECISIONS.md)**; reporting
+  a vulnerability: **[SECURITY.md](SECURITY.md)**.
 
 ---
 

@@ -1,0 +1,35 @@
+name: Idea or change request
+description: Something AlphaDesk should do differently
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read [DECISIONS.md](../blob/main/DECISIONS.md) first: several obvious
+        improvements — ranking, summarising with a model, a component library, keyless
+        data sources — were built, measured and deliberately removed. Proposing one
+        again is fine; bring the evidence.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and where AlphaDesk gets in the way.
+    validations: {required: true}
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+    validations: {required: true}
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Measurements, vendor documentation, or what you saw. If DECISIONS.md already covers this, say what is new.
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Against the rules in DECISIONS.md
+      options:
+        - label: It does not paraphrase or summarise what a vendor or the SEC said
+        - label: It does not rank or score anything for the reader
+        - label: It does not put a vendor key on the server or share vendor data between readers

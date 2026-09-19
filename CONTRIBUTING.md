@@ -10,8 +10,10 @@ every contribution must come with a signed
 it under both licences. You keep the copyright in your work. Sign once, on
 your first pull request, by posting the sentence in section 7 of the
 agreement as a comment; an automatic check records it and marks the pull
-request. A pull request without a signature cannot be merged. Before changing behaviour, open an issue: much of what might look
-missing was built, measured and removed on purpose.
+request. A pull request without a signature cannot be merged. Before changing behaviour, read **[DECISIONS.md](DECISIONS.md)** and
+open an issue: much of what might look missing was built, measured and
+removed on purpose. Found a vulnerability? **[SECURITY.md](SECURITY.md)** —
+never a public issue.
 
 ## Setup
 
