@@ -70,8 +70,9 @@ without warranties or conditions of any kind, except as stated in section 5.
 
 ## 7. How to sign
 
-On Your first pull request, sign by posting this comment on the pull request
-(or through the signing check linked there, when it is enabled):
+On Your first pull request, sign by posting this comment on the pull request.
+An automatic check records the signature and marks the pull request as
+signed; until every contributor has signed, it asks those who have not:
 
     I have read the AlphaDesk Contributor Licence Agreement, version 1.0, and I agree to it.
 

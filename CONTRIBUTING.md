@@ -9,8 +9,8 @@ every contribution must come with a signed
 [contributor licence agreement](CLA.md) that lets the copyright holder offer
 it under both licences. You keep the copyright in your work. Sign once, on
 your first pull request, by posting the sentence in section 7 of the
-agreement as a comment. A pull request without a signature cannot be
-merged. Before changing behaviour, open an issue: much of what might look
+agreement as a comment; an automatic check records it and marks the pull
+request. A pull request without a signature cannot be merged. Before changing behaviour, open an issue: much of what might look
 missing was built, measured and removed on purpose.
 
 ## Setup
