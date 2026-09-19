@@ -514,7 +514,8 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         : q.isError ? <QueryFailure error={q.error}>the {CATEGORY_LABELS[category].toLowerCase()} list is unavailable right now</QueryFailure>
         // A currency pair or a Treasury tenor is not a symbol the board can
         // chart, so those rows do not open anything.
-        : <MoversTable rows={priced} changeHead={q.data?.change_label ?? "1D"}
+        : <>
+        <MoversTable rows={priced} changeHead={q.data?.change_label ?? "1D"}
                        changeTip={category === "currencies" ? "Change since the 5pm New York rollover, where the currency trading day begins" : undefined}
                        {...(category === "crypto" ? {
                          volTip: "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",
@@ -535,7 +536,16 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
                            // A coin list's volume is dollars (CoinGecko) or one venue's coins (Alpaca, no Active tab).
                            ? (category === "options" ? "contracts" : category === "crypto" ? "dollars" : "shares")
                            : null}
-                       empty={active?.id === "losers" ? "nothing is down" : active?.id === "gainers" ? "nothing is up" : `no ${CATEGORY_LABELS[category].toLowerCase()} quotes right now`} />}
+                       empty={active?.id === "losers" ? "nothing is down" : active?.id === "gainers" ? "nothing is up" : `no ${CATEGORY_LABELS[category].toLowerCase()} quotes right now`} />
+        {/* CoinGecko's paid plans require the credit wherever their data
+            shows (2026-09-19); the coin list is theirs when they answered. */}
+        {q.data?.source === "coingecko" && (
+          <p className="order-last border-t border-row-rule px-3 py-2 text-caption text-muted-foreground">
+            <a href="https://www.coingecko.com" target="_blank" rel="noreferrer"
+               className="font-semibold text-accent-700 underline decoration-dotted hover:text-foreground">Powered by CoinGecko</a>
+          </p>
+        )}
+        </>}
     </Widget>
   )
 }

@@ -89,7 +89,9 @@ def coin(symbol: str, api_key: str | None = None) -> dict | None:
                 "total_supply": md.get("total_supply"),
                 "max_supply": md.get("max_supply"),
                 "url": f"https://www.coingecko.com/en/coins/{cid}",
-                "attribution": "Data from CoinGecko",
+                # CoinGecko's paid plans require this exact credit wherever
+                # their data is shown, linked to coingecko.com (2026-09-19).
+                "attribution": "Powered by CoinGecko",
             }
     except Exception as exc:
         log.debug("coingecko failed for %s: %s", base, exc)
