@@ -265,6 +265,11 @@ def main() -> None:
 
     if args.cmd == "dashboard":
         import os
+
+        # Importing config is what loads .env; without it this line reported
+        # the DEFAULT port while the server bound the configured one, and a
+        # self-hoster on another port followed a link to nothing (2026-09-19).
+        import alphadesk.config  # noqa: F401
         log = logging.getLogger("alphadesk")
         log.info("Terminal on http://%s:%s",
                  os.environ.get("DASHBOARD_HOST", "127.0.0.1"),
