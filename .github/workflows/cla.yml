@@ -16,7 +16,9 @@ on:
 
 permissions:
   contents: write        # the signatures file, on the cla-signatures branch
-  pull-requests: read
+  # A comment on a pull request needs pull-request write, not only issue
+  # write: with issues alone GitHub refused it (403) on the first live run.
+  pull-requests: write
   issues: write          # the sign-here comment
   statuses: write        # the CLA status on the head commit
 

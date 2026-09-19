@@ -20,8 +20,13 @@ const VERSION = "1.0";
 const BRANCH = "cla-signatures";
 const FILE = "signatures.json";
 const MARKER = "<!-- alphadesk-cla -->";
-// The copyright holder signs nothing to himself.
+// The copyright holder signs nothing to himself. His commits are authored
+// with an address GitHub does not link to his account, so they are also
+// recognised by address (2026-09-19: the first live run called his own
+// commit an unknown author). Safe to trust an address: whoever OPENS the
+// pull request must still sign, whatever the commits claim.
 const EXEMPT = new Set(["vigneshv1cky"]);
+const EXEMPT_EMAILS = new Set(["muruganvignesh0810@gmail.com", "97196163+vigneshv1cky@users.noreply.github.com"]);
 
 /** Comparable form of a comment: quote marks from a copied blockquote,
  * spacing, case and a trailing full stop do not matter. */
@@ -55,9 +60,9 @@ function requiredSigners(prUser, commits) {
   };
   add(prUser && prUser.login, prUser && prUser.type);
   for (const c of commits || []) {
+    const who = (c.commit && c.commit.author) || {};
     if (c.author && c.author.login) add(c.author.login, c.author.type);
-    else {
-      const who = (c.commit && c.commit.author) || {};
+    else if (!EXEMPT_EMAILS.has(String(who.email || "").toLowerCase())) {
       unlinked.add(who.name || who.email || "an unknown author");
     }
   }
@@ -173,7 +178,13 @@ async function run({ github, context, core }) {
   });
   // A pull request only the owner and bots touched gets no comment at all;
   // an earlier request to sign is updated to say it is done.
-  await upsertComment(github, owner, repo, number, commentBody(missing, required.unlinked, docUrl), ok);
+  // The status is the verdict; the comment only helps. A refused comment is
+  // logged, not fatal.
+  try {
+    await upsertComment(github, owner, repo, number, commentBody(missing, required.unlinked, docUrl), ok);
+  } catch (e) {
+    core.warning(`could not post the CLA comment: ${e.message}`);
+  }
   core.info(ok ? "CLA: all signed" : `CLA: missing ${missing.join(", ") || "-"}; unlinked ${required.unlinked.join(", ") || "-"}`);
 }
 
