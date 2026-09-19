@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+*.tar.gz
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+*.env
+aws_creds.sh
+
+# Docker
+docker-compose.override.yml
+
+# Claude Code local settings (may contain personal overrides)
+.claude/settings.local.json
+
+# Runtime state / local DB (machine-specific, not source code)
+*.db
+*.sqlite
+*.log
+logs/
+
+# Claude Security scan artifacts
+CLAUDE-SECURITY-*/
+terraform/terraform.tfvars
+terraform/.terraform
+terraform/terraform.tfstate*
+
+# Kept on the maintainer's machine only, never published (2026-09-19):
+# the internal decision record, a local agent-tool config, design drafts,
+# the retired VM's Terraform (and its state), the deploy target, and
+# personal agent permissions.
+CLAUDE.md
+.mcp.json
+design_handoff_alphadesk_workspace/
+terraform/
+scripts/deploy.env
+.claude/settings.json

@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alphadesk"
+version = "0.2.0"
+description = "AlphaDesk — an open-source, pluggable market research terminal."
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = ">=3.11"
+authors = [
+    { name = "Vignesh Murugan" },
+]
+keywords = ["stocks", "research", "terminal", "sec-edgar", "llm", "finance", "plugins"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+# Keep in sync with requirements.txt — that file carries the per-dependency
+# rationale. There is no LLM SDK dependency of any kind: the v1 multi-agent
+# system was removed (11263ae, 2026-08-07) and the transports that replaced it
+# (providers/llm.py) are plain urllib against OpenAI-compatible and Anthropic
+# endpoints.
+dependencies = [
+    "alpaca-py>=0.14.0",            # providers/alpaca.py — a user's own Alpaca key
+    "pandas>=2.0.0",                # indicator math in ingest/prices.build_series_payload
+    "polygon-api-client>=1.13.0",   # ingest/news.py's article source
+    "beautifulsoup4>=4.12.0",       # ingest/edgar.py's filing text extraction
+    "fastapi",
+    "uvicorn",
+    "python-dotenv",
+    "python-multipart",
+    "mcp>=1.0,<2",                     # `alphadesk.main mcp` — exposes the terminal to agents
+    "pg8000>=1.30",                 # ledger/db.py — Postgres, pure-Python BSD driver
+    "stripe>=12",                   # billing.py — hosted checkout and webhooks, MIT
+    "cryptography>=42",             # ledger/vault.py — AES-256-GCM for readers' sealed keys
+    "sentence-transformers>=3",     # alphadesk/semantic.py — news search by meaning (Apache 2.0)
+    "transformers>=4.51",           # Qwen3-Embedding-0.6B needs >= 4.51 (Apache 2.0)
+]
+
+# Providers plug in here. A package declaring this group is discovered
+# automatically once installed — see docs/providers.md.
+[project.entry-points."alphadesk.providers"]
+# example = "mypackage.providers:register_all"
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "httpx"]      # httpx backs fastapi's TestClient
+
+[project.urls]
+Homepage = "https://github.com/vigneshv1cky/alphadesk-terminal"
+Repository = "https://github.com/vigneshv1cky/alphadesk-terminal"
+
+[tool.setuptools.packages.find]
+include = ["alphadesk*"]

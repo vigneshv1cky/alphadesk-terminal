@@ -1,0 +1,46 @@
+name: AlphaDesk CI
+
+# Tests, lint and the frontend build on every pull request and every push to
+# main. Deploying is a maintainer's step (scripts/deploy.sh), not a CI job.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      # The embedding model (~1.2 GB) is not needed to test the code around
+      # it; search falls back to words, which the suite covers.
+      ALPHADESK_SEMANTIC_SEARCH: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      # torch's CPU build first: the default wheel carries ~2 GB of CUDA.
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ".[dev]"
+      - run: python -m ruff check alphadesk
+      - run: python -m pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: alphadesk/ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "latest"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: alphadesk/ui/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build

@@ -1,0 +1,549 @@
+@import "tailwindcss";
+@import "@fontsource-variable/archivo";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+
+/* The AMPERSAND alone comes from IBM Plex Sans (2026-09-03): Archivo's
+   spurless geometric '&' reads as a scribble, and it sits in basket names,
+   panel titles and headlines alike. A unicode-range face swaps that one
+   glyph and nothing else; the 600 file stretches over the bold range so an
+   extrabold title gets the heaviest Plex ampersand rather than a thin one. */
+@font-face {
+  font-family: "Plex Ampersand";
+  src: url("../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  unicode-range: U+0026;
+}
+@font-face {
+  font-family: "Plex Ampersand";
+  src: url("../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  unicode-range: U+0026;
+}
+@font-face {
+  font-family: "Plex Ampersand";
+  src: url("../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+  font-weight: 600 900;
+  unicode-range: U+0026;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    /* Modernist is set entirely in Archivo; the one exception is the agent
+       panel, which runs IBM Plex Sans so a model's prose reads as a different
+       voice from the terminal's chrome. */
+    --font-sans: 'Plex Ampersand', 'Archivo Variable', system-ui, sans-serif;
+    --font-heading: 'Plex Ampersand', 'Archivo Variable', system-ui, sans-serif;
+    --font-agent: 'IBM Plex Sans', system-ui, sans-serif;
+    /* Nothing on the board is monospace; kept so a stray `font-mono` resolves. */
+    --font-mono: ui-monospace, monospace;
+
+    /* MOTION (2026-09-18): one duration and one curve for every hover and
+       state change, so nothing in the terminal moves at its own speed.
+       120ms reads as a response, not an animation. */
+    --default-transition-duration: 120ms;
+    --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+
+    /* THE SPACING GRID (2026-09-18): one step is 4px, so padding, gaps and
+       margins land on whole pixels — p-1 4, p-1.5 6, p-2 8, p-3 12. The
+       default is 0.25rem, which the 14px root turned into 3.5px: p-1.5 was
+       5.25px and no two panels agreed on a pixel. Control heights keep to
+       five: 20 pill, 24 button, 28 field or chip, 32 row, 40 panel header. */
+    --spacing: 4px;
+
+    /* THE TYPE SCALE (2026-09-18, option B of four drafted on a design
+       canvas): six roles in whole pixels, each step about 1.2x the last.
+       It replaced nineteen hand-picked sizes, fourteen of them used a
+       handful of times each. Pixels, not rem — the 14px root makes rem
+       sizes land between pixels. No line height is set here, so a role
+       inherits its parent's leading exactly as the old arbitrary sizes did.
+       SVG chart text keeps its own sizes: axis labels are drawn to fit. */
+    --text-label: 11px;    /* capitals: table heads, panel titles, pills */
+    --text-caption: 12px;  /* secondary text, names under tickers, times */
+    --text-body: 13px;     /* rows, headlines, controls */
+    --text-emph: 15px;     /* a title within a panel, a stat's value */
+    --text-figure: 18px;   /* a headline number: a price, a total */
+    --text-display: 22px;  /* a page title, the wordmark */
+    /* Three letter-spacings: capitals, tickers, and large bold titles. */
+    --tracking-caps: 0.06em;
+    --tracking-ticker: 0.02em;
+    --tracking-tight: -0.015em;
+
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-panel: var(--panel);
+    /* Cards (2026-09-18): every tile, popup, dialog and the nav rail sits on
+       its own raised surface over a darker page. */
+    --color-page: var(--page);
+    --color-card: var(--card);
+    --color-card-border: var(--card-border);
+    --color-card-rule: var(--card-rule);
+    --color-row-rule: var(--row-rule);
+    --color-row-selected: var(--row-selected);
+    --shadow-card: var(--card-shadow);
+    --color-panel-header: var(--panel-header);
+    --color-surface: var(--surface);
+    --color-grid-line: var(--grid-line);
+
+    /* The four semantic roles. Nothing else on screen is coloured. */
+    --color-gain: var(--gain);
+    --color-gain-tint: var(--gain-tint);
+    --color-loss: var(--loss);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent-100: var(--accent-100);
+    --color-accent-200: var(--accent-200);
+    --color-accent-300: var(--accent-300);
+    --color-accent-600: var(--accent-600);
+    --color-accent-700: var(--accent-700);
+    --color-info: var(--info);
+    --color-info-tint: var(--info-tint);
+    --color-warn: var(--warn);
+    --color-warn-tint: var(--warn-tint);
+
+    /* The neutral ramp — OKLCH-generated on one lightness scale; in dark mode
+       the ramp inverts so n700 stays "secondary text" in both. */
+    --color-n100: var(--n100);
+    --color-n200: var(--n200);
+    --color-n300: var(--n300);
+    --color-n400: var(--n400);
+    --color-n500: var(--n500);
+    --color-n600: var(--n600);
+    --color-n700: var(--n700);
+    --color-n800: var(--n800);
+    --color-n900: var(--n900);
+
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+
+    /* Soft radii, one scale (decision 2026-09-02, repealing the zero-radius
+       rule): 8px for panels and popups, 5px for controls and chips, 3px for
+       the small identity squares. The rounding is applied centrally in the
+       base layer below — components still don't write rounded-* classes, so
+       the scale stays changeable in one place. The agent panel's own 6/10/999
+       exceptions predate this and stand. */
+    --radius-xs: 3px;
+    --radius-sm: 5px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --radius-xl: 12px;
+}
+
+:root {
+    /* Modernist light: a light ground, near-black ink, one red accent.
+       Ported from the design system's token sheet — never hard-code a hex
+       these carry. */
+    --background: #f3f3f3;       /* app ground */
+    --surface: #eaeaea;          /* panel headers, toolbars, the symbol strip */
+    --foreground: #16161d;       /* all ink — a cool near-black since the ink chrome (2026-09-18) */
+    --panel: #f8f8f8;            /* panel bodies, header bar, nav rail */
+    /* The card pattern (2026-09-18): a page ground a clear step darker than
+       the cards on it, a hairline edge, and a two-layer shadow — a tight one
+       for the edge, a wide soft one for lift. Warm neutrals, from the ink. */
+    --page: #e7e7ea;
+    --card: #ffffff;
+    --card-border: rgba(20, 20, 30, 0.10);
+    --card-rule: rgba(20, 20, 30, 0.08);
+    --card-shadow: 0 1px 2px rgba(20, 20, 30, 0.06), 0 6px 16px rgba(20, 20, 30, 0.07);
+    --panel-header: #eaeaea;
+    /* Every rule and panel border. 2px for major structure, 1px for rows. */
+    --border: color-mix(in srgb, #16161d 40%, transparent);
+    --input: color-mix(in srgb, #16161d 40%, transparent);
+    --grid-line: #d6d6d6;        /* chart gridlines only */
+    --chart-grid: rgba(32, 30, 29, 0.08);
+    --popover: #f8f8f8;
+    --popover-foreground: #16161d;
+    --muted: #eaeaea;
+    --muted-foreground: #5c5c66;
+
+    /* The four roles. Accent does double duty by design: a falling price AND
+       the primary action — a red button never means "down". */
+    --gain: #12703c;
+    --gain-tint: #e2f0e6;
+    --loss: #ec3013;
+    --accent: #ec3013;
+    --accent-foreground: #f3f3f3;
+    /* The selection tint reads RED, not pink (2026-09-11, the reader's
+       call): a selected row, day card or chip sits on a light red. */
+    --accent-100: #ffd9d0;
+    --accent-200: #ffbfb1;
+    --accent-300: #ffc4b8;
+    --accent-600: #dd2b0f;   /* hover, one step past the base */
+    /* Accent-to-ground is tuned to 3:1 — fine for chrome and figures, below
+       the floor for paragraph text. Accent-coloured prose takes this step. */
+    --accent-700: #ae1800;
+    --info: #1f4bc4;             /* the AI produced this */
+    --info-tint: #e6eafa;
+    --warn: #a86500;             /* time-sensitive or elevated risk */
+    --warn-tint: #f8ecd6;
+    /* Chart session tints, theirs' hues: pre-market amber, after-hours
+       blue, overnight violet. Painted at low opacity behind the plot. */
+    --session-pre: #ff9800;
+    --session-after: #2962ff;
+    --session-night: #9c27b0;
+    --session-weekend: #009688;
+
+    /* The neutral scale is NEUTRAL (2026-09-06). The ported sheet's greys
+       carried a red cast — #f8f4f4 panels, #d7d3d3 rules — and across a
+       whole page of panels that read as a pink wash. Equal channels now;
+       the ink keeps its warmth, the ground does not. */
+    --n100: #f8f8f8;
+    --n200: #eaeaea;
+    --n300: #d6d6d6;
+    --n400: #b9b9b9;
+    --n500: #9a9a9a;
+    --n600: #7c7c7c;
+    --n700: #5f5f5f;
+    --n800: #434343;
+    --n900: #2c2c2c;
+
+    /* The rule between ROWS (2026-09-18): a table's and a list's row
+       separators. They drew in --border, 40% ink, which is right for a
+       control's outline but read as a heavy stripe under every row once the
+       panels became white cards. The table head takes the same hairline;
+       its tinted band is what separates it from the rows. */
+    --row-rule: rgba(20, 20, 30, 0.12);
+    /* A selected ROW: the soft grey every other selection uses, a step
+       past the 5% hover (2026-09-18; it was the pale red accent-100). */
+    --row-selected: rgba(20, 20, 30, 0.09);
+    --ring: #ec3013;
+}
+
+.dark {
+    /* Dark is a token override, not a separate design. The ink/ground pair
+       flips, the neutral ramp inverts, accent tints deepen, and the semantic
+       roles lighten for a dark ground. The accent itself is unchanged.
+
+       DEEPENED 2026-09-10: the ground was 23/22/21 and every panel 32/30/29 —
+       a graphite that read as dark grey beside a real terminal. The ground is
+       now near-black, panels one step up, and the rules dimmer so they do not
+       glow against it. Neutral channels, matching the light theme's fix. */
+    --background: #0c0c0c;       /* app ground */
+    --surface: #1a1a1a;          /* panel headers, toolbars, the symbol strip */
+    --foreground: #ececf0;       /* all ink */
+    --panel: #141414;            /* panel bodies, header bar, nav rail */
+    /* Dark cards lift by being lighter than the page; the shadow only
+       deepens the edge. */
+    --page: #060608;
+    --card: #141418;
+    --card-border: rgba(240, 240, 250, 0.08);
+    --card-rule: rgba(240, 240, 250, 0.07);
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 8px 24px rgba(0, 0, 0, 0.4);
+    --panel-header: #1a1a1a;
+    --border: color-mix(in srgb, #ededed 20%, transparent);
+    --input: color-mix(in srgb, #ededed 22%, transparent);
+    --grid-line: #262626;        /* chart gridlines only */
+    --chart-grid: rgba(237, 237, 237, 0.06);
+    --popover: #171717;
+    --popover-foreground: #ededed;
+    --muted: #222222;
+    --muted-foreground: #9d9da8;
+
+    --gain: #4ec87c;
+    --gain-tint: #10241a;
+    --loss: #ec3013;
+    --accent: #ec3013;
+    --accent-foreground: #f3f3f3;
+    --accent-100: #3d1710;
+    --accent-200: #5c1d12;
+    --accent-300: #741305;
+    --accent-600: #ff563c;   /* hover on a dark ground steps lighter */
+    --accent-700: #ff9783;
+    --info: #7f9ff0;
+    --info-tint: #13182a;
+    --warn: #e3a447;
+    --warn-tint: #261c0c;
+    --session-pre: #ffb74d;
+    --session-after: #5c85ff;
+    --session-night: #ba68c8;
+    --session-weekend: #4db6ac;
+
+    --n100: #141414;
+    --n200: #222222;
+    --n300: #383838;
+    --n400: #525252;
+    --n500: #767676;
+    --n600: #9e9e9e;
+    --n700: #bdbdbd;
+    --n800: #d9d9d9;
+    --n900: #f5f5f5;
+
+    --row-rule: rgba(240, 240, 250, 0.09);
+    --row-selected: rgba(240, 240, 250, 0.11);
+    --ring: #ec3013;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  /* ONE visible focus ring for everything a keyboard can reach (2026-09-18).
+     Measured before it: a single explicit ring in the whole app and five
+     places removing the outline, so a keyboard user often could not see
+     where they were. :focus-visible, so a mouse click draws nothing; and
+     :where() keeps it at zero specificity, so a field that sets its own
+     focus border (the accent-bordered inputs) still wins. */
+  :where(a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  body {
+    /* The page is the one surface below the cards. */
+    @apply bg-page text-foreground;
+    /* Kill the ligature/proportional defaults that make numeric columns wobble. */
+    font-variant-numeric: tabular-nums;
+    }
+  html {
+    @apply font-sans;
+    /* 14px. The OpenBB pass ran this at 13px for maximum density and was
+       deliberately abandoned for legibility; Modernist keeps 14px and every
+       rem-based size scales off this one line. */
+    font-size: 14px;
+    }
+  /* Grid numerals: the sans face with tabular figures. Digits align down a
+     column and a changing price doesn't reflow its neighbours. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    }
+  /* Keyboard focus is the 2px accent ring — never the browser default. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  /* The rounding, applied centrally (see the radius tokens above). Panels
+     and popups clip their own contents so a header's surface can't poke a
+     square corner through a rounded frame. Tab underlines and the chart's
+     SVG are untouched; tables round only through the panel that clips them. */
+  [data-slot="widget"],
+  [data-slot="widget-popup"],
+  [data-slot="dialog"] {
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  /* THE INK CHROME (2026-09-18, option C of five colour directions drafted
+     on a design canvas): the app header is a solid ink bar in both themes,
+     with no rule under it (the reader took the red rule out, 2026-09-18) —
+     the colour lives in the frame, the cards stay white. Option F added E's
+     data colours on top and was reverted the same day: back to C.
+     It is a TOKEN SCOPE, not a restyle: inside it the ink, muted ink, rules
+     and surfaces take their dark values, so every control in the header
+     keeps its own classes and still reads on the dark bar. */
+  .chrome {
+    --foreground: #f4f4f6;
+    --muted-foreground: #a3a3ae;
+    --border: rgba(244, 244, 246, 0.22);
+    --input: rgba(244, 244, 246, 0.26);
+    --background: #16161d;
+    --panel: #16161d;
+    --surface: #20202a;
+    --muted: #262630;
+    --popover: #1d1d26;
+    --popover-foreground: #f4f4f6;
+    --ring: #f4f4f6;
+    background: #16161d;
+    color: var(--foreground);
+  }
+  .dark .chrome {
+    --background: #000000;
+    --panel: #000000;
+    background: #000000;
+  }
+
+  /* A card rounds a step more than a menu: it is the larger shape. */
+  [data-slot="widget"],
+  [data-slot="widget-popup"],
+  section[data-slot="dialog"] {
+    border-radius: var(--radius-lg);
+  }
+  button, input, select, textarea {
+    border-radius: var(--radius-sm);
+  }
+
+  /* Thin, unobtrusive scrollbars. 9px read as a grey slab beside the
+     navigation rail and under the symbol strip (2026-09-16); 5px is the
+     width the horizontal ones already used, and the thumb only darkens
+     under the pointer. */
+  /* `scrollbar-width: thin` MAKES CHROMIUM IGNORE the ::-webkit-scrollbar
+     metrics and use its own, which is 11px — thicker than the 5px asked for
+     here (measured 2026-09-16). So the standard property is set only where
+     the pseudo-element does not exist, which is Firefox. */
+  @supports not selector(::-webkit-scrollbar) {
+    * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent; }
+  }
+  *::-webkit-scrollbar { width: 5px; height: 5px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--foreground) 22%, transparent); border-radius: 999px; }
+  *::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--foreground) 45%, transparent); }
+  *::-webkit-scrollbar-corner { background: transparent; }
+}
+
+@layer components {
+  /* Modernist separates rows with real 1px rules, not dashed hints — the
+     strength of the dividers does the organising. */
+  .row-rule {
+    border-bottom: 1px solid var(--row-rule);
+  }
+  .row-rule:last-child { border-bottom: 0; }
+
+  /* Photography prints in pure black and white — the design system's rule,
+     not a filter for effect. Every content photograph goes through this. */
+  .grayscale-photo {
+    filter: grayscale(1) contrast(1.08);
+  }
+
+  /* Micro-label: the one uppercase treatment, used for table heads, panel
+     titles, and every small caption. */
+  .microlabel {
+    font-size: var(--text-label);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-caps);
+  }
+
+  /* A number that just changed, held for a moment. 420ms matches FLASH_MS in
+     components/terminal.tsx — holding the class longer than the animation
+     runs leaves a window where a fresh tick cannot re-trigger it. */
+  @keyframes flash-gain {
+    from { background-color: color-mix(in srgb, var(--gain) 17%, transparent); }
+    to   { background-color: transparent; }
+  }
+  @keyframes flash-loss {
+    from { background-color: color-mix(in srgb, var(--loss) 17%, transparent); }
+    to   { background-color: transparent; }
+  }
+  /* The tint paints the span's LINE BOX; 1.25 keeps the patch the size of the
+     number. Applied at all times so a flash never reflows the row. */
+  .flash-host { line-height: 1.25; }
+  .flash-gain { animation: flash-gain 420ms ease-out; }
+  .flash-loss { animation: flash-loss 420ms ease-out; }
+
+  /* The ticker marquee. Two identical copies live in the track, so -50% lands
+     the second exactly where the first started and the loop has no seam. */
+  @keyframes marquee-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  .marquee-track {
+    animation: marquee-scroll 50s linear infinite;
+    will-change: transform;
+  }
+  .marquee-viewport:hover .marquee-track { animation-play-state: paused; }
+
+  /* Overlays ENTER and leave instantly (2026-09-18). A menu drops 4px
+     into place in 120ms; a dialog fades up from 98% over 160ms behind a
+     120ms backdrop. Enough to show where a thing came from, never enough to
+     wait on — and there is no exit animation, so a closed menu is gone at
+     once and never swallows the next click. */
+  @keyframes pop-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.98); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes drawer-in {
+    from { transform: translateX(-12px); opacity: 0; }
+    to   { transform: none; opacity: 1; }
+  }
+  .pop-in { animation: pop-in 120ms cubic-bezier(0.2, 0, 0, 1); }
+  .modal-shell > [aria-hidden="true"] { animation: fade-in 120ms linear; }
+  .modal-shell > :last-child { animation: modal-in 160ms cubic-bezier(0.2, 0, 0, 1); }
+  .drawer-in { animation: drawer-in 160ms cubic-bezier(0.2, 0, 0, 1); }
+
+  /* A reader who asked their system for less motion gets none: every
+     animation and transition here, not only the ones listed. */
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+    .flash-gain, .flash-loss { animation: none; }
+    .marquee-track { animation: none; }
+    .marquee-viewport { overflow-x: auto; }
+  }
+
+  /* The canvas: 12 columns, 16px gutter between cards, 16px side padding. At 1440 with the
+     208px rail and 360px agent panel that leaves an 872px board — a track is
+     59px, span-8 is 556px, span-4 is 272px. */
+  .collage {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 16px;
+    /* Room below the last tile (2026-09-11, the reader's call): the board
+       ends with air, not with a tile against the bottom edge. */
+    padding: 16px 16px 120px;
+    background: transparent;
+    /* Tiles end where their content does (2026-09-02): a short tile is not
+       stretched to its row's tallest neighbour, so a three-row stat grid is a
+       three-row tile, not a 440px panel that is two-thirds blank. */
+    align-items: start;
+    }
+  /* Below tablet the 12-col grid collapses to one column. */
+  @media (max-width: 900px) {
+    .collage { grid-template-columns: minmax(0, 1fr); }
+    .collage > * { grid-column: 1 / -1 !important; }
+  }
+  /* Phone: the gutters tighten so the single column keeps its width. */
+  @media (max-width: 640px) {
+    .collage { gap: 8px; padding: 12px 8px 80px; }
+  }
+}
+
+/* A selected table row is ROUNDED like every other selection (2026-09-11,
+   the reader's call), and GREY like it (2026-09-18: the pale red read as
+   off-theme). A row cannot carry a radius itself, so the tint is
+   painted on its cells and the two end cells take the corners; the row's
+   own tint is cleared so no square edge shows behind them. Tables here are
+   border-separate with zero spacing, which is what lets a cell corner
+   render. A hidden trailing column at a narrow width leaves the right
+   corners square; the rows are read wide. */
+tr[aria-selected="true"] {
+  background-color: transparent !important;
+}
+tr[aria-selected="true"] > td {
+  background-color: var(--row-selected);
+}
+tr[aria-selected="true"] > td:first-child {
+  border-top-left-radius: var(--radius-sm);
+  border-bottom-left-radius: var(--radius-sm);
+}
+tr[aria-selected="true"] > td:last-child {
+  border-top-right-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+/* Sideways-scrolling tables: a thin bar, not a slab (the reader's call,
+   2026-09-12). Firefox reads the first line, WebKit the rest. */
+@supports not selector(::-webkit-scrollbar) {
+  .overflow-x-auto { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--foreground) 28%, transparent) transparent; }
+}
+
+/* A row of chips scrolls by wheel and drag and reads as a row; a bar under
+   it is chrome for nothing (2026-09-16). */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.overflow-x-auto::-webkit-scrollbar { height: 5px; }
+.overflow-x-auto::-webkit-scrollbar-track { background: transparent; }
+/* A pill, like every other scrollbar's thumb (2026-09-18): 3px on a 5px bar
+   read as square in the Account page's code box. */
+.overflow-x-auto::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--foreground) 28%, transparent); border-radius: 999px; }

@@ -1,0 +1,9 @@
+.git
+alphadesk/ui/node_modules
+alphadesk/ui/src
+design_handoff_alphadesk_workspace
+tests
+docs
+terraform
+.env
+*.md

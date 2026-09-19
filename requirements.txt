@@ -1,0 +1,23 @@
+# AlphaDesk — a market research terminal. No autonomous trading, and exactly
+# one LLM call shape (ai/llm.py -> providers/llm.py, plain urllib — no vendor
+# SDK): chat_json, text in and a JSON object out. No tool loop, no streaming.
+# Keep in sync with pyproject.toml's [project.dependencies].
+alpaca-py>=0.14.0           # providers/alpaca.py — a user's own Alpaca key (bars, quotes, streams, options)
+pandas>=2.0.0               # ingest/prices.build_series_payload's indicator math
+polygon-api-client>=1.13.0  # ingest/news.py's article source
+beautifulsoup4>=4.12.0      # ingest/edgar.py's filing text extraction
+fastapi                     # dashboard JSON API
+uvicorn                     # ASGI server
+python-dotenv               # .env config
+python-multipart            # form parsing
+# <2: mcp 2.0 moved FastMCP out of `mcp.server.fastmcp`, which mcp_server.py
+# imports. Lifting the ceiling means porting that module, not just the pin.
+mcp>=1.0,<2                 # `alphadesk.main mcp` — exposes the terminal to agents
+pg8000>=1.30       # ledger/db.py's Postgres driver — pure Python, BSD (the C drivers are LGPL)
+stripe>=12          # billing.py — the hosted service's checkout and webhooks, MIT; imported only when a key is set
+cryptography>=42
+# alphadesk/semantic.py — news search by meaning, self-hosted
+# Qwen3-Embedding-0.6B (Apache 2.0). Both Apache 2.0; torch (BSD) comes with
+# them — the Dockerfile installs its CPU-only build first.
+sentence-transformers>=3
+transformers>=4.51

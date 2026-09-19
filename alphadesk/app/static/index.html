@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AlphaDesk</title>
+    <script>
+      // Apply saved theme or system preference before paint.
+      (function () {
+        try {
+          var t = localStorage.getItem("theme");
+          if (t === "dark" || (t !== "light" && t !== "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+            document.documentElement.classList.add("dark");
+          }
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-BlipYqns.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/jsx-runtime-DUAcabCT.js">
+    <link rel="modulepreload" crossorigin href="/assets/indicators-epcKBeyS.js">
+    <link rel="modulepreload" crossorigin href="/assets/api-D5JAm53L.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-CBqejkBv.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
