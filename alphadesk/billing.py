@@ -50,7 +50,8 @@ def is_owner(email: str | None) -> bool:
 
 def trial_days() -> int:
     try:
-        return max(0, int(os.environ.get("ALPHADESK_TRIAL_DAYS", DEFAULT_TRIAL_DAYS)))
+        from alphadesk.config import env_value
+        return max(0, int(env_value("ALPHADESK_TRIAL_DAYS", str(DEFAULT_TRIAL_DAYS))))
     except ValueError:
         return DEFAULT_TRIAL_DAYS
 
