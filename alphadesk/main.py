@@ -29,16 +29,15 @@ def _setup_logging() -> None:
 
 
 def _web_server():
-    import os
-
     import uvicorn
 
     from alphadesk.app.dashboard import app as dashboard_app
+    from alphadesk.config import env_value
 
     return uvicorn.Server(uvicorn.Config(
         dashboard_app,
-        host=os.environ.get("DASHBOARD_HOST", "127.0.0.1"),  # VM sets 0.0.0.0
-        port=int(os.environ.get("DASHBOARD_PORT", "8000")),
+        host=env_value("DASHBOARD_HOST", "127.0.0.1"),  # a container sets 0.0.0.0
+        port=int(env_value("DASHBOARD_PORT", "8000")),
         log_level="warning",
         # Graceful shutdown must have a DEADLINE here. The default waits for
         # every in-flight request to finish — and this app's SSE endpoints
@@ -265,10 +264,16 @@ def main() -> None:
 
     if args.cmd == "dashboard":
         import os
+
+        # Importing config is what loads .env; without it this line reported
+        # the DEFAULT port while the server bound the configured one, and a
+        # self-hoster on another port followed a link to nothing (2026-09-19).
+        import alphadesk.config  # noqa: F401
         log = logging.getLogger("alphadesk")
+        from alphadesk.config import env_value
         log.info("Terminal on http://%s:%s",
-                 os.environ.get("DASHBOARD_HOST", "127.0.0.1"),
-                 os.environ.get("DASHBOARD_PORT", "8000"))
+                 env_value("DASHBOARD_HOST", "127.0.0.1"),
+                 env_value("DASHBOARD_PORT", "8000"))
         asyncio.run(_serve())
     elif args.cmd == "backfill":
         from alphadesk.ingest import edgar_releases

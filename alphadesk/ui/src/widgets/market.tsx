@@ -83,7 +83,14 @@ export function EquityOverview() {
     )
   }
   if (error) {
-    return <Widget span={4} symbol={symbol} title="Equity Overview"><Empty>no quote for {symbol}</Empty></Widget>
+    // A 428 is "connect a vendor", not "this stock has no price": the plain
+    // "no quote" line read as though the symbol did not trade (2026-09-19,
+    // the first-run check on a keyless instance).
+    return (
+      <Widget span={4} symbol={symbol} title="Equity Overview">
+        <QueryFailure error={error}>no quote for {symbol}</QueryFailure>
+      </Widget>
+    )
   }
   if (isPending || !q) {
     return <Widget span={4} symbol={symbol} title="Equity Overview"><Empty>loading…</Empty></Widget>

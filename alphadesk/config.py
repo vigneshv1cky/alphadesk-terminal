@@ -18,6 +18,7 @@ knobs nothing reads is worse than no record at all.
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -29,8 +30,48 @@ load_dotenv()
 
 log = logging.getLogger("alphadesk.config")
 
+#: The app's own settings, whose values a reader may have commented.
+_OUR_PREFIXES = ("ALPHADESK_", "DASHBOARD_", "NEWS_", "CHART_", "RSI_", "SEC_USER_AGENT",
+                 "FORECAST_", "SCREENER_", "FILING_", "RESEARCH_", "OWNERSHIP_", "MCP_",
+                 "STRIPE_", "GOOGLE_CLIENT", "GITHUB_CLIENT", "MICROSOFT_CLIENT")
+
+
+def _strip_inline_comments() -> None:
+    """Take the trailing comment off every AlphaDesk setting, once, at import.
+
+    Docker's --env-file keeps everything after the "=", so a template line
+    like `ALPHADESK_AUTH=off  # development` arrives as the whole string.
+    Numeric settings then raised on import; worse, string settings SILENTLY
+    took another meaning — sign-in stayed on because the value was not
+    exactly "off" (2026-09-19, found by running the README's own Docker
+    command against the shipped template). Only values with whitespace
+    before the "#" are touched, so a key containing a "#" is untouched.
+    """
+    for name, raw in list(os.environ.items()):
+        if not name.startswith(_OUR_PREFIXES) or "#" not in raw:
+            continue
+        cut = re.split(r"\s+#", raw, maxsplit=1)[0].strip()
+        if cut and cut != raw:
+            os.environ[name] = cut
+
+
+_strip_inline_comments()
+
+
+def env_value(name: str, default: str = "") -> str:
+    """A setting's value with a trailing comment stripped.
+
+    Docker's --env-file does NOT strip inline comments the way python-dotenv
+    does, so `CHART_MIN_COVERAGE=0.5  # note` reaches the process as the whole
+    string and every numeric setting raised on import — the container exited
+    on the README's own command (2026-09-19). Written once here so a reader's
+    comment is never a crash.
+    """
+    raw = os.environ.get(name, default)
+    return re.split(r"\s+#", raw, maxsplit=1)[0].strip() if isinstance(raw, str) else raw
+
 ET = ZoneInfo("America/New_York")
-DATA_DIR = Path(os.environ.get("ALPHADESK_DATA", "~/.alphadesk")).expanduser()
+DATA_DIR = Path(env_value("ALPHADESK_DATA", "~/.alphadesk")).expanduser()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Liquidity ────────────────────────────────────────────────────────────────
@@ -44,8 +85,8 @@ LOW_LIQUIDITY_DOLLAR_VOL = 10_000_000
 # overbought sit. They are DISPLAY thresholds only: nothing in this codebase
 # acts on a crossing. The automated engine that did was deleted on 2026-08-16
 # after measuring -0.072% mean alpha over 503 backtested trades.
-RSI_CROSS_OVERSOLD = float(os.environ.get("RSI_CROSS_OVERSOLD", "30"))
-RSI_CROSS_OVERBOUGHT = float(os.environ.get("RSI_CROSS_OVERBOUGHT", "70"))
+RSI_CROSS_OVERSOLD = float(env_value("RSI_CROSS_OVERSOLD", "30"))
+RSI_CROSS_OVERBOUGHT = float(env_value("RSI_CROSS_OVERBOUGHT", "70"))
 
 # ── Chart data quality (human decision support) ──────────────────────────────
 # Alpaca's free IEX feed carries only a few percent of consolidated volume, so
@@ -56,8 +97,8 @@ RSI_CROSS_OVERBOUGHT = float(os.environ.get("RSI_CROSS_OVERBOUGHT", "70"))
 # either way, which is the danger: a misleading chart actively recruits a
 # reader's judgment. Below either floor the UI must hide the indicators rather
 # than silently drawing them.
-CHART_MIN_COVERAGE = float(os.environ.get("CHART_MIN_COVERAGE", "0.5"))        # share of a 390-bar session
-CHART_MAX_MEDIAN_GAP_MIN = float(os.environ.get("CHART_MAX_MEDIAN_GAP_MIN", "2.0"))
+CHART_MIN_COVERAGE = float(env_value("CHART_MIN_COVERAGE", "0.5"))        # share of a 390-bar session
+CHART_MAX_MEDIAN_GAP_MIN = float(env_value("CHART_MAX_MEDIAN_GAP_MIN", "2.0"))
 
 # ── News ingest (main.py's _news_loop, ingest/news.py) ───────────────────────
 # Fetch and persist ONLY: the loop narrates nothing and labels nothing
@@ -69,7 +110,7 @@ CHART_MAX_MEDIAN_GAP_MIN = float(os.environ.get("CHART_MAX_MEDIAN_GAP_MIN", "2.0
 # Benzinga now arrives over the held socket in seconds (ingest/stream.py);
 # this interval is what the feeds WITHOUT a stream — FMP, Polygon — cost in
 # freshness, and four cycles an hour is still nothing against their limits.
-NEWS_REFRESH_MINUTES = float(os.environ.get("NEWS_REFRESH_MINUTES", "5"))
+NEWS_REFRESH_MINUTES = float(env_value("NEWS_REFRESH_MINUTES", "5"))
 # TWO DAYS (2026-09-17, the owner's call — it was 36 hours). This is both the
 # window a reader opens on and how far back a feed is asked on a cold start,
 # so "yesterday and the day before" is there without pressing Load older.
@@ -78,7 +119,7 @@ NEWS_REFRESH_MINUTES = float(os.environ.get("NEWS_REFRESH_MINUTES", "5"))
 # the tail in background pages instead (ui/src/pages/NewsPage.tsx).
 # THREE DAYS (2026-09-18, the owner's call — "always as a minimum"), up from
 # two: a Monday morning then still reaches Friday.
-NEWS_LOOKBACK_HOURS = float(os.environ.get("NEWS_LOOKBACK_HOURS", "72"))
+NEWS_LOOKBACK_HOURS = float(env_value("NEWS_LOOKBACK_HOURS", "72"))
 
 # ── How long vendor data is KEPT (2026-09-18, "store less") ────────────────
 # Each reader's vendor data is kept only as long as a feature reads it; the
@@ -87,7 +128,7 @@ NEWS_LOOKBACK_HOURS = float(os.environ.get("NEWS_LOOKBACK_HOURS", "72"))
 # A story is kept while it is inside the news window plus a margin for
 # paging and search; one fetched for an OLDER page (published before that)
 # lives a day after it was fetched — paging back asks the reader's feed.
-NEWS_KEEP_DAYS = float(os.environ.get("NEWS_KEEP_DAYS", "7"))
+NEWS_KEEP_DAYS = float(env_value("NEWS_KEEP_DAYS", "7"))
 NEWS_OLDER_PAGE_KEEP_HOURS = 24
 # A story's FULL TEXT only while it is inside the news window; after that
 # the row keeps its headline and summary, and opening it asks the reader's
@@ -108,22 +149,22 @@ POOL_KEEP_DAYS = 7
 # been seen within the activity window, and each cycle is capped, so a
 # sleeping reader's vendor quota is not spent. Both caps are visible here,
 # not buried in the loop.
-NEWS_USER_LIMIT = int(os.environ.get("NEWS_USER_LIMIT", "100"))
-NEWS_USER_ACTIVE_HOURS = float(os.environ.get("NEWS_USER_ACTIVE_HOURS", "48"))
+NEWS_USER_LIMIT = int(env_value("NEWS_USER_LIMIT", "100"))
+NEWS_USER_ACTIVE_HOURS = float(env_value("NEWS_USER_ACTIVE_HOURS", "48"))
 # The earnings forecast log's daily capture covers readers seen within a week:
 # a reader away for a few days still keeps a continuous record, and one
 # calendar request per vendor a day is the whole cost.
-FORECAST_USER_ACTIVE_HOURS = float(os.environ.get("FORECAST_USER_ACTIVE_HOURS", "168"))
-FORECAST_CAPTURE_HOUR_ET = int(os.environ.get("FORECAST_CAPTURE_HOUR_ET", "7"))
-SCREENER_HORIZON_DAYS = int(os.environ.get("SCREENER_HORIZON_DAYS", "5"))  # upcoming-earnings window
+FORECAST_USER_ACTIVE_HOURS = float(env_value("FORECAST_USER_ACTIVE_HOURS", "168"))
+FORECAST_CAPTURE_HOUR_ET = int(env_value("FORECAST_CAPTURE_HOUR_ET", "7"))
+SCREENER_HORIZON_DAYS = int(env_value("SCREENER_HORIZON_DAYS", "5"))  # upcoming-earnings window
 # One ask covers the WHOLE window (every symbol at once), so its input is
 # bounded by these two rather than by a top-N cut of the symbol list. The cap
 # drops the OLDEST articles first — same policy as ingest/news.py's scan cap.
-SCREENER_ASK_MAX_ARTICLES = int(os.environ.get("SCREENER_ASK_MAX_ARTICLES", "120"))
+SCREENER_ASK_MAX_ARTICLES = int(env_value("SCREENER_ASK_MAX_ARTICLES", "120"))
 # Per-call input budget, well above LLM_MAX_INPUT_CHARS (24k, sized for one
 # symbol's batch of headlines) for the same reason FILING_MAX_CHARS is: this
 # call is deliberately wide. A global bump would raise every other call's cost.
-SCREENER_ASK_MAX_CHARS = int(os.environ.get("SCREENER_ASK_MAX_CHARS", "40000"))
+SCREENER_ASK_MAX_CHARS = int(env_value("SCREENER_ASK_MAX_CHARS", "40000"))
 
 # ── Filings workspace (ingest/edgar.py, desk/filings.py) ─────────────────────
 # A 10-K's meaningful narrative (Business, Risk Factors, MD&A) commonly runs
@@ -131,7 +172,7 @@ SCREENER_ASK_MAX_CHARS = int(os.environ.get("SCREENER_ASK_MAX_CHARS", "40000"))
 # batch of short headlines) would truncate before reaching most of it. This is
 # a per-call override (ai/llm.chat_json's max_input_chars), not a change to the
 # global default, so it doesn't raise the cost of every other call site.
-FILING_MAX_CHARS = int(os.environ.get("FILING_MAX_CHARS", "60000"))
+FILING_MAX_CHARS = int(env_value("FILING_MAX_CHARS", "60000"))
 
 # ── Research agent (desk/research.py) ────────────────────────────────────────
 # Q&A over one symbol's pre-fetched fundamentals/ownership/insider/earnings/
@@ -139,15 +180,15 @@ FILING_MAX_CHARS = int(os.environ.get("FILING_MAX_CHARS", "60000"))
 # cites" shape as desk/filings.py, not a tool-calling loop. All 6 sections are
 # wrapped as untrusted <data:*> blocks (ai/llm.wrap_data), so this needs a much
 # larger input budget than the news path — mirrors FILING_MAX_CHARS's reasoning.
-RESEARCH_MAX_CHARS = int(os.environ.get("RESEARCH_MAX_CHARS", "30000"))
+RESEARCH_MAX_CHARS = int(env_value("RESEARCH_MAX_CHARS", "30000"))
 # Unlike symbol_digests/filing_qa_cache, the underlying data (a live quote,
 # recent insider filings) can go stale between identical asks even though the
 # question text hasn't changed — so this cache needs an actual TTL, not just
 # a hash key.
-RESEARCH_CACHE_TTL_HOURS = float(os.environ.get("RESEARCH_CACHE_TTL_HOURS", "4"))
+RESEARCH_CACHE_TTL_HOURS = float(env_value("RESEARCH_CACHE_TTL_HOURS", "4"))
 # 13F is quarterly, Form 4 is event-driven — both move far slower than a live
 # quote, hence the much longer TTL than prices.py's other in-memory caches.
-OWNERSHIP_TTL_S = int(os.environ.get("OWNERSHIP_TTL_S", str(6 * 3600)))
+OWNERSHIP_TTL_S = int(env_value("OWNERSHIP_TTL_S", str(6 * 3600)))
 
 
 # ── Market sessions ──────────────────────────────────────────────────────────
