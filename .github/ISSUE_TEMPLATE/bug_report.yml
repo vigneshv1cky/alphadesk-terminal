@@ -1,0 +1,40 @@
+name: Bug report
+description: A panel, tool or page that behaves wrongly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a security problem, do not open an issue — see [SECURITY.md](../blob/main/SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      placeholder: "The earnings calendar showed Thursday's reporters on Friday; the filing says Thursday."
+    validations: {required: true}
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: The page or agent tool, and the symbol if it is about one.
+      placeholder: "Profile page, TSM — or the price_chart agent tool"
+    validations: {required: true}
+  - type: input
+    id: vendors
+    attributes:
+      label: Which vendors are connected
+      description: Names and plans, never keys. Say "none" if it is an EDGAR or Treasury panel.
+      placeholder: "Alpaca free, FMP Premium"
+    validations: {required: true}
+  - type: textarea
+    id: response
+    attributes:
+      label: What the panel or tool said
+      description: Any error text, the HTTP status if you saw one (428 means no connected vendor carries it), and browser console or server log lines.
+      render: text
+  - type: input
+    id: instance
+    attributes:
+      label: Where it runs
+      placeholder: "self-hosted, Docker, commit abc1234 — or the hosted service"
+    validations: {required: true}

@@ -1,6 +1,8 @@
 ## What and why
 
-<!-- What changed, and why. If it was a judgment call, what you measured. -->
+<!-- What changed, and why. If it was a judgment call, what you measured.
+     Behaviour changes: check DECISIONS.md first — it says what was tried
+     and deliberately removed. -->
 
 ## Checks
 
