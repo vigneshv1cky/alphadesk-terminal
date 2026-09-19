@@ -57,3 +57,10 @@ Repository = "https://github.com/vigneshv1cky/alphadesk-terminal"
 
 [tool.setuptools.packages.find]
 include = ["alphadesk*"]
+
+[tool.ruff.lint]
+# The rules are named, not left to the linter's defaults: ruff 0.16 widened
+# its default set (115 blind-exception findings alone on this code), so an
+# unpinned CI install failed on code that passed locally on 0.15 (2026-09-19).
+# These are the defaults this code was written against.
+select = ["E4", "E7", "E9", "F"]
