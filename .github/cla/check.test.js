@@ -20,6 +20,7 @@ test("the author and every commit's account must sign; owner and bots never", ()
     { author: { login: "vigneshv1cky", type: "User" }, commit: { author: { name: "V" } } },
     { author: { login: "dependabot[bot]", type: "Bot" }, commit: { author: { name: "dependabot" } } },
     { author: null, commit: { author: { name: "Carol", email: "carol@example.com" } } },
+    { author: null, commit: { author: { name: "V", email: "MuruganVignesh0810@gmail.com" } } },
   ];
   const r = cla.requiredSigners({ login: "alice", type: "User" }, commits);
   assert.deepStrictEqual(r.logins.sort(), ["Bob", "alice"]);
