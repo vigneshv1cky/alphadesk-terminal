@@ -304,7 +304,7 @@ function CoinPanel({ c, span = 7 }: { c: CompanyProfile; span?: number }) {
         {k.genesis_date && <Stat label="Genesis" value={<span className="text-body font-semibold">{k.genesis_date}</span>} sub={k.hashing_algorithm ?? undefined} />}
       </div>
       <p className="border-t border-row-rule px-3 py-2 text-caption text-muted-foreground">
-        {k.attribution} ·{" "}
+        <a href="https://www.coingecko.com" target="_blank" rel="noreferrer" className="font-semibold text-accent-700 underline decoration-dotted hover:text-foreground">{k.attribution}</a> ·{" "}
         <a href={k.url} target="_blank" rel="noreferrer" className="font-semibold text-accent-700 underline decoration-dotted hover:text-foreground">{k.name ?? k.symbol} on CoinGecko</a>
         {links.map(l => (
           <span key={l.url}> · <a href={l.url} target="_blank" rel="noreferrer" className="font-semibold text-accent-700 underline decoration-dotted hover:text-foreground">{l.label}</a></span>
