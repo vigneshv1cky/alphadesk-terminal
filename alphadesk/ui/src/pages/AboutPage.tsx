@@ -39,10 +39,8 @@ export default function AboutPage() {
         <P>
           It is a consumption terminal. It fetches, reads and presents. It does
           not place orders, hold positions, route trades, or score decisions.
-          Two autonomous trading engines and a manual trading layer were built
-          here, measured against the index, and removed when the measurement
-          did not justify them. That history is the reason the product is what
-          it is now.
+          Deciding is the reader's part, and the terminal is built so that
+          every figure on screen can be traced to whoever published it.
         </P>
 
         <H>Your keys, your providers</H>
