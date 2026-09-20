@@ -38,7 +38,14 @@ Breaking one of these is a bug even if the tests pass.
    overnight session, which has one venue, so unioning it adds no second
    scale.
 
-4. **Nothing is ranked by us.** The screener window is a plain alphabetical
+4. **The only model here reads, it never writes.** A self-hosted embedding
+   model, on CPU, in the same process: it matches news by meaning and tells
+   a fund built on one company from a sector basket sharing its name. It
+   runs on an idle worker, never inside a request — measured at 6.6 seconds
+   for fourteen names, inline that is what starved the web server once. No
+   generative model writes, summarises or scores anything.
+
+5. **Nothing is ranked by us.** The screener window is a plain alphabetical
    read: sorting a column is the reader choosing, a default order is the app
    deciding. Alphabetical is also stable, so rows do not reshuffle under the
    cursor while polling. Agent tools may order today's facts by a measured
@@ -47,26 +54,26 @@ Breaking one of these is a bug even if the tests pass.
    Search results are newest first even when meaning decided what is
    relevant.
 
-5. **An idle terminal spends nothing.** No background summarising, no
+6. **An idle terminal spends nothing.** No background summarising, no
    unattended labelling. The background loops fetch: the SEC releases, each
    reader's own news feed, one daily forecast capture. Everything else is
    fetched on request, on the asking reader's keys.
 
-6. **Untrusted text stays untrusted.** Headlines, article bodies, filings and
+7. **Untrusted text stays untrusted.** Headlines, article bodies, filings and
    transcripts can carry text aimed at whoever reads them. Nothing here acts
    on them, and the agent tools that hand them over say so, so the reader's
    agent treats them as data. Any future surface that feeds this text to
    something that acts must re-establish that fence.
 
-7. **The platform is not an aggregator.** There is no shared news feed.
+8. **The platform is not an aggregator.** There is no shared news feed.
    Aggregation is the reader's own act on their own credentials: keying
    several feeds merges their window and nobody else's.
 
-8. **The agent surface is read-only, one reader at a time.** The agent tools
+9. **The agent surface is read-only, one reader at a time.** The agent tools
    have no write surface by construction, and every call runs as exactly the
    reader whose credential it carries.
 
-9. **Vendor data belongs to the reader whose key fetched it.** The server
+10. **Vendor data belongs to the reader whose key fetched it.** The server
    holds no vendor keys. Providers take keys explicitly; a missing key is an
    error, never an environment lookup. Every cache holding vendor data is
    keyed by the reader — a shared cache serving the next reader is
@@ -75,7 +82,7 @@ Breaking one of these is a bug even if the tests pass.
    428 naming the vendors and plans that would fill it, never an empty 200:
    an empty panel reads as "no data exists".
 
-10. **Vendor data is kept only as long as a feature reads it**, and removing
+11. **Vendor data is kept only as long as a feature reads it**, and removing
     a key deletes what that key fetched.
 
 ## Tried and removed

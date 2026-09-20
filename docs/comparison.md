@@ -79,8 +79,10 @@ own vendor keys. There is no write surface.
 
 No, and that is deliberate. No panel is written by a model; every figure is
 shown with its source. The only model in the system is a small embedding
-model, self-hosted on CPU, used to match news stories by meaning. No text
-leaves the server, and one setting turns it off.
+model, self-hosted on CPU. It does two jobs: it matches news stories by
+meaning, and it tells a fund built on one company from a sector basket that
+merely shares its name — it writes nothing, and scores nothing for you. No
+text leaves the server, and one setting turns it off.
 
 The reasoning is meant to happen in your own agent, where you can see exactly
 what it was given.

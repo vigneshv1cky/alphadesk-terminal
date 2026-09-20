@@ -27,8 +27,9 @@ Hosted instance: https://alphadesk-764298799571.us-east4.run.app (free during ea
 - It does not summarise, rank or score anything. Every panel shows what a
   vendor or the SEC actually said, with its source.
 - It runs no generative AI model. The only model is a self-hosted embedding
-  model (Qwen3-Embedding-0.6B) used to match news by meaning, on CPU, in the
-  same process. No text leaves the server.
+  model (Qwen3-Embedding-0.6B), on CPU, in the same process: it matches news
+  by meaning, and tells a fund built on one company from a sector basket that
+  merely shares its name. It writes nothing. No text leaves the server.
 - It does not resell market data. Each reader connects their own vendor keys
   and the data is fetched under their own agreement with that vendor.
 

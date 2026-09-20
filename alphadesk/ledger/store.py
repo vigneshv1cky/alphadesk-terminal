@@ -176,6 +176,23 @@ CREATE TABLE IF NOT EXISTS news_vectors (
 );
 CREATE INDEX IF NOT EXISTS idx_news_vectors_at ON news_vectors (embedded_at);
 
+-- What a FUND's own name says it is (fundclass.py): "single" for a product
+-- built on one company, "sector" for a basket that merely shares a word with
+-- it. Public data — a fund name means the same for every reader — so this is
+-- one shared table. A row with verdict NULL is queued for the idle worker.
+-- `vec` is the name's own numbers, kept so building the two reference points
+-- is arithmetic over stored rows instead of reading four hundred names
+-- through the model again every time the known set grows.
+CREATE TABLE IF NOT EXISTS fund_name_verdicts (
+    name       TEXT PRIMARY KEY,
+    verdict    TEXT,
+    margin     REAL,
+    model      TEXT,
+    vec        TEXT,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fund_verdicts_pending ON fund_name_verdicts (verdict);
+
 -- SEC EDGAR filing metadata (ingest/edgar.py). accession is SEC's own globally
 -- unique id for one filing — the natural key, not an autoincrement.
 CREATE TABLE IF NOT EXISTS filings (
@@ -516,6 +533,7 @@ def init() -> None:
         "ALTER TABLE earnings_releases ADD COLUMN event_date TEXT",  # the release day an 8-K reports
         "ALTER TABLE earnings_releases ADD COLUMN accepted_source TEXT",  # 'index' once read from the filing index          # which reader feeds delivered it
         "ALTER TABLE earnings_releases ADD COLUMN form TEXT",  # 8-K, or 6-K for a foreign private issuer
+        "ALTER TABLE fund_name_verdicts ADD COLUMN vec TEXT",  # the name's numbers, kept for the reference points
     ):
         try:
             with _lock, _connect() as conn:
@@ -1809,6 +1827,88 @@ def unembedded_articles(model: str, limit: int = 64) -> list[dict]:
             " WHERE v.article_id IS NULL AND a.owner != '' ORDER BY a.published_at DESC LIMIT ?",
             (model, int(limit))).fetchall()
     return [dict(r) for r in rows]
+
+
+
+# ── what a fund's name says it is (fundclass.py) ────────────────────────────
+
+def queue_fund_names(names: list[str], verdict: str | None = None, model: str | None = None) -> None:
+    """Remember fund names to classify. With `verdict` the answer is already
+    known — ticker-matched funds are single-stock by construction, and they
+    are what the classifier learns from."""
+    if not names:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock, _connect() as conn:
+        for name in names:
+            if not name:
+                continue
+            if verdict is None:
+                conn.execute("INSERT INTO fund_name_verdicts (name, verdict, margin, model, updated_at)"
+                             " VALUES (?,NULL,NULL,NULL,?) ON CONFLICT (name) DO NOTHING", (name, now))
+            else:
+                conn.execute("INSERT INTO fund_name_verdicts (name, verdict, margin, model, updated_at)"
+                             " VALUES (?,?,NULL,?,?) ON CONFLICT (name) DO UPDATE SET"
+                             " verdict=excluded.verdict, model=excluded.model, updated_at=excluded.updated_at",
+                             (name, verdict, model, now))
+
+
+def fund_verdicts(names: list[str]) -> dict[str, str]:
+    """{name: verdict} for the names that have one."""
+    if not names:
+        return {}
+    out: dict[str, str] = {}
+    with _connect() as conn:
+        for chunk in (names[i:i + 400] for i in range(0, len(names), 400)):
+            marks = ",".join("?" for _ in chunk)
+            rows = conn.execute(f"SELECT name, verdict FROM fund_name_verdicts"
+                                f" WHERE verdict IS NOT NULL AND name IN ({marks})", tuple(chunk)).fetchall()
+            out.update({r["name"]: r["verdict"] for r in rows})
+    return out
+
+
+def pending_fund_names(limit: int = 32) -> list[str]:
+    with _connect() as conn:
+        rows = conn.execute("SELECT name FROM fund_name_verdicts WHERE verdict IS NULL"
+                            " ORDER BY updated_at LIMIT ?", (int(limit),)).fetchall()
+    return [r["name"] for r in rows]
+
+
+def fund_examples(verdict: str, limit: int = 200, model: str | None = None) -> list[tuple[str, str | None]]:
+    """(name, vec) for the names settled as `verdict`, newest first. A name
+    whose numbers were never kept — or were kept by a different model than
+    `model`, whose numbers mean nothing here — comes back with None, and is
+    read once."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT name, vec, model FROM fund_name_verdicts WHERE verdict = ?"
+                            " ORDER BY updated_at DESC LIMIT ?", (verdict, int(limit))).fetchall()
+    return [(r["name"], r["vec"] if model is None or r["model"] == model else None) for r in rows]
+
+
+def save_fund_vectors(model: str, rows: list[tuple[str, str]]) -> None:
+    """(name, vec) for names already in the table — what makes a reference
+    point arithmetic rather than a re-reading."""
+    if not rows:
+        return
+    with _lock, _connect() as conn:
+        for name, vec in rows:
+            conn.execute("UPDATE fund_name_verdicts SET vec=?, model=? WHERE name=?", (vec, model, name))
+
+
+def save_fund_verdicts(model: str, rows: list[tuple[str, str, float, str | None]]) -> None:
+    """(name, verdict, margin, vec) from the classifier. The vector is kept
+    with the verdict, so a name that later joins the known set costs nothing
+    to include."""
+    if not rows:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock, _connect() as conn:
+        for name, verdict, margin, vec in rows:
+            conn.execute("INSERT INTO fund_name_verdicts (name, verdict, margin, model, vec, updated_at)"
+                         " VALUES (?,?,?,?,?,?) ON CONFLICT (name) DO UPDATE SET verdict=excluded.verdict,"
+                         " margin=excluded.margin, model=excluded.model, vec=excluded.vec,"
+                         " updated_at=excluded.updated_at",
+                         (name, verdict, float(margin), model, vec, now))
 
 
 def save_news_vectors(model: str, rows: list[tuple[str, str, str]]) -> None:

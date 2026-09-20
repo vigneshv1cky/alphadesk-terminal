@@ -123,7 +123,8 @@ export function RelatedFundsPanel({ symbol, span = 6, scroll }: {
           {/* Said plainly: this is what is BUILT on the company, and the
               ordinary funds that hold it are on no vendor here. */}
           <div className="border-t border-row-rule px-3 py-2 text-label leading-[1.45] text-muted-foreground">
-            Funds named for {q.data?.company ?? symbol}, matched on the fund's own name and priced on your data key.
+            Funds built on {q.data?.company ?? symbol}, read from the fund's own name and priced on your data key.
+            Funds that merely share a word with the company — the sector and thematic baskets — are left out.
             Which ordinary funds hold the stock is on no vendor here, so it is not shown.
           </div>
         </>
