@@ -165,9 +165,32 @@ def unpack(text: str):
     return np.frombuffer(base64.b64decode(text), dtype=np.float16).astype(np.float32)
 
 
-def embed_stories(texts: list[str]) -> list[str] | None:
+def encode(texts: list[str]):
+    """Normalised vectors for `texts`, CHUNK at a time — THE ONE PATH every
+    background caller goes through. It waits while any request is in flight
+    and releases the lock between chunks, so a search never queues behind
+    more than one chunk and the model never competes with the web server
+    (see _in_flight above). None when the model cannot load.
+
+    Anything encoding in the background calls THIS, not the model directly:
+    the classifier's first version called the model itself, and its batch of
+    eight fund names (about five seconds) ignored both fences."""
     m = model()
     if m is None:
+        return None
+    out = []
+    for start in range(0, len(texts), CHUNK):
+        part = texts[start:start + CHUNK]
+        while _server_busy():
+            time.sleep(0.05)
+        with _encode_lock:
+            out.extend(m.encode(part, batch_size=CHUNK, normalize_embeddings=True,
+                                show_progress_bar=False))
+    return out
+
+
+def embed_stories(texts: list[str]) -> list[str] | None:
+    if model() is None:
         return None
     out: list[str | None] = [None] * len(texts)
     todo, keys = [], []
@@ -178,19 +201,12 @@ def embed_stories(texts: list[str]) -> list[str] | None:
             out[i] = _memo[k]
         else:
             todo.append(i)
-    for start in range(0, len(todo), CHUNK):
-        part = todo[start:start + CHUNK]
-        while _server_busy():
-            time.sleep(0.05)
-        with _encode_lock:
-            vecs = m.encode([texts[i] for i in part], batch_size=CHUNK, normalize_embeddings=True,
-                            show_progress_bar=False)
-        for i, v in zip(part, vecs):
-            packed = pack(v)
-            out[i] = packed
-            _memo[keys[i]] = packed
-            if len(_memo) > _MEMO_MAX:
-                _memo.popitem(last=False)
+    for i, v in zip(todo, encode([texts[i] for i in todo]) or []):
+        packed = pack(v)
+        out[i] = packed
+        _memo[keys[i]] = packed
+        if len(_memo) > _MEMO_MAX:
+            _memo.popitem(last=False)
     return [o for o in out if o is not None]
 
 

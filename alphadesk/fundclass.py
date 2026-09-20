@@ -21,18 +21,30 @@ a single-stock product by construction, so every ticker match the panel makes
 is recorded as one. The negatives are a small fixed list of sector ETFs from
 other industries, so nothing here is learned from the case being judged.
 
-IT NEVER RUNS IN A REQUEST. Embedding fourteen fund names takes 6.6 seconds on
-this CPU; inline that is the contention that took the service down on
-2026-09-19. The classifier runs on the same idle worker as search, at nice 19,
-only while no request is in flight, and writes a verdict per fund name that
-holds for every reader (a fund name means the same thing to everyone). Until a
-verdict exists the panel falls back to what the name declares — see
+NOTHING IS TRAINED. The model's weights are never touched — it is asked for
+numbers and nothing else. What grows is the set of known names, and a
+reference point is the average of their numbers.
+
+IT NEVER RUNS IN A REQUEST, AND NEVER AGAINST ONE. Reading fourteen fund
+names takes 6.6 seconds on this CPU; inline that is the contention that took
+the service down on 2026-09-19. Everything here goes through semantic.encode,
+which stands aside while a request is in flight and yields between chunks —
+the first version called the model directly and ignored both fences. The
+worker runs at nice 19 and writes a verdict per fund name that holds for
+every reader (a fund name means the same thing to everyone). Until a verdict
+exists the panel falls back to what the name declares — see
 ingest/related_funds.keep_fund.
+
+EACH EXAMPLE'S NUMBERS ARE KEPT (store.fund_name_verdicts.vec), so a
+reference point is an average over stored rows. The first version read up to
+four hundred names through the model again every time the known set grew by
+one, which is minutes of processor time for an answer that had barely moved.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 log = logging.getLogger("alphadesk.fundclass")
 
@@ -68,8 +80,16 @@ MIN_POSITIVES = 20
 #: cannot separate and is left to the fallback.
 MARGIN = 0.005
 
-_centroids: tuple | None = None
-_centroid_count = 0
+#: The most known names one centroid averages, newest first.
+MAX_EXAMPLES = 400
+#: Known names whose numbers are missing that one turn reads. Bounded so a
+#: cold table warms over a few turns instead of holding the worker for
+#: minutes; the numbers are kept, so it happens once per name ever.
+NEW_EXAMPLES_PER_TURN = 12
+
+#: The fixed list's centre, read once per process: fifteen names that never
+#: change, against hundreds that do.
+_negative: Any = None
 
 
 def _norm(v):
@@ -78,27 +98,52 @@ def _norm(v):
     return v / n if n else v
 
 
-def centroids(force: bool = False):
-    """(positive, negative) centroids, or None while there are too few known
-    single-stock names. Rebuilt as the positive set grows."""
-    global _centroids, _centroid_count
+def _centre(vectors):
     import numpy as np
+    return _norm(np.asarray(vectors).mean(0))
 
+
+def _negative_centre():
+    global _negative
+    if _negative is None:
+        from alphadesk import semantic
+        vecs = semantic.encode(list(NEGATIVE_EXAMPLES))
+        if not vecs:
+            return None
+        _negative = _centre(vecs)
+    return _negative
+
+
+def _positive_centre():
+    """The centre of the known single-stock names. Stored numbers are read
+    from the table; only names that have none go through the model, and what
+    they give is kept."""
     from alphadesk import semantic
     from alphadesk.ledger import store
-    pos_names = store.fund_names_by_verdict("single", 400)
-    if len(pos_names) < MIN_POSITIVES:
+    rows = store.fund_examples("single", MAX_EXAMPLES, semantic.MODEL_ID)
+    if len(rows) < MIN_POSITIVES:
         return None
-    if _centroids is not None and not force and len(pos_names) <= _centroid_count:
-        return _centroids
-    m = semantic.model()
-    if m is None:
+    vecs = [semantic.unpack(v) for _, v in rows if v]
+    missing = [n for n, v in rows if not v][:NEW_EXAMPLES_PER_TURN]
+    if missing:
+        fresh = semantic.encode(missing)
+        if fresh:
+            store.save_fund_vectors(semantic.MODEL_ID,
+                                    [(n, semantic.pack(v)) for n, v in zip(missing, fresh)])
+            vecs.extend(fresh)
+    if len(vecs) < MIN_POSITIVES:
+        return None                          # still warming: a later turn decides
+    return _centre(vecs)
+
+
+def centroids():
+    """(positive, negative) centroids, or None while there are too few known
+    single-stock names or the model cannot load."""
+    pos = _positive_centre()
+    if pos is None:
         return None
-    pos = m.encode(list(pos_names), batch_size=16, normalize_embeddings=True)
-    neg = m.encode(list(NEGATIVE_EXAMPLES), batch_size=16, normalize_embeddings=True)
-    _centroids = (_norm(np.asarray(pos).mean(0)), _norm(np.asarray(neg).mean(0)))
-    _centroid_count = len(pos_names)
-    return _centroids
+    neg = _negative_centre()
+    return None if neg is None else (pos, neg)
 
 
 def verdict_for(margin: float) -> str | None:
@@ -113,8 +158,6 @@ def verdict_for(margin: float) -> str | None:
 def classify_pending(limit: int = 16) -> int:
     """Classify queued fund names. Returns how many verdicts were written.
     Called only from the idle worker."""
-    import numpy as np
-
     from alphadesk import semantic
     from alphadesk.ledger import store
     if semantic.model() is None:
@@ -126,14 +169,16 @@ def classify_pending(limit: int = 16) -> int:
     if cents is None:
         return 0
     pos, neg = cents
-    vecs = semantic.model().encode(names, batch_size=8, normalize_embeddings=True)
+    vecs = semantic.encode(names)
+    if not vecs:
+        return 0
     rows = []
-    for name, v in zip(names, np.asarray(vecs)):
+    for name, v in zip(names, vecs):
         margin = float(v @ pos) - float(v @ neg)
-        verdict = verdict_for(margin)
         # A name the centroids cannot separate is recorded as "unclear", so
         # it is not asked again every cycle; the fallback then decides it.
-        rows.append((name, verdict or "unclear", margin))
+        # Its numbers are kept either way, so a later margin costs no reading.
+        rows.append((name, verdict_for(margin) or "unclear", margin, semantic.pack(v)))
     store.save_fund_verdicts(semantic.MODEL_ID, rows)
     log.info("fund classifier: %d names (%s)", len(rows),
              ", ".join(f"{v}×{sum(1 for r in rows if r[1] == v)}" for v in ("single", "sector", "unclear")))

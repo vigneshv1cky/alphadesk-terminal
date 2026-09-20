@@ -2,6 +2,8 @@
 stood on 2026-09-15: 23 US-listed funds carry NVIDIA's name, 26 Tesla's,
 16 MicroStrategy's and 2 CrowdStrike's."""
 
+import pytest
+
 from alphadesk.ingest.related_funds import company_word, fund_kind, single_stock_funds
 
 LISTING = {
@@ -196,7 +198,42 @@ def test_verdicts_are_stored_once_per_fund_name(store):
         "Leverage Shares 2X Long SPCX Daily ETF": "single"}
     pending = store.pending_fund_names(10)
     assert set(pending) == {"ARK Space & Defense Innovation ETF", "Procure Space ETF"}
-    store.save_fund_verdicts("test-model", [("Procure Space ETF", "sector", -0.04)])
+    store.save_fund_verdicts("test-model", [("Procure Space ETF", "sector", -0.04, "AAAA")])
     assert store.fund_verdicts(["Procure Space ETF"]) == {"Procure Space ETF": "sector"}
     assert store.pending_fund_names(10) == ["ARK Space & Defense Innovation ETF"]
-    assert store.fund_names_by_verdict("single") == ["Leverage Shares 2X Long SPCX Daily ETF"]
+    assert store.fund_examples("single") == [("Leverage Shares 2X Long SPCX Daily ETF", None)]
+    assert store.fund_examples("sector") == [("Procure Space ETF", "AAAA")]
+
+
+def test_a_names_numbers_are_kept_so_a_centre_costs_nothing_twice(store, monkeypatch):
+    """The centre of the known single-stock names is an average over stored
+    numbers. Every name is read through the model once, ever — the first
+    version re-read up to four hundred of them each time the set grew."""
+    import numpy as np
+
+    from alphadesk import fundclass, semantic
+    names = [f"Leverage Shares 2X Long AB{i} Daily ETF" for i in range(24)]
+    store.queue_fund_names(names, verdict="single", model="ticker")
+    asked: list[str] = []
+
+    def fake_encode(texts):
+        asked.extend(texts)
+        return [np.asarray([0.6, 0.8, 0.0, 0.0], dtype=np.float32) for _ in texts]
+
+    monkeypatch.setattr(semantic, "encode", fake_encode)
+    monkeypatch.setattr(fundclass, "NEW_EXAMPLES_PER_TURN", len(names))
+    first = fundclass._positive_centre()
+    assert first is not None and sorted(asked) == sorted(names)
+    asked.clear()
+    second = fundclass._positive_centre()
+    assert asked == []                                  # read once, kept for good
+    assert np.allclose(first, second, atol=1e-3)
+
+
+def test_the_classifier_reads_nothing_until_it_has_enough_examples(store, monkeypatch):
+    """Below the floor it stays silent rather than guessing, and does not
+    spend the processor finding that out."""
+    from alphadesk import fundclass, semantic
+    store.queue_fund_names(["Leverage Shares 2X Long AB Daily ETF"], verdict="single", model="ticker")
+    monkeypatch.setattr(semantic, "encode", lambda texts: pytest.fail("read the model too early"))
+    assert fundclass._positive_centre() is None
