@@ -247,3 +247,78 @@ def test_the_classifier_reads_nothing_until_it_has_enough_examples(store, monkey
     store.queue_fund_names(["Leverage Shares 2X Long AB Daily ETF"], verdict="single", model="ticker")
     monkeypatch.setattr(semantic, "encode", lambda texts: pytest.fail("read the model too early"))
     assert fundclass._positive_centre() is None
+
+
+# ── what a fund says it is, in its own words (2026-09-20) ───────────────────
+
+def test_what_a_funds_own_description_says_it_is():
+    """A name states the STRUCTURE — daily, twice, through swaps — and not
+    the SUBJECT. The vendor's description states the subject."""
+    from alphadesk.fundclass import verdict_from_description as read
+    assert read("The Fund seeks 2X the daily performance of a concentrated basket of three to "
+                "ten space economy companies, generally equal-weighted.") == "sector"
+    assert read("The Fund seeks daily investment results of 200% of the daily percentage change "
+                "of the common stock of Tesla, Inc.") == "single"
+    assert read("A synthetic covered call strategy on the reference asset.") is None
+    assert read(None) is None and read("") is None
+
+
+def test_reading_the_record_settles_what_the_name_could_not(store, monkeypatch):
+    from alphadesk import fundclass
+    said = {"SPCL": "2X the daily performance of a basket of space economy companies",
+            "TSLT": "200% of the daily change of the common stock of Tesla, Inc."}
+
+    class Router:
+        uid = "u1"
+
+        def get(self, surface, symbol):
+            return {"description": said.get(symbol)}
+
+    monkeypatch.setattr("alphadesk.providers.get_prices", lambda: Router())
+    queued = {"Defiance Pure Space Daily 2X Strategy ETF": "SPCL",
+              "T-REX 2X Long TSLA Daily Target ETF": "TSLT"}
+    store.queue_fund_names(list(queued))
+    assert fundclass.read_records(queued) == 2
+    assert store.fund_verdicts(list(queued)) == {
+        "Defiance Pure Space Daily 2X Strategy ETF": "sector",
+        "T-REX 2X Long TSLA Daily Target ETF": "single"}
+
+
+def test_a_record_that_says_neither_hands_the_name_straight_on(store, monkeypatch):
+    from alphadesk import fundclass
+
+    class Router:
+        uid = "u1"
+
+        def get(self, surface, symbol):
+            return {"description": "A synthetic covered call strategy on the reference asset."}
+
+    monkeypatch.setattr("alphadesk.providers.get_prices", lambda: Router())
+    store.queue_fund_names(["YieldMax Something Option Income ETF"])
+    assert store.pending_fund_names(10, grace_s=600) == []      # its record is still coming
+    assert fundclass.read_records({"YieldMax Something Option Income ETF": "YMAX"}) == 0
+    # Read and undecided: the name classifier takes it at once, not in ten minutes.
+    assert store.pending_fund_names(10, grace_s=600) == ["YieldMax Something Option Income ETF"]
+
+
+def test_a_fund_read_against_its_own_documents_is_dropped(store, monkeypatch):
+    """SPCL is 2x daily on a basket of three to ten space companies, read
+    from its profile on 2026-09-20. Its name declares a multiple and is
+    worded like the single-stock products it sits among, so the fallback
+    kept it and the centroids agreed — a verified verdict outranks both."""
+    from alphadesk.ingest import related_funds as rf
+
+    class Router:
+        answered_by = "fmp"
+        uid = None
+
+        def get(self, surface, symbol):
+            return {"name": SPACE_COMPANY} if surface == "quote" else None
+
+        def ask(self, surface, arg=None):
+            return {k: v for k, v in SPACE_LISTING.items() if k != "SPCX"} if surface == "fund_names" else None
+
+    monkeypatch.setattr("alphadesk.providers.get_prices", lambda: Router())
+    rows = {r["symbol"] for r in rf.related_funds("SPCX")["funds"]}
+    assert "SPCL" not in rows
+    assert {"SPCH", "SPCQ", "YSPC", "ELOL"} <= rows          # the ticker is still proof

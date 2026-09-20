@@ -1867,11 +1867,33 @@ def fund_verdicts(names: list[str]) -> dict[str, str]:
     return out
 
 
-def pending_fund_names(limit: int = 32) -> list[str]:
+def pending_fund_names(limit: int = 32, grace_s: float = 0.0) -> list[str]:
+    """Fund names waiting for a verdict, oldest first. With `grace_s`, a name
+    whose own record has not been read yet is left alone until that long has
+    passed — the vendor's description gets first refusal, and only then does
+    the name decide (2026-09-20). A name already read is returned at once."""
+    if grace_s <= 0:
+        with _connect() as conn:
+            rows = conn.execute("SELECT name FROM fund_name_verdicts WHERE verdict IS NULL"
+                                " ORDER BY updated_at LIMIT ?", (int(limit),)).fetchall()
+        return [r["name"] for r in rows]
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=grace_s)).isoformat()
     with _connect() as conn:
         rows = conn.execute("SELECT name FROM fund_name_verdicts WHERE verdict IS NULL"
-                            " ORDER BY updated_at LIMIT ?", (int(limit),)).fetchall()
+                            " AND (model = 'description' OR updated_at < ?)"
+                            " ORDER BY updated_at LIMIT ?", (cutoff, int(limit))).fetchall()
     return [r["name"] for r in rows]
+
+
+def mark_fund_records_read(names: list[str]) -> None:
+    """Note that a fund's own record was read and said neither thing, so the
+    name classifier may take it without waiting out its grace."""
+    if not names:
+        return
+    with _lock, _connect() as conn:
+        for name in names:
+            conn.execute("UPDATE fund_name_verdicts SET model='description'"
+                         " WHERE name=? AND verdict IS NULL", (name,))
 
 
 def fund_examples(verdict: str, limit: int = 200, model: str | None = None) -> list[tuple[str, str | None]]:

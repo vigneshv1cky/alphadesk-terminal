@@ -69,6 +69,37 @@ NEGATIVE_EXAMPLES = (
     "Procure Disaster Recovery Strategy ETF",
 )
 
+#: WHAT A FUND SAYS IT IS, IN ITS OWN WORDS (2026-09-20). A name states the
+#: STRUCTURE — daily, twice, through swaps — and not the SUBJECT, so no
+#: reading of it recovers whether one company or many is behind it. Defiance
+#: Pure Space Daily 2X Strategy ETF is 2x daily on a concentrated basket of
+#: three to ten space-economy companies, and BOTH tests here called it
+#: single-stock: the fallback because it states a multiple, and the centroids
+#: because it is worded exactly like the single-stock products it sits among.
+#: The vendor's own description says what the name cannot, and a record
+#: outranks anything inferred from a label.
+BASKET_PHRASES = ("companies", "constituents", "basket of", "group of",
+                  "equal-weight", "equally weight", "equally-weight")
+SINGLE_PHRASES = ("single security", "single stock", "single issuer", "a single company",
+                  "common stock of", "shares of", "the underlying stock")
+
+#: Funds read against their own documents where the name misleads both tests.
+#: Code, not a database row, so a self-hosted copy carries the correction and
+#: a fresh instance never has to learn it again. Each entry says what was
+#: read. A verified verdict outranks everything.
+VERIFIED: dict[str, str] = {
+    # 2x daily on a concentrated basket of roughly 3-10 space-economy
+    # companies, held through swaps and options and generally equal-weighted
+    # — a leveraged THEME, not a leveraged company (read 2026-09-20).
+    "Defiance Pure Space Daily 2X Strategy ETF": "sector",
+}
+
+#: How long a name waits for its own record before the name decides it. The
+#: description read is started by the panel that found the fund and finishes
+#: in seconds; this only stops a name being judged on its wording while the
+#: record is still on its way.
+RECORD_GRACE_S = 600.0
+
 #: Below this many known single-stock names the positive centroid is noise,
 #: and the classifier stays silent rather than guessing. Reached quickly: one
 #: NVIDIA panel alone records twenty.
@@ -146,6 +177,21 @@ def centroids():
     return None if neg is None else (pos, neg)
 
 
+def verdict_from_description(text: str | None) -> str | None:
+    """single / sector / None, from a fund's OWN description. Pure.
+
+    Plural companies decide it: a basket names them, a single-stock product
+    names one security. Anything that says neither is left to the name."""
+    low = (text or "").lower()
+    if not low:
+        return None
+    if any(w in low for w in BASKET_PHRASES):
+        return "sector"
+    if any(w in low for w in SINGLE_PHRASES):
+        return "single"
+    return None
+
+
 def verdict_for(margin: float) -> str | None:
     """single / sector / None (too close to call). Pure."""
     if margin > MARGIN:
@@ -155,6 +201,37 @@ def verdict_for(margin: float) -> str | None:
     return None
 
 
+def read_records(names: dict[str, str], limit: int = 6) -> int:
+    """Ask the reader's own vendors what each queued fund IS, and record what
+    they say. `names` is {fund name: its ticker}. Runs in the background
+    under the reader who opened the panel (ingest/background_fill.py), never
+    in the request: it is one vendor call a fund, cached six hours by the
+    router. Returns how many were settled."""
+    from alphadesk.ledger import store
+    from alphadesk.providers import get_prices
+    router = get_prices()
+    rows, read = [], []
+    for name, symbol in list(names.items())[:limit]:
+        try:
+            record = router.get("fund_holdings", symbol) or {}
+        except Exception as exc:                       # a vendor that fails costs nothing
+            log.debug("fund record %s: %s", symbol, exc)
+            continue
+        read.append(name)
+        verdict = verdict_from_description(record.get("description"))
+        if verdict:
+            rows.append((name, verdict, 0.0, None))
+    if rows:
+        store.save_fund_verdicts("description", rows)
+    # A name whose record said nothing either way is handed to the name
+    # classifier at once, rather than waiting out its grace.
+    said = {r[0] for r in rows}
+    store.mark_fund_records_read([n for n in read if n not in said])
+    if read:
+        log.info("fund records: %d read, %d settled", len(read), len(rows))
+    return len(rows)
+
+
 def classify_pending(limit: int = 16) -> int:
     """Classify queued fund names. Returns how many verdicts were written.
     Called only from the idle worker."""
@@ -162,7 +239,7 @@ def classify_pending(limit: int = 16) -> int:
     from alphadesk.ledger import store
     if semantic.model() is None:
         return 0
-    names = store.pending_fund_names(limit)
+    names = store.pending_fund_names(limit, grace_s=RECORD_GRACE_S)
     if not names:
         return 0
     cents = centroids()
