@@ -34,6 +34,16 @@ def test_the_funds_built_on_a_company_are_grouped_by_what_they_do():
     assert rows[3]["symbol"] == "NVD" and rows[3]["leverage"] == -2.0
 
 
+def test_two_positions_joined_by_the_word_and_are_a_paired_fund():
+    """ELOL, live on 2026-09-20, read as "other": the test for a paired fund
+    looked only for an ampersand, and this name spells the word."""
+    from alphadesk.ingest.related_funds import fund_kind
+    assert fund_kind("Leverage Shares 100% TSLA AND 100% SPCX Daily ETF") == "paired"
+    assert fund_kind("STKd 100% NVDA & 100% AMD ETF") == "paired"
+    # One position is not a pair, whatever else the name says.
+    assert fund_kind("iShares 100% Treasury Bond ETF") == "other"
+
+
 def test_a_ticker_inside_a_word_is_not_a_match():
     rows = {r["symbol"] for r in single_stock_funds(LISTING, "NVDA", "NVIDIA Corporation")}
     assert "CONVEY" not in rows and "SOXL" not in rows and "NVDA" not in rows

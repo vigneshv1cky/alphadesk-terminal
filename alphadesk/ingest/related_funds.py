@@ -114,7 +114,10 @@ def fund_kind(name: str) -> str:
         return "buffered"
     if re.search(r"income|yield|covered call|option|distribution|premium|weeklypay|weekly pay", low):
         return "income"
-    if re.search(r"100%.*&|&.*100%", name):
+    # Two full positions, joined by an ampersand or the WORD "and"
+    # (2026-09-20): "Leverage Shares 100% TSLA AND 100% SPCX Daily ETF" read
+    # as "other" because only the ampersand was looked for.
+    if re.search(r"100%.*(?:&|\band\b).*100%", low):
         return "paired"
     return "other"
 
