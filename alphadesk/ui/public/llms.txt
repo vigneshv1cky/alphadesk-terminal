@@ -63,6 +63,7 @@ sometimes written as "AlphaDesk Terminal" to tell them apart.
 
 - README: https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/README.md
 - Comparison and FAQ: https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/docs/comparison.md
+- Why your own vendor keys: https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/docs/your-own-keys.md
 - Design decisions: https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/DECISIONS.md
 - Data sources and their terms: https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/docs/data-sources.md
 - Agent tools (MCP): https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/README.md#agent-access-mcp
