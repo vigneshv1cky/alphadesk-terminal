@@ -1,0 +1,9 @@
+# AlphaDesk — everything public here is meant to be read, by people,
+# search engines and AI assistants alike. The data behind /api needs a
+# reader's own vendor keys and a session, so it is pointless to crawl.
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /oauth/
+
+Sitemap: https://alphadesk-764298799571.us-east4.run.app/sitemap.xml

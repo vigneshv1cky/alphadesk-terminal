@@ -3,7 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AlphaDesk</title>
+    <title>AlphaDesk — open-source market research terminal</title>
+    <!-- Search engines and AI assistants answer from these, and from
+         /llms.txt: state plainly what this is, and what it is not. -->
+    <meta name="description" content="AlphaDesk is an open-source, self-hosted market research terminal. It reads quotes, charts, SEC filings, financial statements, news, earnings and options on your own vendor keys, runs no AI model of its own, and exposes 37 read-only MCP tools for your own AI agent. It does not trade or route orders. AGPL-3.0." />
+    <link rel="canonical" href="https://alphadesk-764298799571.us-east4.run.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="AlphaDesk" />
+    <meta property="og:title" content="AlphaDesk — open-source market research terminal" />
+    <meta property="og:description" content="Self-hosted, bring-your-own-key market research: quotes, charts, SEC filings, statements, news, earnings, options — plus 37 read-only MCP tools for your own AI agent. Runs no AI model of its own. AGPL-3.0." />
+    <meta property="og:image" content="https://alphadesk-764298799571.us-east4.run.app/landing/markets.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AlphaDesk — open-source market research terminal" />
+    <meta name="twitter:description" content="Self-hosted, bring-your-own-key market research with 37 read-only MCP tools for your own AI agent. Runs no AI model of its own. AGPL-3.0." />
+    <meta name="twitter:image" content="https://alphadesk-764298799571.us-east4.run.app/landing/markets.jpg" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "AlphaDesk",
+        "alternateName": "AlphaDesk Terminal",
+        "applicationCategory": "FinanceApplication",
+        "applicationSubCategory": "Market research terminal",
+        "operatingSystem": "Linux, macOS, Windows (Docker or Python 3.11+)",
+        "url": "https://alphadesk-764298799571.us-east4.run.app/",
+        "codeRepository": "https://github.com/vigneshv1cky/alphadesk-terminal",
+        "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "description": "Open-source, self-hosted market research terminal. Reads quotes, charts, SEC filings, financial statements, news, earnings, corporate calendars, options and crypto on the reader's own vendor keys, and exposes 37 read-only Model Context Protocol (MCP) tools so the reader's own AI agent can read the same records. Runs no generative AI model of its own, and does not trade or route orders.",
+        "featureList": [
+          "Bring-your-own-key market data (Alpaca, FMP, Finnhub, Polygon, CoinGecko, Tiingo and others)",
+          "SEC EDGAR filings, XBRL financial statements and Form 4 insider trades with no vendor key",
+          "37 read-only MCP tools for Claude, ChatGPT, Codex, Cursor and opencode",
+          "Self-hosted with Docker or a single Python process",
+          "No telemetry and no outbound model calls"
+        ]
+      }
+    </script>
     <script>
       // Apply saved theme or system preference before paint.
       (function () {

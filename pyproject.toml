@@ -5,21 +5,28 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alphadesk"
 version = "0.2.0"
-description = "AlphaDesk — an open-source, pluggable market research terminal."
+description = "Open-source, self-hosted market research terminal: SEC filings, market data on your own vendor keys, and 37 read-only MCP tools for your own AI agent."
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.11"
 authors = [
     { name = "Vignesh Murugan" },
 ]
-keywords = ["stocks", "research", "terminal", "sec-edgar", "llm", "finance", "plugins"]
+keywords = [
+    "market-data", "sec-edgar", "financial-data", "terminal", "research",
+    "mcp", "model-context-protocol", "self-hosted", "finance", "stocks",
+    "options", "earnings", "fastapi", "open-source-finance",
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Environment :: Web Environment",
 ]
 # Keep in sync with requirements.txt — that file carries the per-dependency
 # rationale. There is no LLM SDK dependency of any kind: the v1 multi-agent
@@ -54,6 +61,9 @@ dev = ["pytest", "ruff", "httpx"]      # httpx backs fastapi's TestClient
 [project.urls]
 Homepage = "https://github.com/vigneshv1cky/alphadesk-terminal"
 Repository = "https://github.com/vigneshv1cky/alphadesk-terminal"
+Documentation = "https://github.com/vigneshv1cky/alphadesk-terminal#readme"
+"Comparison and FAQ" = "https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/docs/comparison.md"
+Issues = "https://github.com/vigneshv1cky/alphadesk-terminal/issues"
 
 [tool.setuptools.packages.find]
 include = ["alphadesk*"]

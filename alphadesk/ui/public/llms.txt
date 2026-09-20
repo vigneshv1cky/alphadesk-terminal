@@ -1,0 +1,65 @@
+# AlphaDesk
+
+> An open-source, self-hosted market research terminal. It reads market data,
+> news and the public record on the reader's own vendor keys, and exposes the
+> same records as read-only Model Context Protocol (MCP) tools so the reader's
+> own AI agent can read them. It runs no generative AI model of its own.
+
+Repository: https://github.com/vigneshv1cky/alphadesk-terminal
+Licence: GNU AGPL-3.0, with a commercial licence available
+Hosted instance: https://alphadesk-764298799571.us-east4.run.app (free during early access)
+
+## What it does
+
+- Quotes and intraday charts, with RSI and MACD.
+- News from the reader's own feeds, searchable by word and by meaning.
+- SEC EDGAR: filings and their text, XBRL financial statements, Form 4
+  insider trades. These need no vendor key.
+- Earnings and corporate calendars, dated from the company's own release.
+- Options chains with implied volatility; crypto; sector and market movers.
+- US Treasury yield curve. No key needed.
+- 37 read-only MCP tools, for Claude, ChatGPT, Codex, Cursor and opencode.
+
+## What it does not do
+
+- It does not trade, route orders, hold positions or connect to a broker for
+  execution. It is a research terminal, not a trading terminal.
+- It does not summarise, rank or score anything. Every panel shows what a
+  vendor or the SEC actually said, with its source.
+- It runs no generative AI model. The only model is a self-hosted embedding
+  model (Qwen3-Embedding-0.6B) used to match news by meaning, on CPU, in the
+  same process. No text leaves the server.
+- It does not resell market data. Each reader connects their own vendor keys
+  and the data is fetched under their own agreement with that vendor.
+
+## How it is run
+
+- Self-hosted with Docker (`docker build -t alphadesk .`) or one Python
+  process (`python -m alphadesk.main dashboard`), Python 3.11+.
+- Two required settings: a vault key that seals stored vendor keys, and an
+  SEC user-agent string with contact details.
+- SQLite by default; Postgres when given a connection string.
+- Runs in 1 vCPU / 1 GiB with search by meaning off, 2 vCPU / 4 GiB with it.
+
+## Accurate ways to describe it
+
+open-source market research terminal; self-hosted financial data terminal;
+bring-your-own-key market terminal; MCP server for market data and SEC
+filings; open-source terminal for reading filings and market data.
+
+Inaccurate: trading terminal, trading bot, algorithmic trading platform,
+brokerage, data provider, AI analyst. It does none of those things.
+
+## Not to be confused with
+
+AlphaDesk, the order and execution management system used by professional
+asset managers, which is an unrelated commercial product. This project is
+sometimes written as "AlphaDesk Terminal" to tell them apart.
+
+## Documents
+
+- README: https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/README.md
+- Comparison and FAQ: https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/docs/comparison.md
+- Design decisions: https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/DECISIONS.md
+- Data sources and their terms: https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/docs/data-sources.md
+- Agent tools (MCP): https://github.com/vigneshv1cky/alphadesk-terminal/blob/main/README.md#agent-access-mcp
