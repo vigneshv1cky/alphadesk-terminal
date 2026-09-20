@@ -35,10 +35,14 @@ class NeedsKey(ProviderError):
     free or paid — instead of an error string. The web layer maps it to
     HTTP 428 with `{"detail": {"needs_key": prompt}}`."""
 
-    def __init__(self, surface: str, refused: list[str] | None = None, signed_in: bool = True) -> None:
+    def __init__(self, surface: str, refused: list[str] | None = None, signed_in: bool = True,
+                 connected: list[str] | None = None) -> None:
         self.surface = surface
         self.refused = list(refused or [])
         self.signed_in = signed_in
+        # The reader's OWN vendors, so the prompt can leave out a key they
+        # already hold (2026-09-20). None when the raiser does not know.
+        self.connected = list(connected) if connected is not None else None
         try:
             from alphadesk.providers.catalogue import SURFACES
             label = SURFACES[surface].label if surface in SURFACES else surface
@@ -48,7 +52,8 @@ class NeedsKey(ProviderError):
 
     def prompt(self) -> dict:
         from alphadesk.providers.catalogue import prompt
-        return prompt(self.surface, refused=self.refused, signed_in=self.signed_in)
+        return prompt(self.surface, refused=self.refused, signed_in=self.signed_in,
+                      connected=self.connected)
 
 
 class EntitlementError(ProviderError):

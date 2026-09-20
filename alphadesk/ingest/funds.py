@@ -10,6 +10,11 @@ holdings list on Ultimate; Alpha Vantage's ETF profile carries the list on
 the reader's own key. The first answer keeps its profile and descriptions,
 the list comes from the second, and `holdings_vendor` names it so the panel
 can say where each part came from.
+
+When no vendor has the fund at all, the prompt that replaces the panel is
+marked with which vendors the reader already connected, so it names only
+what they are missing — and says nothing was found where they are missing
+nothing (2026-09-20).
 """
 
 from __future__ import annotations
@@ -34,4 +39,12 @@ def fund_profile(symbol: str) -> dict:
                 if not out.get(k) and other.get(k):
                     out[k] = other[k]
             break
+    if not out.get("holdings") and out.get("holdings_needs_key"):
+        # Every other vendor has now been asked and none had this fund, so
+        # the prompt must not offer a key the reader already holds
+        # (2026-09-20): ELOL's panel offered a free Alpha Vantage key to a
+        # reader whose Alpha Vantage key was connected and simply has no
+        # record of that fund.
+        from alphadesk.providers.catalogue import mark_connected
+        out["holdings_needs_key"] = mark_connected(out["holdings_needs_key"], list(router.vendors))
     return out

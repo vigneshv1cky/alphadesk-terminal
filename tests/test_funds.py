@@ -86,5 +86,52 @@ def test_without_a_second_source_the_refusal_still_shows(vendors, monkeypatch):
         "symbol": s, "holdings": [], "sectors": [], "vendor": "fmp", "holdings_needs_key": {"surface": "fund_holdings"}})
     vendors(fmp=fmp)
     out = funds.fund_profile("QQQ")
-    assert out["holdings"] == [] and out["holdings_needs_key"] == {"surface": "fund_holdings"}
+    assert out["holdings"] == [] and out["holdings_needs_key"]["surface"] == "fund_holdings"
     assert "holdings_vendor" not in out
+
+
+# ── a prompt must not offer a key the reader is holding (2026-09-20) ────────
+
+def test_the_holdings_prompt_names_only_what_the_reader_is_missing(vendors, monkeypatch):
+    """ELOL: FMP's plan refuses the list, Alpha Vantage is CONNECTED and
+    simply has no record of a Leverage Shares fund — and the panel offered a
+    free Alpha Vantage key to a reader already holding one."""
+    fmp = FmpPrices(api_key="k")
+    monkeypatch.setattr(fmp, "fund_holdings", lambda s: {
+        "symbol": s, "holdings": [], "sectors": [], "vendor": "fmp",
+        "holdings_needs_key": {"surface": "fund_holdings", "label": "Fund holdings", "refused": ["Financial Modeling Prep"],
+                               "signed_in": True,
+                               "vendors": [{"name": "fmp", "label": "Financial Modeling Prep", "tier": "paid",
+                                            "signup": "", "needs_secret": False},
+                                           {"name": "alphavantage", "label": "Alpha Vantage", "tier": "free",
+                                            "signup": "", "needs_secret": False}]}})
+    vendors(fmp=fmp, alphavantage=_av({}))          # connected, but no record of this fund
+    out = funds.fund_profile("ELOL")
+    said = out["holdings_needs_key"]
+    assert [v["have"] for v in said["vendors"]] == [True, True]
+    assert said["connected"] == ["Financial Modeling Prep", "Alpha Vantage"]
+
+
+def test_a_vendor_the_reader_has_not_connected_is_still_offered(vendors, monkeypatch):
+    fmp = FmpPrices(api_key="k")
+    monkeypatch.setattr(fmp, "fund_holdings", lambda s: {
+        "symbol": s, "holdings": [], "sectors": [], "vendor": "fmp",
+        "holdings_needs_key": {"surface": "fund_holdings", "label": "Fund holdings", "refused": [], "signed_in": True,
+                               "vendors": [{"name": "alphavantage", "label": "Alpha Vantage", "tier": "free",
+                                            "signup": "", "needs_secret": False}]}})
+    vendors(fmp=fmp)
+    said = funds.fund_profile("ELOL")["holdings_needs_key"]
+    assert said["vendors"][0]["have"] is False and said["connected"] == []
+
+
+def test_a_key_prompt_from_the_router_knows_the_readers_vendors(vendors, monkeypatch):
+    """Every 428, not only the funds panel: the surface's vendors are marked
+    against what the reader actually connected."""
+    fmp = FmpPrices(api_key="k")
+    monkeypatch.setattr(fmp, "fund_holdings", lambda s: None)
+    vendors(fmp=fmp)
+    with pytest.raises(NeedsKey) as exc:
+        funds.fund_profile("ELOL")
+    said = exc.value.prompt()
+    assert said["connected"] == ["Financial Modeling Prep"]
+    assert [v["label"] for v in said["vendors"] if not v["have"]] == ["Finnhub", "Alpha Vantage"]

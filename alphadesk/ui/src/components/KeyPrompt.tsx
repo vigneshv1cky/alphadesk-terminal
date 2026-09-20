@@ -9,8 +9,13 @@ import { Empty } from "@/components/terminal"
  * own vendors refused the call on plan, that is said first — the key works,
  * the plan does not cover this. */
 export function KeyPrompt({ prompt, compact = false }: { prompt: KeyPromptBody; compact?: boolean }) {
-  const free = prompt.vendors.filter(v => v.tier === "free")
-  const paid = prompt.vendors.filter(v => v.tier === "paid")
+  // Only what the reader does NOT already hold can be offered to them
+  // (2026-09-20): this panel told a reader to get a free Alpha Vantage key
+  // while their Alpha Vantage key was connected and had simply answered
+  // nothing for that fund.
+  const missing = prompt.vendors.filter(v => !v.have)
+  const free = missing.filter(v => v.tier === "free")
+  const paid = missing.filter(v => v.tier === "paid")
   const list = (vs: KeyPromptBody["vendors"]) => vs.map((v, i) => (
     <span key={v.name}>
       {i > 0 && (i === vs.length - 1 ? " or " : ", ")}
@@ -31,6 +36,19 @@ export function KeyPrompt({ prompt, compact = false }: { prompt: KeyPromptBody; 
         {prompt.label} is not part of your {prompt.refused.join(" or ")} plan
         {prompt.vendors.length === 1 ? <>, and no other vendor here carries it</> : null}. It is on{" "}
         {list(prompt.vendors)}&apos;s paid plans.
+      </div>
+    )
+  }
+  // Nothing left to offer: every vendor that carries this is already
+  // connected and was asked. Say what happened instead of selling a key.
+  if (prompt.vendors.length > 0 && !missing.length) {
+    const others = (prompt.connected ?? []).filter(c => !prompt.refused.includes(c))
+    return (
+      <div className={`px-3 ${compact ? "py-2.5" : "py-4"} text-body leading-[1.55] text-muted-foreground`}>
+        {prompt.refused.length
+          ? <>{prompt.label} is not part of your {prompt.refused.join(" or ")} plan
+              {others.length ? <>, and {others.join(" and ")} {others.length > 1 ? "have" : "has"} no record of it for this symbol</> : null}.</>
+          : <>None of your connected vendors has {prompt.label.toLowerCase()} for this symbol.</>}
       </div>
     )
   }

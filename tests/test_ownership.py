@@ -27,5 +27,8 @@ def test_no_vendor_is_a_key_prompt(vendors):
     vendors()
     with pytest.raises(NeedsKey) as exc:
         ownership.institutional_holdings("AAPL")
+    # `have` is False for a reader with nothing connected, so the panel
+    # offers it (2026-09-20).
     assert exc.value.prompt()["vendors"] == [{"name": "finnhub", "label": "Finnhub", "tier": "paid",
-                                              "signup": "https://finnhub.io/register", "needs_secret": False}]
+                                              "signup": "https://finnhub.io/register", "needs_secret": False,
+                                              "have": False}]

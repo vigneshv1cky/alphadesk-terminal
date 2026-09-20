@@ -330,7 +330,7 @@ class DataRouter:
             self.answered_by = name
             _stamp_used(self.uid, name)
             return value
-        raise NeedsKey(surf, refused, signed_in=self.uid is not None)
+        raise NeedsKey(surf, refused, signed_in=self.uid is not None, connected=list(self.vendors))
 
     def ask_others(self, method: str, *args: Any, skip: str | None = None,
                    surface: str | None = None, **kwargs: Any):
