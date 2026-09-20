@@ -34,8 +34,11 @@ Hosted instance: https://alphadesk-764298799571.us-east4.run.app (free during ea
 
 ## How it is run
 
-- Self-hosted with Docker (`docker build -t alphadesk .`) or one Python
-  process (`python -m alphadesk.main dashboard`), Python 3.11+.
+- Installed from PyPI: `pip install alphadesk`, then
+  `python -m alphadesk.main dashboard`. The built interface ships with the
+  package. https://pypi.org/project/alphadesk/
+- Or self-hosted with Docker (`docker build -t alphadesk .`) or from a
+  clone, Python 3.11+.
 - Two required settings: a vault key that seals stored vendor keys, and an
   SEC user-agent string with contact details.
 - SQLite by default; Postgres when given a connection string.
