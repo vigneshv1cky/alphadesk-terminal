@@ -68,6 +68,17 @@ Issues = "https://github.com/vigneshv1cky/alphadesk-terminal/issues"
 [tool.setuptools.packages.find]
 include = ["alphadesk*"]
 
+# The built frontend ships INSIDE the package: one process serves the API and
+# the SPA, so a wheel without app/static installs a server with no interface
+# (2026-09-20, caught before the first PyPI release). The deploy template and
+# the agent-tool examples travel with it for the same reason — the README
+# tells a new installer to copy them.
+[tool.setuptools.package-data]
+alphadesk = [
+    "app/static/**/*",
+    "deploy/env.example",
+]
+
 [tool.ruff.lint]
 # The rules are named, not left to the linter's defaults: ruff 0.16 widened
 # its default set (115 blind-exception findings alone on this code), so an
