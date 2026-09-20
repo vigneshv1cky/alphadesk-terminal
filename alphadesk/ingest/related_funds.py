@@ -205,15 +205,28 @@ def related_funds(symbol: str) -> dict:
     # look-alikes queued for the idle worker. A ticker match needs no model:
     # it is recorded as a known single-stock name, and those are exactly what
     # the classifier learns from (fundclass.py).
+    from alphadesk import fundclass
     from alphadesk.ledger import store
     candidates = candidate_rows(names, sym, quote.get("name"))
     known = store.fund_verdicts([str(c["name"]) for c in candidates]) if candidates else {}
+    # A fund read against its own documents outranks both tests below it.
+    known.update({str(c["name"]): fundclass.VERIFIED[str(c["name"])]
+                  for c in candidates if str(c["name"]) in fundclass.VERIFIED})
     rows = single_stock_funds(names, sym, quote.get("name"), verdicts=known)
     try:
         store.queue_fund_names([str(c["name"]) for c in candidates if c["matched"] == "ticker"],
                                verdict="single", model="ticker")
-        store.queue_fund_names([str(c["name"]) for c in candidates
-                                if c["matched"] == "name" and c["name"] not in known])
+        unjudged = {str(c["name"]): str(c["symbol"]) for c in candidates
+                    if c["matched"] == "name" and c["name"] not in known}
+        store.queue_fund_names(list(unjudged))
+        # Ask the vendors what each one IS, in the background under this
+        # reader: a name states the structure, not the subject (fundclass).
+        if unjudged and getattr(router, "uid", None):
+            from alphadesk.ingest import background_fill
+            background_fill.submit(
+                "fundrecord", router.uid, list(unjudged.values()),
+                lambda syms: fundclass.read_records(
+                    {n: s for n, s in unjudged.items() if s.upper() in {x.upper() for x in syms}}))
     except Exception as exc:                          # a queue that fails never costs a panel
         log.debug("related funds: could not queue names (%s)", exc)
     priced = {}
