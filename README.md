@@ -484,6 +484,8 @@ cd alphadesk/ui && pnpm install && pnpm dev
 - **Dashboard tiles**: register a widget in `ui/src/widgets/`, or serve tiles
   from an external JSON backend (`ALPHADESK_WIDGET_BACKENDS`) —
   **[docs/widgets.md](docs/widgets.md)**.
+- Is this the right tool for you, and how it compares:
+  **[docs/comparison.md](docs/comparison.md)**.
 - Conventions and checks: **[CONTRIBUTING.md](CONTRIBUTING.md)**; the rules
   and what was tried and undone: **[DECISIONS.md](DECISIONS.md)**; reporting
   a vulnerability: **[SECURITY.md](SECURITY.md)**.
