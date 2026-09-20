@@ -39,8 +39,19 @@ const SHOTS = [
 
 const STEPS = [
   { title: "Sign in", text: "Your account is created on the spot, and only your email address is asked for." },
-  { title: "Connect your data", text: "Add the market-data and news providers you use. Keys are encrypted and serve only you. SEC filings and Treasury yields need no key." },
+  { title: "Connect your data", text: "SEC filings, financial statements and Treasury yields need no key at all. Add the providers you already pay for and the rest of the board fills in, on your own plan." },
   { title: "Read, or ask your agent", text: "Work the board yourself, or connect Claude, ChatGPT, Codex, Cursor or opencode to read the same records, as you." },
+]
+
+const KEYS = [
+  { title: "Nothing is resold to you",
+    text: "Every request runs on your own account with that vendor, at their price. We add no markup, because we never touch the bill." },
+  { title: "You get what you pay for",
+    text: "Your plan decides what you see. Pay for the consolidated tape and you read the consolidated tape — not a shared feed throttled across strangers." },
+  { title: "Start without paying anyone",
+    text: "SEC filings, XBRL financial statements, insider trades and the Treasury yield curve need no key at all. That is a working terminal before you spend a rupee." },
+  { title: "Swap vendors, keep the board",
+    text: "Connect several and each panel asks yours in turn. Drop one and everything it fetched is deleted; nothing of yours is cached for anyone else." },
 ]
 
 const PROMISES = [
@@ -224,6 +235,26 @@ export function LandingPage({ providers, signedIn = false, onPasswordSignIn }: {
           ))}
         </div>
         <p className="mt-6 text-caption text-muted-foreground">Figures in these screenshots are blurred.</p>
+      </section>
+
+      {/* ── bring your own keys ──────────────────────────────────────── */}
+      <section className="px-5 pt-20 sm:px-10 sm:pt-24 lg:px-24">
+        <div className="text-label font-bold uppercase tracking-caps text-muted-foreground">Your keys</div>
+        <h2 className="mt-2.5 text-[clamp(30px,3vw,40px)] font-black tracking-[-0.03em]">The data stays yours.</h2>
+        <p className="mt-4 max-w-[62ch] text-[17px] leading-[1.6] text-muted-foreground">
+          A terminal usually rents you its data at its price. AlphaDesk connects the
+          providers you already pay for — Alpaca, Financial Modeling Prep, Finnhub,
+          Polygon, Alpha Vantage, CoinGecko, Tiingo and others — and reads them as you.
+          Your keys are sealed with AES-256-GCM and serve only your screen.
+        </p>
+        <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+          {KEYS.map(k => (
+            <div key={k.title} className="rounded-lg border border-card-border bg-card p-7 shadow-card">
+              <h3 className="text-[20px] font-extrabold">{k.title}</h3>
+              <p className="mt-2 text-[15px] leading-[1.55] text-muted-foreground">{k.text}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       {/* ── promises ─────────────────────────────────────────────────── */}

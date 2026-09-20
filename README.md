@@ -501,7 +501,8 @@ cd alphadesk/ui && pnpm install && pnpm dev
   from an external JSON backend (`ALPHADESK_WIDGET_BACKENDS`) —
   **[docs/widgets.md](docs/widgets.md)**.
 - Is this the right tool for you, and how it compares:
-  **[docs/comparison.md](docs/comparison.md)**.
+  **[docs/comparison.md](docs/comparison.md)**. Why the data runs on your own
+  keys: **[docs/your-own-keys.md](docs/your-own-keys.md)**.
 - Conventions and checks: **[CONTRIBUTING.md](CONTRIBUTING.md)**; the rules
   and what was tried and undone: **[DECISIONS.md](DECISIONS.md)**; reporting
   a vulnerability: **[SECURITY.md](SECURITY.md)**.
