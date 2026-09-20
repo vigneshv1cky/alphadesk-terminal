@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.vigneshv1cky/alphadesk-terminal -->
+
 # AlphaDesk — dense, fast market-research terminal & MCP integration platform
 
 [![PyPI](https://img.shields.io/pypi/v/alphadesk.svg)](https://pypi.org/project/alphadesk/)

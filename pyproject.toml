@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "alphadesk"
-version = "0.2.0"
+version = "0.2.1"
 description = "Open-source, self-hosted market research terminal: SEC filings, market data on your own vendor keys, and 37 read-only MCP tools for your own AI agent."
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -57,6 +57,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "httpx"]      # httpx backs fastapi's TestClient
+
+[project.scripts]
+# `alphadesk` is the command line (dashboard, keys, earnings, mcp …);
+# `alphadesk-mcp` starts the agent server on stdio, which is what an MCP
+# client wants to launch.
+alphadesk = "alphadesk.main:main"
+alphadesk-mcp = "alphadesk.mcp_server:stdio_main"
 
 [project.urls]
 Homepage = "https://github.com/vigneshv1cky/alphadesk-terminal"
