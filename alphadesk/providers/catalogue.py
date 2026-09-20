@@ -184,17 +184,35 @@ def _vendor(name: str) -> Vendor | None:
     return VENDORS.get(name) or PROMPT_VENDORS.get(name)
 
 
-def prompt(surface_id: str, *, refused: list[str] | None = None, signed_in: bool = True) -> dict:
+def mark_connected(body: dict, connected: list[str] | None) -> dict:
+    """Say which of a prompt's vendors the reader ALREADY HAS (2026-09-20):
+    each vendor gains `have`, and `connected` lists the ones that were
+    therefore asked. A panel must never tell a reader to go and get a key
+    they are holding — ELOL's holdings panel offered a free Alpha Vantage
+    key to a reader whose Alpha Vantage key was connected and had simply
+    answered nothing for that fund. Pure; a new body."""
+    if not body or connected is None:
+        return body
+    have = set(connected) | {n.split(":")[-1] for n in connected}
+    vendors = [{**v, "have": v.get("name") in have} for v in body.get("vendors") or []]
+    return {**body, "vendors": vendors, "connected": [v["label"] for v in vendors if v["have"]]}
+
+
+def prompt(surface_id: str, *, refused: list[str] | None = None, signed_in: bool = True,
+           connected: list[str] | None = None) -> dict:
     """The body a panel renders when no connected vendor answered: what the
     surface is, which vendors would, each with its tier and signup link, and
-    which of the user's own vendors refused it on plan. JSON-safe."""
+    which of the user's own vendors refused it on plan. With `connected` —
+    the reader's own vendor names — each one is marked so the panel can
+    leave it out of "connect a key". JSON-safe."""
     s = SURFACES.get(surface_id)
     if s is None:
-        return {"surface": surface_id, "label": surface_id, "vendors": [], "refused": refused or [], "signed_in": signed_in}
-    return {
+        return mark_connected({"surface": surface_id, "label": surface_id, "vendors": [],
+                               "refused": refused or [], "signed_in": signed_in}, connected)
+    return mark_connected({
         "surface": s.id, "label": s.label, "signed_in": signed_in,
         "refused": [VENDORS[r].label if r in VENDORS else r for r in (refused or [])],
         "vendors": [{"name": n.split(":")[-1], "label": _vendor(n).label, "tier": tier, "signup": _vendor(n).signup,
                      "needs_secret": _vendor(n).needs_secret}
                     for n, tier in s.vendors if _vendor(n) is not None],
-    }
+    }, connected)

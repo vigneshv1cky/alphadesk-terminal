@@ -560,7 +560,10 @@ export interface KeyPromptBody {
   label: string
   signed_in: boolean
   refused: string[]
-  vendors: { name: string; label: string; tier: "free" | "paid"; signup: string; needs_secret: boolean }[]
+  /** Labels of the reader's OWN vendors that carry this surface — they were
+   * asked, so the panel must not offer them as something to connect. */
+  connected?: string[]
+  vendors: { name: string; label: string; tier: "free" | "paid"; signup: string; needs_secret: boolean; have?: boolean }[]
 }
 
 export interface DataVendors {
