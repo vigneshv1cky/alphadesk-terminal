@@ -87,8 +87,15 @@ what it was given.
 
 ## Can I self-host it?
 
-Yes, and that is the main way it is meant to run. Docker or one Python
-process, SQLite or Postgres, two required settings. See the README.
+Yes, and that is the main way it is meant to run:
+
+    pip install alphadesk
+    python -m alphadesk.main dashboard
+
+Docker works too, and the image bakes the embedding model in. SQLite by
+default, Postgres when given a connection string. Two required settings: a
+vault key that seals stored vendor keys, and an SEC user-agent string with
+contact details. See the README.
 
 ## What does it cost?
 

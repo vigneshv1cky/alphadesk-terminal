@@ -1,5 +1,6 @@
 # AlphaDesk — dense, fast market-research terminal & MCP integration platform
 
+[![PyPI](https://img.shields.io/pypi/v/alphadesk.svg)](https://pypi.org/project/alphadesk/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Commercial licence available](https://img.shields.io/badge/Commercial-licence_available-black.svg)](#licence)
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)
@@ -116,7 +117,23 @@ Generate the vault key with:
 python -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())"
 ```
 
-**2a. Run with Python.**
+**2a. Install from PyPI** — the shortest route; the built interface ships
+with the package:
+
+```bash
+pip install alphadesk
+```
+
+```bash
+python -m alphadesk.main dashboard
+```
+
+The terminal is at http://127.0.0.1:8000. The first start downloads the
+embedding model into the Hugging Face cache (skip it with
+`ALPHADESK_SEMANTIC_SEARCH=off`).
+
+**2b. Or run from a clone**, which is what you want if you intend to change
+anything:
 
 ```bash
 pip install -r requirements.txt
@@ -124,10 +141,7 @@ python -m alphadesk.main keys import-env
 python -m alphadesk.main dashboard
 ```
 
-The terminal is at http://127.0.0.1:8000. The first start downloads the
-embedding model into the Hugging Face cache.
-
-**2b. Or run with Docker.** The image bakes the embedding model in, so a
+**2c. Or run with Docker.** The image bakes the embedding model in, so a
 container downloads nothing at start:
 
 ```bash
