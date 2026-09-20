@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.vigneshv1cky/alphadesk-terminal",
-  "description": "Read-only market research for your agent: quotes and charts, SEC filings and XBRL financial statements, insider trades, news, earnings and corporate calendars, options chains and crypto — fetched on your own vendor keys.",
+  "description": "Read-only market data, SEC filings and financial statements, on your own vendor keys.",
   "repository": {
     "url": "https://github.com/vigneshv1cky/alphadesk-terminal",
     "source": "github"
@@ -13,7 +13,9 @@
       "registryType": "pypi",
       "identifier": "alphadesk",
       "version": "0.2.1",
-      "transport": { "type": "stdio" }
+      "transport": {
+        "type": "stdio"
+      }
     }
   ]
 }
