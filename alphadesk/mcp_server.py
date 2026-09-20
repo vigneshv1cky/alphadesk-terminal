@@ -1054,6 +1054,20 @@ def transcript_text(symbol: str, id: str, page: int = 1) -> dict:
             "text": text[start:start + _FILING_PAGE_CHARS]}
 
 
+def stdio_main() -> None:
+    """Console-script entry point (`alphadesk-mcp`), for MCP clients that
+    start a server by command. stdio carries the protocol on stdout, so
+    logging is pushed to stderr first — anything printed to stdout corrupts
+    the stream.
+    """
+    import logging
+    import sys
+
+    logging.getLogger().handlers.clear()
+    logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
+    serve(http=False)
+
+
 def serve(http: bool = False) -> None:
     """Start the MCP server. stdio by default; streamable HTTP with `http`.
 
