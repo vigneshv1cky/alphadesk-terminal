@@ -237,6 +237,13 @@ def _worker() -> None:
         except Exception as exc:
             log.warning("semantic worker: %s", exc)
             n = 0
+        try:
+            # The same idle budget classifies fund names (fundclass.py):
+            # stories first, because a reader is waiting on search.
+            from alphadesk import fundclass
+            n += fundclass.classify_pending(8) if not n else 0
+        except Exception as exc:
+            log.warning("fund classifier: %s", exc)
         time.sleep(0.5 if n else WORKER_IDLE_S)
 
 

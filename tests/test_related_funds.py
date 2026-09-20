@@ -129,3 +129,74 @@ def test_a_basket_that_fails_still_lists_the_funds(monkeypatch):
     monkeypatch.setattr("alphadesk.providers.get_prices", lambda: _Router(quotes_raise=True))
     rows = rf.related_funds("NVDA")["funds"]
     assert rows and all(r["volume"] is None and r["price"] is None for r in rows)
+
+
+# ── a company named after its industry (SPCX, 2026-09-20) ───────────────────
+
+SPACE_LISTING = {
+    "SPCH": "Leverage Shares 2X Long SPCX Daily ETF",
+    "SPCQ": "Tidal Trust II - Defiance Daily Target 2X Short SPCX ETF",
+    "YSPC": "YIELDMAX SPCX OPTION INCOME STRATEGY ETF",
+    "ELOL": "Leverage Shares 100% TSLA AND 100% SPCX Daily ETF",
+    "SPCL": "Defiance Pure Space Daily 2X Strategy ETF",
+    "ARKX": "ARK Space & Defense Innovation ETF",
+    "UFO": "Procure Space ETF",
+    "WARP": "VanEck Space ETF",
+    "SPCI": "Tuttle Capital Space Industry Income Blast ETF",
+    "SPCX": "Space Exploration Technologies Corp. Class A Common Stock",
+}
+SPACE_COMPANY = "Space Exploration Technologies Corp. Class A Common Stock"
+
+
+def test_sector_funds_sharing_the_company_word_are_left_out():
+    """The company's distinctive word is "space", which every space-sector
+    ETF also uses: twelve of them joined SPCX's panel (2026-09-20). A
+    name-only match now has to declare what it does to a single stock."""
+    from alphadesk.ingest.related_funds import company_word
+    assert company_word(SPACE_COMPANY) == "space"
+    rows = {r["symbol"] for r in single_stock_funds(SPACE_LISTING, "SPCX", SPACE_COMPANY)}
+    assert {"SPCH", "SPCQ", "YSPC", "ELOL"} <= rows          # the ticker is proof
+    assert not {"ARKX", "UFO", "WARP"} & rows                # plain sector baskets
+    assert "SPCL" in rows                                     # declares "2X", so it stays
+
+
+def test_the_classifier_settles_what_the_name_cannot():
+    """A verdict from fundclass.py overrules the fallback either way: it
+    keeps a sector-worded single-stock fund and drops an income-worded
+    basket."""
+    verdicts = {SPACE_LISTING["SPCI"]: "sector", SPACE_LISTING["ARKX"]: "single"}
+    rows = {r["symbol"] for r in single_stock_funds(SPACE_LISTING, "SPCX", SPACE_COMPANY, verdicts=verdicts)}
+    assert "SPCI" not in rows and "ARKX" in rows
+    # NVIDIA is untouched: its word is its own, so nothing needs a verdict.
+    assert len(single_stock_funds(LISTING, "NVDA", "NVIDIA Corporation")) == 9
+
+
+def test_what_belongs_in_the_panel():
+    from alphadesk.ingest.related_funds import keep_fund
+    assert keep_fund("ticker", "other", None)                 # the ticker is proof
+    assert not keep_fund("name", "other", None)               # a bare sector basket
+    assert keep_fund("name", "leveraged", None)               # declares a single-stock bet
+    assert keep_fund("name", "other", "single")               # the classifier says so
+    assert not keep_fund("name", "leveraged", "sector")       # …and can overrule the name
+    assert keep_fund("name", "income", "unclear")             # undecided falls back
+
+
+def test_the_classifier_keeps_quiet_when_it_cannot_tell():
+    from alphadesk import fundclass
+    assert fundclass.verdict_for(0.05) == "single"
+    assert fundclass.verdict_for(-0.05) == "sector"
+    assert fundclass.verdict_for(0.001) is None
+    assert fundclass.verdict_for(-0.001) is None
+
+
+def test_verdicts_are_stored_once_per_fund_name(store):
+    store.queue_fund_names(["Leverage Shares 2X Long SPCX Daily ETF"], verdict="single", model="ticker")
+    store.queue_fund_names(["ARK Space & Defense Innovation ETF", "Procure Space ETF"])
+    assert store.fund_verdicts(["Leverage Shares 2X Long SPCX Daily ETF"]) == {
+        "Leverage Shares 2X Long SPCX Daily ETF": "single"}
+    pending = store.pending_fund_names(10)
+    assert set(pending) == {"ARK Space & Defense Innovation ETF", "Procure Space ETF"}
+    store.save_fund_verdicts("test-model", [("Procure Space ETF", "sector", -0.04)])
+    assert store.fund_verdicts(["Procure Space ETF"]) == {"Procure Space ETF": "sector"}
+    assert store.pending_fund_names(10) == ["ARK Space & Defense Innovation ETF"]
+    assert store.fund_names_by_verdict("single") == ["Leverage Shares 2X Long SPCX Daily ETF"]

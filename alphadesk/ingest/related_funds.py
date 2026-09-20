@@ -12,6 +12,15 @@ are an Ultimate dataset. So this answers "what is built on this company",
 never "who owns it", and the panel says as much rather than implying a
 complete picture.
 
+A COMPANY NAMED AFTER ITS INDUSTRY BREAKS THE WORD MATCH (2026-09-20). The
+distinctive word is the company's own coinage for NVIDIA or Tesla, but Space
+Exploration Technologies gives "space", and twelve space-sector ETFs joined
+SPCX's panel beside its real 2x longs and shorts. So a name-only match is
+kept only when the fund declares what it does to a single stock, or when the
+classifier (fundclass.py, on the idle worker) says the name reads as a
+single-stock product. Sector look-alikes are dropped, not shown in a second
+group — the panel answers one question.
+
 THE MATCH IS ON THE NAME, and a fund name is the issuer's own words, so the
 rules are conservative:
 
@@ -121,17 +130,32 @@ def is_us_listing(symbol: str) -> bool:
     return bool(re.fullmatch(r"[A-Z]{1,5}", symbol or ""))
 
 
-def single_stock_funds(names: dict[str, str], symbol: str, company: str | None,
-                       limit: int = MAX_FUNDS) -> list[dict]:
-    """Every US-listed fund whose name carries this company, grouped by what
-    it does. Pure: `names` is the vendor's whole fund listing, symbol to
-    name."""
+def keep_fund(matched: str, kind: str, verdict: str | None) -> bool:
+    """Whether a matched fund belongs in "funds built on this company". Pure.
+
+    A TICKER in the name is proof — no other company's fund carries it. A
+    name-only match needs either the classifier's verdict or, until one
+    exists, a name that declares what it does to a single stock: leveraged,
+    inverse, income, buffered, paired. A plain "other" name-only match is a
+    sector fund that happens to share a word (ARK Space & Defense)."""
+    if matched == "ticker":
+        return True
+    if verdict == "single":
+        return True
+    if verdict == "sector":
+        return False
+    return kind != "other"
+
+
+def candidate_rows(names: dict[str, str], symbol: str, company: str | None) -> list[dict]:
+    """Every US-listed fund whose NAME carries this company, before any
+    judgement about what the fund is. Pure."""
     sym = (symbol or "").upper()
     if not sym:
         return []
     word = company_word(company)
     ticker = re.compile(rf"(?<![A-Za-z0-9]){re.escape(sym)}(?![A-Za-z0-9])")
-    out = []
+    rows = []
     for fund, name in names.items():
         if fund == sym or not name or not is_us_listing(fund):
             continue
@@ -139,9 +163,19 @@ def single_stock_funds(names: dict[str, str], symbol: str, company: str | None,
         by_word = bool(word and re.search(rf"(?<![A-Za-z]){re.escape(word)}(?![A-Za-z])", name, re.I))
         if not (by_ticker or by_word):
             continue
-        kind = fund_kind(name)
-        out.append({"symbol": fund, "name": name, "kind": kind, "leverage": _leverage(name),
-                    "matched": "ticker" if by_ticker else "name"})
+        rows.append({"symbol": fund, "name": name, "kind": fund_kind(name),
+                     "leverage": _leverage(name), "matched": "ticker" if by_ticker else "name"})
+    return rows
+
+
+def single_stock_funds(names: dict[str, str], symbol: str, company: str | None,
+                       limit: int = MAX_FUNDS, verdicts: dict[str, str] | None = None) -> list[dict]:
+    """Every US-listed fund BUILT ON this company, grouped by what it does.
+    Pure: `names` is the vendor's whole fund listing, symbol to name, and
+    `verdicts` what the classifier has decided about a name so far."""
+    said = verdicts or {}
+    out = [r for r in candidate_rows(names, symbol, company)
+           if keep_fund(str(r["matched"]), str(r["kind"]), said.get(str(r["name"])))]
     # Grouped by what the fund does, and inside a group by the size of the
     # bet: 3x before 2x, -3x before -1x. Alphabetical where neither states
     # a multiple, so the list does not reshuffle between reads.
@@ -164,7 +198,21 @@ def related_funds(symbol: str) -> dict:
     if sym in names:
         return {"symbol": sym, "company": names.get(sym) or quote.get("name"),
                 "funds": [], "is_fund": True, "source": source}
-    rows = single_stock_funds(names, sym, quote.get("name"))
+    # What the classifier already knows, then the rest of this company's
+    # look-alikes queued for the idle worker. A ticker match needs no model:
+    # it is recorded as a known single-stock name, and those are exactly what
+    # the classifier learns from (fundclass.py).
+    from alphadesk.ledger import store
+    candidates = candidate_rows(names, sym, quote.get("name"))
+    known = store.fund_verdicts([str(c["name"]) for c in candidates]) if candidates else {}
+    rows = single_stock_funds(names, sym, quote.get("name"), verdicts=known)
+    try:
+        store.queue_fund_names([str(c["name"]) for c in candidates if c["matched"] == "ticker"],
+                               verdict="single", model="ticker")
+        store.queue_fund_names([str(c["name"]) for c in candidates
+                                if c["matched"] == "name" and c["name"] not in known])
+    except Exception as exc:                          # a queue that fails never costs a panel
+        log.debug("related funds: could not queue names (%s)", exc)
     priced = {}
     if rows:
         try:
