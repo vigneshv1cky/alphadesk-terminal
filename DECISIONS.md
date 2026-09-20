@@ -80,12 +80,6 @@ Breaking one of these is a bug even if the tests pass.
 
 ## Tried and removed
 
-- **Two autonomous trading engines** (August 2026), measured against the S&P
-  500: −0.072% mean alpha over 503 backtested trades, and −1.123% over 44
-  live exits at a 38.6% win rate.
-- **The manual trading layer** — booking, tiered exits, forward grading,
-  human-versus-machine scoring, about 6,400 lines — when the product became
-  consumption rather than measurement.
 - **Screener ranking**: computed scores plus an automatic digest of the top
   few. Ordering a list is a judgment; the reader makes it.
 - **Scraped and undocumented sources**, including an unofficial finance API

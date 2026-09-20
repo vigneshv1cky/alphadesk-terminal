@@ -607,14 +607,11 @@ under `alphadesk/app/static`, so the image needs no Node build step.
 
 ## History
 
-Earlier versions of this repository traded. Two autonomous engines were
-built, measured against the S&P 500 and deleted in August 2026 (**−0.072%**
-mean alpha over 503 backtested trades; **−1.123%** over 44 live exits); the
-manual booking and grading layer followed when the product became a
-consumption terminal. Screener ranking, operator-held data and unofficial
-sources, the in-app agent and the in-app language model were each removed
-in turn, each for a measured or stated reason. The one
-model that remains is the self-hosted embedding model used for search.
+AlphaDesk became a consumption terminal by subtraction. Screener ranking,
+operator-held data and unofficial sources, the in-app agent and the in-app
+language model were each removed in turn, every one for a measured or stated
+reason — see [DECISIONS.md](DECISIONS.md). The one model that remains is the
+self-hosted embedding model used for search.
 
 ---
 
