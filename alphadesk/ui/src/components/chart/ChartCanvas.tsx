@@ -1126,7 +1126,7 @@ export function ChartCanvas({
         ))}
 
         {/* the stacked panes */}
-        {paneLayout.map(({ pane, top, drawn, levels, axis, lookups, colors, band }) => (
+        {paneLayout.map(({ pane, top, drawn, levels, lookups, colors, band }) => (
           <g key={pane.id}>
             <line x1={0} y1={top} x2={plotW} y2={top} stroke={grid} strokeWidth={1} />
             {band && <rect x={0} y={band.y} width={plotW} height={band.h} fill={band.color} fillOpacity={0.07} />}
@@ -1166,13 +1166,6 @@ export function ChartCanvas({
             {levels.map(l => (
               <line key={l.v} x1={0} y1={l.y} x2={plotW} y2={l.y}
                 stroke={text} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 3" />
-            ))}
-            {axis.map((a, i) => (
-              tagHides(a.y) ? null : (
-                <text key={i} x={plotW + 6} y={a.y + 3.5} fill={text} fontSize={10} className="tnum">
-                  {paneAxisLabel(a.v, pane.compact)}
-                </text>
-              )
             ))}
             {drawn.map((d, i) =>
               d.kind === "histogram" ? (
@@ -1254,6 +1247,25 @@ export function ChartCanvas({
         ))}
 
         </g>
+
+        {/* EVERY PANE'S AXIS FIGURES, OUTSIDE THE CLIP (2026-09-21). They
+            were drawn inside the group above, which is clipped to the plot's
+            WIDTH, and they sit six pixels past its right edge — so each one
+            was rendered every frame and then clipped away, and the volume
+            band has never shown a figure on its axis. The price labels
+            escaped only by being drawn before that group opens. Anything
+            belonging to a pane but living in the gutter goes here. */}
+        {paneLayout.map(({ pane, axis }) => (
+          <g key={`axis-${pane.id}`}>
+            {axis.map((a, i) => (
+              tagHides(a.y) ? null : (
+                <text key={i} x={plotW + 6} y={a.y + 3.5} fill={text} fontSize={10} className="tnum">
+                  {paneAxisLabel(a.v, pane.compact)}
+                </text>
+              )
+            ))}
+          </g>
+        ))}
 
         {/* last price, tagged on the axis. The dashed line and the filled tag
             take the TREND colour — where the last print sits against the first
