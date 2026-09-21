@@ -11,6 +11,9 @@ holds, closes or scores a position. The trading endpoints (/api/picks/*,
 import json
 import os
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
@@ -241,6 +244,53 @@ def api_screener():
 
 _rail_counts: dict[str, tuple[float, tuple[int, int | None]]] = {}
 RAIL_KEEP_S = 30
+#: ONE REBUILD AT A TIME, PER READER (2026-09-21, after the service went
+#: down). The counts were cached, but the cache is only written when the
+#: rebuild FINISHES — so while one was in flight every other rail request
+#: also missed and started its own. Adding three symbols in quick succession
+#: was enough: each add asked the rail, each rebuilt the earnings week, none
+#: returned, each held one of the forty request workers until Cloud Run
+#: killed it at five minutes, and with those gone the service could not
+#: serve a static file. A lock per reader means the first caller does the
+#: work and the rest wait for its answer.
+_rail_locks: dict[str, threading.Lock] = {}
+_rail_locks_guard = threading.Lock()
+#: How long a request waits for someone else's rebuild before answering with
+#: what it already has. A badge is not worth a request worker.
+RAIL_WAIT_S = 2.0
+#: How long the rebuild itself may hold the REQUEST. Past this the request
+#: returns without the number and the work carries on in the background,
+#: filling the cache for the next caller — what must not happen is a vendor
+#: call with no end holding a worker until the platform kills it.
+RAIL_BUILD_S = 3.0
+#: Two at most, and never request workers: a rebuild that never returns can
+#: strand one of these without touching the ones serving pages.
+_rail_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="rail-counts")
+
+
+def _rail_lock(owner: str) -> threading.Lock:
+    with _rail_locks_guard:
+        if len(_rail_locks) > 1_000:
+            _rail_locks.clear()
+        return _rail_locks.setdefault(owner, threading.Lock())
+
+
+def _rail_numbers(owner: str) -> tuple[int, int | None]:
+    """The two counts, computed and cached. Runs on `_rail_pool`, never on
+    the request's own thread."""
+    from alphadesk.desk import screener
+    from alphadesk.ingest import earnings_calendar
+    rows = screener.inventory()
+    with_news = sum(1 for r in rows if (r.get("article_count") or 0) > 0)
+    try:
+        week = earnings_calendar.week()
+        calls = sum(d.get("count") or 0 for d in week.get("days") or [])
+    except NeedsKey:
+        calls = None
+    if len(_rail_counts) > 1_000:
+        _rail_counts.clear()
+    _rail_counts[owner] = (time.time(), (with_news, calls))
+    return with_news, calls
 
 
 @app.get("/api/rail")
@@ -259,7 +309,6 @@ def api_rail(symbols: str = ""):
     was the headlines, summaries and bodies attached to them.
     """
     from alphadesk.desk import screener
-    from alphadesk.ingest import earnings_calendar
     from alphadesk.identity import request_user
     from alphadesk.ingest.news import news_owner
     board = [s.strip().upper() for s in symbols.split(",") if s.strip()][:40]
@@ -271,21 +320,35 @@ def api_rail(symbols: str = ""):
     # every navigation — twice on a first render, once before the board's
     # symbols resolve and once after. The numbers are badges; half a minute
     # old is exact enough.
-    import time as _time
+    def fresh(h) -> bool:
+        return bool(h) and time.time() - h[0] < RAIL_KEEP_S
+
     held = _rail_counts.get(owner)
-    if held and _time.time() - held[0] < RAIL_KEEP_S:
+    if fresh(held):
         with_news, calls = held[1]
     else:
-        rows = screener.inventory()
-        with_news = sum(1 for r in rows if (r.get("article_count") or 0) > 0)
-        try:
-            week = earnings_calendar.week()
-            calls = sum(d.get("count") or 0 for d in week.get("days") or [])
-        except NeedsKey:
-            calls = None
-        if len(_rail_counts) > 1_000:
-            _rail_counts.clear()
-        _rail_counts[owner] = (_time.time(), (with_news, calls))
+        lock = _rail_lock(owner)
+        mine = lock.acquire(timeout=RAIL_WAIT_S)
+        held = _rail_counts.get(owner)
+        if fresh(held):
+            # Someone else's rebuild landed while this request waited.
+            if mine:
+                lock.release()
+            with_news, calls = held[1]
+        elif mine:
+            job = _rail_pool.submit(_rail_numbers, owner)
+            # Released when the WORK finishes, not when this request gives up
+            # on it — otherwise the next caller starts a second rebuild of
+            # the same thing, which is the pile-up this exists to prevent.
+            job.add_done_callback(lambda _f: lock.release())
+            try:
+                with_news, calls = job.result(timeout=RAIL_BUILD_S)
+            except FuturesTimeout:
+                with_news, calls = held[1] if held else (0, None)
+        else:
+            # Someone else is rebuilding and it is taking a while. The last
+            # numbers, stale, beat holding a worker for a pair of badges.
+            with_news, calls = held[1] if held else (0, None)
     stories = []
     if wanted:
         for a in store.recent_articles(screener._since_iso(), limit=300, owner=owner):
