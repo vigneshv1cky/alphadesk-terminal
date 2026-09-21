@@ -85,7 +85,7 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
   const [priceLine, setPriceLine] = useState(prefs.priceLine)
   /** The canvas registers its view controls here (reset), so a surface's
    * context menu can reach them without owning the view. */
-  const viewRef = useRef<{ reset: () => void } | null>(null)
+  const viewRef = useRef<{ reset: () => void; wheel: (e: WheelEvent) => void } | null>(null)
   const [interval, setInterval] = useState(prefs.interval)
   /** Whether the interval was chosen BY HAND. Unpinned, the server picks the
    * one that suits the range and the toolbar adopts it.

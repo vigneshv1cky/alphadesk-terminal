@@ -184,6 +184,8 @@ export function ChartSurface({ e, legendTop, toolsAlwaysOn = false, children }: 
           drawings={e.drawings}
           onChange={e.history.commit}
           onUndo={e.history.undo} onRedo={e.history.redo}
+          // A wheel over this layer is the chart's, not the drawing's.
+          onWheel={ev => e.viewRef.current?.wheel(ev)}
           magnet={e.magnet}
           visible={e.drawVisible}
           // Matches the canvas, not the price pane: this is the surface
