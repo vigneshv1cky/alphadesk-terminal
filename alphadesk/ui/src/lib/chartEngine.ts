@@ -488,9 +488,13 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
   const stacked: Pane[] = useMemo(() => paneSeries.map(p => ({
     ...p,
     height: p.id === "volume"
-      // On a phone the volume band takes a smaller share of a chart that is
-      // already short (the reader's call, 2026-09-11).
-      ? (paneHeights.volume ?? Math.round(priceHeight * (narrow ? 0.14 : 0.22)))
+      // A SHARE OF THE PRICE AREA, not a fixed height, so the band keeps its
+      // proportion on a tall monitor and a short tile alike. 16% on a
+      // desktop (2026-09-21, the owner's own resize, measured off it and set
+      // as the default — it was 22%, which took a quarter of a 560px chart
+      // for a band that is context for the price above it). On a phone a
+      // smaller share still, of a chart that is already short (2026-09-11).
+      ? (paneHeights.volume ?? Math.round(priceHeight * (narrow ? 0.14 : 0.16)))
       : (paneHeights[p.id] ?? paneHeightFor(indicatorDef((drawable.find(i => i.id === p.id) ?? drawable[0]).type))),
   })), [paneSeries, paneHeights, priceHeight, drawable])
 
