@@ -96,21 +96,29 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
           onSubmit={(_name, ids) => { applyIds(ids); setLibraryOpen(false) }}
         />
       )}
+      {/* TARGETS, not styling (2026-09-21, the owner: "difficult to press").
+          Ten controls a row across eleven rows, each 24px tall with 8px of
+          padding — the arrows were barely wider than the glyph inside them.
+          Every control here is now the 28px size the system already has for
+          a field or a chip, the arrows and the place icons are square at it,
+          and the width presets carry a floor so "⅓" is not a sliver beside
+          "full". The look is untouched. */}
       <ul className="px-2.5 py-2">
         {items.map(({ def: w, span, align }, i) => (
-          <li key={w.id} className="row-rule flex min-h-[44px] flex-wrap items-center gap-x-1.5 gap-y-2 py-2.5">
+          <li key={w.id} className="row-rule flex min-h-[44px] flex-wrap items-center gap-x-2 gap-y-2 py-2.5">
             {/* The label takes the slack and the controls sit flush right —
                 a fixed label column left the row's right half empty once
                 Hide was removed. */}
             <span className="min-w-[120px] flex-1 truncate text-caption font-semibold">{w.label}</span>
-            <Btn variant="ghost" disabled={i === 0}
+            <Btn variant="ghost" size="lg" icon disabled={i === 0}
                  onClick={() => move(w.id, -1)} aria-label={`Move ${w.label} up`}>▲</Btn>
-            <Btn variant="ghost" disabled={i === items.length - 1}
+            <Btn variant="ghost" size="lg" icon disabled={i === items.length - 1}
                  onClick={() => move(w.id, 1)} aria-label={`Move ${w.label} down`}>▼</Btn>
-            <span className="ml-2 flex items-center gap-1" role="group"
+            <span className="ml-2 flex items-center gap-1.5" role="group"
                   aria-label={`Width of ${w.label}`}>
               {WIDTHS.map(o => (
-                <Btn key={o.label} variant="ghost" active={span === o.span}
+                <Btn key={o.label} variant="ghost" size="lg" active={span === o.span}
+                     className="min-w-[40px]"
                      onClick={() => setSpan(w.id, o.span)}
                      title={o.span ? `${o.span} of 12 columns` : "the tile's own width"}>
                   {o.label}
@@ -119,10 +127,10 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
             </span>
             {/* Where a tile narrower than its row sits (2026-09-18): left is
                 the grid's own flow; a full-width tile has nowhere to move. */}
-            <span className="ml-2 flex items-center gap-1" role="group"
+            <span className="ml-2 flex items-center gap-1.5" role="group"
                   aria-label={`Place of ${w.label} in its row`}>
               {PLACES.map(o => (
-                <Btn key={o.label} variant="ghost" icon active={(align ?? null) === o.align}
+                <Btn key={o.label} variant="ghost" size="lg" icon active={(align ?? null) === o.align}
                      disabled={span === 12}
                      onClick={() => setAlign(w.id, o.align)}
                      aria-label={`${o.label}: ${w.label}`} title={span === 12 ? "a full-width tile fills its row" : o.label}>
