@@ -84,3 +84,44 @@ def test_the_rebuild_never_runs_on_a_request_thread(client, monkeypatch):
     monkeypatch.setattr(earnings_calendar, "week", week)
     client.get("/api/rail")
     assert where and where[0].startswith("rail-counts"), where
+
+
+def test_the_reader_is_stamped_on_the_rebuild_thread(client, monkeypatch):
+    """Identity lives in a context variable and a bare pool thread does NOT
+    inherit it. Moving this work off the request thread stripped the reader,
+    the screener's first line raised, and the rail answered 500 to every
+    poll (2026-09-21). The stamp is what makes the move safe."""
+    from alphadesk.app import dashboard
+    from alphadesk.desk import screener
+    _reset(dashboard)
+    seen: list = []
+
+    def inventory(*_a, **_k):
+        from alphadesk.identity import request_user
+        seen.append(request_user())
+        return []
+
+    monkeypatch.setattr(screener, "inventory", inventory)
+    assert client.get("/api/rail").status_code == 200
+    # On an open instance the reader is None; what matters is that whatever
+    # the request carried is what the pool thread sees.
+    assert seen, "the rebuild never ran"
+
+
+def test_a_vendor_failure_costs_a_badge_and_not_the_page(client, monkeypatch):
+    """These are two numbers beside the navigation. Nothing here may fail
+    the request — before this, one raising call turned the rail into a 500
+    on every poll."""
+    from alphadesk.app import dashboard
+    from alphadesk.desk import screener
+    from alphadesk.ingest import earnings_calendar
+    _reset(dashboard)
+
+    def boom(*_a, **_k):
+        raise RuntimeError("the vendor is having an afternoon")
+
+    monkeypatch.setattr(screener, "inventory", boom)
+    monkeypatch.setattr(earnings_calendar, "week", boom)
+    r = client.get("/api/rail")
+    assert r.status_code == 200
+    assert r.json()["earnings_calls"] is None

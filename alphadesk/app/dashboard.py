@@ -9,6 +9,7 @@ holds, closes or scores a position. The trading endpoints (/api/picks/*,
 """
 
 import json
+import logging
 import os
 import re
 import threading
@@ -24,6 +25,8 @@ from pydantic import BaseModel
 from alphadesk.app.auth import router as auth_router
 from alphadesk.ledger import store
 from alphadesk.providers.base import NeedsKey
+
+log = logging.getLogger("alphadesk.dashboard")
 
 _STATIC = Path(__file__).parent / "static"
 
@@ -275,22 +278,48 @@ def _rail_lock(owner: str) -> threading.Lock:
         return _rail_locks.setdefault(owner, threading.Lock())
 
 
-def _rail_numbers(owner: str) -> tuple[int, int | None]:
+def _rail_numbers(owner: str, uid: str | None) -> tuple[int, int | None]:
     """The two counts, computed and cached. Runs on `_rail_pool`, never on
-    the request's own thread."""
-    from alphadesk.desk import screener
-    from alphadesk.ingest import earnings_calendar
-    rows = screener.inventory()
-    with_news = sum(1 for r in rows if (r.get("article_count") or 0) > 0)
+    the request's own thread.
+
+    THE READER IS STAMPED ON THIS THREAD FIRST. Identity lives in a context
+    variable and a bare pool thread does NOT inherit it — deliberately, so
+    background work cannot borrow a reader's keys by accident. Everything
+    below reads it: the screener's window is per reader, and so is the
+    earnings week. Without the stamp this raised on its first line, which
+    turned the whole rail into a 500 once the work moved off the request
+    thread (2026-09-21). background_fill does the same thing for the same
+    reason.
+
+    NOTHING HERE MAY FAIL THE REQUEST. These are two badges beside the
+    navigation; a vendor having a bad afternoon must cost the reader a
+    number, not the page."""
+    from alphadesk.identity import reset_request_user, set_request_user
+    token = set_request_user(uid) if uid else None
     try:
-        week = earnings_calendar.week()
-        calls = sum(d.get("count") or 0 for d in week.get("days") or [])
-    except NeedsKey:
-        calls = None
-    if len(_rail_counts) > 1_000:
-        _rail_counts.clear()
-    _rail_counts[owner] = (time.time(), (with_news, calls))
-    return with_news, calls
+        from alphadesk.desk import screener
+        from alphadesk.ingest import earnings_calendar
+        try:
+            rows = screener.inventory()
+            with_news = sum(1 for r in rows if (r.get("article_count") or 0) > 0)
+        except Exception as exc:
+            log.warning("rail: the news count could not be built (%s)", exc)
+            with_news = (_rail_counts.get(owner) or (0, (0, None)))[1][0]
+        try:
+            week = earnings_calendar.week()
+            calls = sum(d.get("count") or 0 for d in week.get("days") or [])
+        except NeedsKey:
+            calls = None
+        except Exception as exc:
+            log.warning("rail: the earnings count could not be built (%s)", exc)
+            calls = None
+        if len(_rail_counts) > 1_000:
+            _rail_counts.clear()
+        _rail_counts[owner] = (time.time(), (with_news, calls))
+        return with_news, calls
+    finally:
+        if token is not None:
+            reset_request_user(token)
 
 
 @app.get("/api/rail")
@@ -336,7 +365,7 @@ def api_rail(symbols: str = ""):
                 lock.release()
             with_news, calls = held[1]
         elif mine:
-            job = _rail_pool.submit(_rail_numbers, owner)
+            job = _rail_pool.submit(_rail_numbers, owner, uid)
             # Released when the WORK finishes, not when this request gives up
             # on it — otherwise the next caller starts a second rebuild of
             # the same thing, which is the pile-up this exists to prevent.
@@ -344,6 +373,9 @@ def api_rail(symbols: str = ""):
             try:
                 with_news, calls = job.result(timeout=RAIL_BUILD_S)
             except FuturesTimeout:
+                with_news, calls = held[1] if held else (0, None)
+            except Exception as exc:                    # badges, not the page
+                log.warning("rail: counts unavailable (%s)", exc)
                 with_news, calls = held[1] if held else (0, None)
         else:
             # Someone else is rebuilding and it is taking a while. The last
