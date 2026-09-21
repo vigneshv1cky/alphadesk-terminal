@@ -4,7 +4,7 @@ import {
   clampView, indexToX, padRangeInset, priceDecimals, priceTicks, priceTicksLog, priceToY,
   RIGHT_GAP, scaledRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
 } from "@/lib/chartScales"
-import { columnBucket, paneAxisLabel, paneExtent, sessionLayout, steadyColumnMax, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
+import { columnBucket, columnHeight, paneAxisLabel, paneExtent, sessionLayout, steadyColumnMax, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
 import { heikinAshi, type SeriesKind } from "@/lib/series"
 import { barCloseCountdown, countdownLabel, thinTicks, timeAxisTicks, timeParts } from "@/lib/chartTime"
 import { provisionalSlots } from "@/lib/provisional"
@@ -783,11 +783,11 @@ export function ChartCanvas({
           const up: string[] = [], down: string[] = []
           for (const c of grouped.get(ser)!) {
             if (c.x < -c.w || c.x > seriesW + c.w) continue
-            const y = yIn(c.v)
-            const h = Math.max(1, Math.abs(zeroY - y))
+            const h = columnHeight(c.v, zeroY, yIn(c.v))
+            if (!h) continue
             const half2 = c.w / 2
             ;(c.up ? up : down).push(
-              `M${(c.x - half2).toFixed(1)},${Math.min(zeroY, y).toFixed(1)}h${c.w.toFixed(1)}v${h.toFixed(1)}h${(-c.w).toFixed(1)}Z`)
+              `M${(c.x - half2).toFixed(1)},${(zeroY - h).toFixed(1)}h${c.w.toFixed(1)}v${h.toFixed(1)}h${(-c.w).toFixed(1)}Z`)
           }
           return { kind: "histogram" as const, up: up.join(""), down: down.join(""),
                    color: ser.color, downColor: ser.downColor ?? ser.color }
@@ -806,8 +806,11 @@ export function ChartCanvas({
             const x = indexToX(s, i + 0.5)
             if (x < -barW || x > seriesW + barW) continue
             const y = yIn(p.v)
-            const h = Math.max(1, Math.abs(zeroY - y))
-            const topY = Math.min(zeroY, y)
+            const h = columnHeight(p.v, zeroY, y)
+            if (!h) continue
+            // Grown AWAY from zero, so a column held up to the floor does not
+            // reach across the zero line into the other half of the pane.
+            const topY = y <= zeroY ? zeroY - h : zeroY
             // `signs` decides what "up" means: the value's own sign for MACD
             // and fundamentals, the bar's direction for volume.
             const isUp = ser.signs ? p.v >= 0 : (bars[i].c >= bars[i].o)

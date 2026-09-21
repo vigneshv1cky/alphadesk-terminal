@@ -94,6 +94,28 @@ export function volumePane(bars: ChartBar[], height: number, gain: string, loss:
   }
 }
 
+/** THE FLOOR A COLUMN IS DRAWN TO, in pixels (2026-09-21, the owner: "keep a
+ * minimum height for bars, so even low ones are visible"). With the volume
+ * band measured over the whole series, one busy session leaves a quiet one
+ * sub-pixel — present in the data and invisible on the screen, which is the
+ * same fault as the scale that moved, in the other direction.
+ *
+ * A column is held up to this, and a TRUE ZERO is drawn at nothing at all.
+ * That distinction is the whole reason this is not simply a minimum: the
+ * floor is there so "small" is legible, and zero must stay distinguishable
+ * from small rather than being rounded up into it. The previous code held
+ * every column to 1px INCLUDING the zeroes, which drew a row of bars along
+ * a session with no trades.
+ */
+export const MIN_COLUMN_PX = 2
+
+/** A column's drawn height: its true height, or the floor when that would be
+ * invisible, or nothing at all when the value is zero. Pure. */
+export function columnHeight(value: number, zeroY: number, y: number): number {
+  if (!value) return 0
+  return Math.max(MIN_COLUMN_PX, Math.abs(zeroY - y))
+}
+
 /** The min/max a pane's own axis should span.
  *
  * `visible` limits it to the bars on screen, which is what the price pane has

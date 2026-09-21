@@ -18,7 +18,7 @@
  */
 import assert from "node:assert/strict"
 import test from "node:test"
-import { columnBucket, paneExtent, sessionKind, sessionLayout, steadyColumnMax } from "../../components/chart/panes.ts"
+import { MIN_COLUMN_PX, columnBucket, columnHeight, paneExtent, sessionKind, sessionLayout, steadyColumnMax } from "../../components/chart/panes.ts"
 import {
   indexToX, xToIndex, priceToY, yToPrice, niceStep, priceTicks,
   padRange, padRangeInset, zoomAt, visibleExtent, scaledRange,
@@ -286,3 +286,12 @@ ok("each bar draws its own column when there is room", columnBucket(40, roomy, 8
 ok("a view too dense to draw one column a bar sums them", columnBucket(4000, packed, 800, 7) > 1)
 ok("the bucket width follows the view's SPAN, so a pan does not change it",
   columnBucket(4000, packed, 800, 7) === columnBucket(3000, packed, 800, 7))
+
+// A column is held up to a floor so a quiet session stays legible beside a
+// busy one — but a TRUE ZERO draws nothing, or a session with no trades would
+// show a row of bars.
+ok("a tall column keeps its own height", columnHeight(500, 100, 20) === 80)
+ok("a column too short to see is held up to the floor", columnHeight(1, 100, 99.8) === MIN_COLUMN_PX)
+ok("no trades draws no column at all", columnHeight(0, 100, 100) === 0)
+ok("a negative value is as tall as its distance from zero",
+  columnHeight(-40, 100, 140) === 40)
