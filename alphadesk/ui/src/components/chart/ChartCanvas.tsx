@@ -1228,8 +1228,9 @@ export function ChartCanvas({
                   <path d={d.down} fill={d.downColor} fillOpacity={"shade" in d && d.shade ? 0.85 : 0.42} />
                   {/* The mark on a column of at least twice the average. In
                       the ink colour, not the column's: it says "unusual",
-                      which is not a direction. */}
-                  {"caps" in d && d.caps ? <path d={d.caps} fill={text} fillOpacity={0.75} /> : null}
+                      which is not a direction. Faint on purpose — a mark
+                      louder than the data it annotates becomes the subject. */}
+                  {"caps" in d && d.caps ? <path d={d.caps} fill={text} fillOpacity={0.4} /> : null}
                   {"upWeak" in d && d.upWeak && <path d={d.upWeak} fill={d.color} fillOpacity={0.3} />}
                   {"downWeak" in d && d.downWeak && <path d={d.downWeak} fill={d.downColor} fillOpacity={0.3} />}
                 </g>

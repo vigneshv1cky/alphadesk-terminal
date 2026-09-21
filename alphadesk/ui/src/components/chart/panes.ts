@@ -119,11 +119,20 @@ export function volumePane(bars: ChartBar[], height: number, gain: string, loss:
  */
 export const MIN_COLUMN_PX = 1
 
-/** The mark on a column worth noticing: a solid cap across its top, two
- * pixels deep, drawn INSIDE the column so the tallest one cannot push it out
- * of the pane. Pure. */
+/** The mark on a column worth noticing: a hairline across the MIDDLE of its
+ * top, drawn INSIDE the column so the tallest one cannot push its mark out
+ * of the pane.
+ *
+ * A full-width two-pixel cap was tried first and dominated the band
+ * (2026-09-21): drawn in ink at three quarters opacity across columns that
+ * are themselves at 0.42, the marks read as the subject and the volume as
+ * their background. A mark is a footnote — it says "look here", and it has
+ * failed if it is the first thing seen. Hence one pixel, inset to the
+ * middle 60%, and faint. Pure. */
 export function capPath(x: number, topY: number, w: number): string {
-  return `M${x.toFixed(1)},${topY.toFixed(1)}h${w.toFixed(1)}v2h${(-w).toFixed(1)}Z`
+  const inset = w * 0.2
+  const width = Math.max(1, w - inset * 2)
+  return `M${(x + inset).toFixed(1)},${topY.toFixed(1)}h${width.toFixed(1)}v1h${(-width).toFixed(1)}Z`
 }
 
 /** A column's drawn height: its true height, or the floor when that would be
