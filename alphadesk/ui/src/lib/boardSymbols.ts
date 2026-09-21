@@ -103,13 +103,54 @@ function mirrorToAccount(board: StoredBoard) {
   const body = JSON.stringify(board)
   if (body === mirrored) return
   if (mirrorTimer) clearTimeout(mirrorTimer)
-  mirrorTimer = setTimeout(() => {
-    mirrorTimer = null
-    void import("@/lib/api")
-      .then(({ api }) => api.saveBoard(board.symbols, board.active))
-      .then(() => { mirrored = body })
-      .catch(() => { /* retried on the next change */ })
-  }, 1500)
+  pending = board
+  // SHORT, BECAUSE THE DELAY IS WHAT THE READER FEELS (2026-09-21). It was
+  // a second and a half, so picking a chip here and reloading the other
+  // device straight away read the row from before the change — which is
+  // exactly "it changed once and then stopped". A board is a handful of
+  // symbols; this only needs to coalesce a burst of clicks.
+  mirrorTimer = setTimeout(() => { void send(board, body) }, 400)
+}
+
+function send(board: StoredBoard, body: string): Promise<void> {
+  mirrorTimer = null
+  pending = null
+  return import("@/lib/api")
+    .then(({ api }) => api.saveBoard(board.symbols, board.active))
+    .then(() => { mirrored = body })
+    .catch(() => { /* retried on the next change */ })
+}
+
+/** A change still waiting out its delay when the tab goes away. */
+let pending: StoredBoard | null = null
+
+/** Send it NOW, on the way out. Putting the laptop down a moment after
+ * touching a chip used to lose that change: the tab went away with the
+ * timer still counting. `keepalive` is what lets the request outlive the
+ * page. */
+function flushBoard() {
+  const board = pending
+  if (!board || !mirrorTimer) return
+  clearTimeout(mirrorTimer)
+  mirrorTimer = null
+  pending = null
+  try {
+    void fetch("/api/board", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ symbols: board.symbols, active: board.active }),
+      keepalive: true,
+    })
+  } catch { /* leaving anyway */ }
+}
+
+if (typeof document !== "undefined") {
+  // `pagehide` is the reliable one on iOS, where a tab is frozen rather
+  // than unloaded; `visibilitychange` covers switching apps.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushBoard()
+  })
+  window.addEventListener("pagehide", flushBoard)
 }
 
 /** THE STRIP FOLLOWS THE ACCOUNT TOO (2026-09-21). It was already written
@@ -269,8 +310,14 @@ export function useBoardSymbols() {
    * later one. The adoption is still abandoned if the reader has changed
    * the strip while the answer was in flight.
    */
-  useEffect(() => {
+  const syncWithAccount = useCallback((fresh: boolean) => {
     let dropped = false
+    // COMING BACK TO A TAB ASKS AGAIN (2026-09-21). The answer is cached for
+    // the tab's lifetime, so a device left open never saw anything the other
+    // one did — which is why a reload was needed to pick up a change, and
+    // why it looked like the sync ran once and then stopped. Returning to a
+    // tab is exactly when the board may have moved on somewhere else.
+    if (fresh) accountBoard = null
     const stored = readStored()
     const ourSymbols = stored?.symbols.join(",") || ""
     // WHICH CHIP IS SELECTED IS PART OF THE BOARD (2026-09-21, the owner:
@@ -308,7 +355,16 @@ export function useBoardSymbols() {
     })
     return () => { dropped = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [setParams])
+
+  useEffect(() => {
+    const stop = syncWithAccount(false)
+    const onShown = () => {
+      if (document.visibilityState === "visible") syncWithAccount(true)
+    }
+    document.addEventListener("visibilitychange", onShown)
+    return () => { stop(); document.removeEventListener("visibilitychange", onShown) }
+  }, [syncWithAccount])
 
   /** Add a symbol to the strip and make it active. Adding one already on the
    * strip just activates it — a second identical chip is never what was
