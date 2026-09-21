@@ -4,7 +4,7 @@ import {
   clampView, indexToX, padRangeInset, priceDecimals, priceTicks, priceTicksLog, priceToY,
   RIGHT_GAP, scaledRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
 } from "@/lib/chartScales"
-import { UNUSUAL_VOLUME, capPath, columnBucket, columnHeight, paneAxisLabel, paneExtent, sessionLayout, steadyColumnStats, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
+import { UNUSUAL_VOLUME, capPath, columnAverage, columnHeight, paneAxisLabel, paneExtent, sessionLayout, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
 import { heikinAshi, type SeriesKind } from "@/lib/series"
 import { barCloseCountdown, countdownLabel, thinTicks, timeAxisTicks, timeParts } from "@/lib/chartTime"
 import { provisionalSlots } from "@/lib/provisional"
@@ -756,23 +756,19 @@ export function ChartCanvas({
       // the view moves makes a quiet bar look busy the moment the busy ones
       // scroll off (2026-09-21). The same bucket width the visible columns
       // are drawn with is used for the ceiling, so the two agree.
-      const steady = pane.steady
-        ? pane.series.reduce((acc, ser) => {
-            const per = ser.kind === "histogram" && ser.aggregate
-              ? columnBucket(Math.max(1, to - from + 1), s, seriesW, 7)
-              : 1
-            const st = steadyColumnStats(ser.points, t => byTimeIdx.get(t), per)
-            return { max: Math.max(acc.max, st.max), mean: Math.max(acc.mean, st.mean) }
-          }, { max: 0, mean: 0 })
-        : null
-      const ext = steady
-        ? { min: 0, max: Math.max(1, steady.max) }
-        : allGrouped
-          ? { min: 0, max: Math.max(1, ...[...grouped.values()].flat().map(c => c.v)) }
-          : paneExtent(pane, onScreen)
-      // What a column is measured against: the average column, and the line
-      // above which one is worth noticing. Both at the drawn bucket width.
-      const mean = pane.average && steady?.mean ? steady.mean : 0
+      const ext = allGrouped
+        ? { min: 0, max: Math.max(1, ...[...grouped.values()].flat().map(c => c.v)) }
+        : paneExtent(pane, onScreen)
+      // What a column is measured against: the average of the columns ON
+      // SCREEN, and the line above which one is worth noticing. Read from
+      // the columns AS DRAWN, so at a wider zoom — where each column holds
+      // more bars — the average column is taller, exactly as they are.
+      const drawnValues = pane.average
+        ? pane.series.flatMap(ser => grouped.has(ser)
+            ? grouped.get(ser)!.map(c => c.v)
+            : ser.points.filter(p => onScreen(p.t)).map(p => p.v))
+        : []
+      const mean = drawnValues.length ? columnAverage(drawnValues) : 0
       const unusual = mean ? mean * UNUSUAL_VOLUME : Infinity
       const inner = Math.max(10, pane.height - 6)
       const yIn = (v: number) => {

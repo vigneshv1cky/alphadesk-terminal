@@ -53,14 +53,14 @@ export type Pane = {
   /** How to format this pane's axis. Volume and revenue want compact
    * notation; an oscillator wants plain numbers. */
   compact?: boolean
-  /** Measure the axis over the WHOLE series rather than the bars on screen
-   * (2026-09-21, the owner: volume "changes perception that volume was high
-   * or low when it wasn't"). For a QUANTITY the height of a column is the
-   * reading, so a scale that re-fits as you pan makes a quiet bar look busy
-   * the moment the busy ones scroll off. An oscillator is the opposite case
-   * — see paneExtent — so this is opt-in, and volume is the one that takes
-   * it. */
-  steady?: boolean
+  /** ONE CEILING OVER THE WHOLE SERIES WAS TRIED AND REMOVED (2026-09-21).
+   * It held the axis still while panning, which is what was asked for, and
+   * made the bars disappear: with five days of one-minute bars loaded, an
+   * overnight stretch trading 13.6K a minute against an average column of
+   * 136.5K drew under a pixel. Overnight and regular-session volume are not
+   * the same quantity, and one ceiling over both hides the smaller. The band
+   * fits the bars on screen; what a column is read against is the average
+   * line and the gridlines, not a fixed axis. */
   /** Draw the average of the columns that traded as a reference line, and cap
    * the columns that reach UNUSUAL_VOLUME times it. Volume only: it is the
    * pane where a column's height is a quantity to be measured against
@@ -86,8 +86,6 @@ export function volumePane(bars: ChartBar[], height: number, gain: string, loss:
     id: "volume",
     height,
     compact: true,
-    // One scale for the whole series: a column's height IS the reading.
-    steady: true,
     average: true,
     grid: true,
     series: [{
@@ -118,6 +116,14 @@ export function volumePane(bars: ChartBar[], height: number, gain: string, loss:
  * a row of bars along the axis.
  */
 export const MIN_COLUMN_PX = 1
+
+/** The average column that TRADED, from the columns as drawn. Sessions with
+ * no trades are left out rather than dragging it down: the question is what
+ * a session that traded looks like here. Pure. */
+export function columnAverage(values: number[]): number {
+  const traded = values.filter(v => v > 0)
+  return traded.length ? traded.reduce((a, v) => a + v, 0) / traded.length : 0
+}
 
 /** The mark on a column worth noticing: a hairline across the MIDDLE of its
  * top, drawn INSIDE the column so the tallest one cannot push its mark out
@@ -321,44 +327,11 @@ export function indicatorPane(
  */
 /** How many bars share one drawn column: 1 when each gets its own, otherwise
  * the bucket width. Anchored to the view's SPAN, so it changes with the zoom
- * and not with a pan — which is what lets a steady axis be measured over the
- * whole series with the same buckets the visible ones are drawn with. Pure. */
+ * and not with a pan, so the columns keep their membership under a scroll.
+ * Pure. */
 export function columnBucket(count: number, s: Scale, plotW: number, minPx: number): number {
   if (plotW / Math.max(1, count) >= minPx) return 1
   return Math.max(1, Math.ceil((s.to - s.from) / Math.max(1, Math.floor(plotW / minPx))))
-}
-
-/** What the whole series would draw at this bucket width: the tallest column
- * — the ceiling a `steady` histogram keeps while the view moves — and the
- * average of the columns that traded.
- *
- * Measured at the SAME bucket width the visible columns are drawn with, so
- * both mean the same thing as what is on screen: at a wider zoom each column
- * holds more bars, so the average column is taller, and a line drawn from
- * per-bar averages would sit near the floor and say nothing. Sessions with
- * no trades are left out of the average rather than dragging it down — the
- * question is what a session that traded looks like. Pure.
- */
-export function steadyColumnStats(
-  points: Point[], indexOf: (t: string) => number | undefined, per: number,
-): { max: number; mean: number } {
-  const totals: number[] = []
-  if (per <= 1) {
-    for (const p of points) totals.push(p.v)
-  } else {
-    const sums = new Map<number, number>()
-    for (const p of points) {
-      const i = indexOf(p.t)
-      if (i == null) continue
-      const k = Math.floor(i / per)
-      sums.set(k, (sums.get(k) ?? 0) + p.v)
-    }
-    totals.push(...sums.values())
-  }
-  const traded = totals.filter(v => v > 0)
-  const max = totals.reduce((m, v) => Math.max(m, v), 0)
-  const mean = traded.length ? traded.reduce((a, v) => a + v, 0) / traded.length : 0
-  return { max, mean }
 }
 
 /** How many times the average a column must be to be MARKED (2026-09-21, the

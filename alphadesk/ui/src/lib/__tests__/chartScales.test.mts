@@ -18,7 +18,7 @@
  */
 import assert from "node:assert/strict"
 import test from "node:test"
-import { MIN_COLUMN_PX, columnBucket, columnHeight, paneExtent, sessionKind, sessionLayout, steadyColumnStats } from "../../components/chart/panes.ts"
+import { MIN_COLUMN_PX, columnAverage, columnBucket, columnHeight, paneExtent, sessionKind, sessionLayout } from "../../components/chart/panes.ts"
 import {
   indexToX, xToIndex, priceToY, yToPrice, niceStep, priceTicks,
   padRange, padRangeInset, zoomAt, visibleExtent, scaledRange,
@@ -259,46 +259,22 @@ test("inside the series the bar under the cursor still stays put", () => {
   assert.ok(Math.abs((3_500 - held.from) / (held.to - held.from) - 0.45) < 0.01)
 })
 
-// ── a steady volume axis (2026-09-21) ──────────────────────────────────────
-// A quantity's column height IS the reading, so the ceiling is measured over
-// the whole series: panning must not make a quiet bar look busy once the busy
-// ones leave the screen.
+// ── reading the volume band (2026-09-21) ──────────────────────────────────
+// The band fits the bars on screen: one ceiling over the whole series was
+// tried and made overnight columns vanish under a pixel against session
+// ones. What a column is read against is the average line beside it.
 
-const vol = [
-  { t: "a", v: 10 }, { t: "b", v: 20 }, { t: "c", v: 900 }, { t: "d", v: 30 },
-]
-const at = (t: string) => ["a", "b", "c", "d"].indexOf(t)
+ok("the average is of the columns that traded", columnAverage([10, 20, 900, 30]) === 240)
+ok("a session with no trades is left out, not counted as zero",
+  columnAverage([10, 20, 900, 30, 0]) === 240)
+ok("nothing traded at all has no average", columnAverage([0, 0]) === 0)
 
-ok("one bar per column: the ceiling is the tallest bar anywhere",
-  steadyColumnStats(vol, at, 1).max === 900)
-ok("the ceiling does not move when only part of the series is on screen",
-  steadyColumnStats(vol.slice(0, 2), at, 1).max !== steadyColumnStats(vol, at, 1).max)
-ok("bucketed, the ceiling is the tallest SUM, not the tallest bar",
-  steadyColumnStats(vol, at, 2).max === 930)     // c+d = 930 beats a+b = 30
-ok("a bucket is anchored to the absolute bar index",
-  steadyColumnStats(vol, at, 4).max === 960)     // one bucket holds all four
-ok("the average is of the columns, at the drawn bucket width",
-  steadyColumnStats(vol, at, 1).mean === 240)    // (10+20+900+30)/4
-ok("a wider bucket has a taller average column",
-  steadyColumnStats(vol, at, 2).mean === 480)    // (30 + 930)/2
-ok("a session with no trades is left out of the average, not counted as zero",
-  steadyColumnStats([...vol, { t: "e", v: 0 }], (t) => ["a","b","c","d","e"].indexOf(t), 1).mean === 240)
-
-// A 40-bar view in an 800px plot has room for every bar; a 4,000-bar view
-// does not, and its columns are summed.
 const roomy = { from: 0, to: 40, width: 800, height: 100, min: 0, max: 1 }
 const packed = { from: 0, to: 4000, width: 800, height: 100, min: 0, max: 1 }
 ok("each bar draws its own column when there is room", columnBucket(40, roomy, 800, 7) === 1)
 ok("a view too dense to draw one column a bar sums them", columnBucket(4000, packed, 800, 7) > 1)
 ok("the bucket width follows the view's SPAN, so a pan does not change it",
   columnBucket(4000, packed, 800, 7) === columnBucket(3000, packed, 800, 7))
-
-// A column is held up to a floor so a quiet session stays legible beside a
-// busy one — but a TRUE ZERO draws nothing, or a session with no trades would
-// show a row of bars.
-ok("a tall column keeps its own height", columnHeight(500, 100, 20) === 80)
-ok("a negative value is as tall as its distance from zero",
-  columnHeight(-40, 100, 140) === 40)
 
 // The floor is one pixel — the owner preferred true heights to a floor tall
 // enough to misread — but a true zero still draws nothing.
