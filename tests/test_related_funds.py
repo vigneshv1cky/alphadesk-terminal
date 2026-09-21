@@ -322,3 +322,36 @@ def test_a_fund_read_against_its_own_documents_is_dropped(store, monkeypatch):
     rows = {r["symbol"] for r in rf.related_funds("SPCX")["funds"]}
     assert "SPCL" not in rows
     assert {"SPCH", "SPCQ", "YSPC", "ELOL"} <= rows          # the ticker is still proof
+
+
+# ── how common a word is, counted rather than listed (2026-09-21) ───────────
+
+def test_a_word_the_whole_listing_uses_is_not_evidence():
+    """"Strategy" was refused by a hand-written list. Counting the vendor's
+    own listing refuses a word nobody thought to add."""
+    from alphadesk.ingest.related_funds import WORD_TOO_COMMON, company_word, word_uses
+    # A made-up word no hand list would carry, in more funds than the floor.
+    listing = {f"F{i}": f"Issuer {i} Vibranium Daily ETF" for i in range(WORD_TOO_COMMON + 1)}
+    assert word_uses("vibranium", listing) == WORD_TOO_COMMON + 1
+    assert company_word("Vibranium Mining Corp", listing) is None
+    # Under the threshold it stands: a company's own funds must not refuse it.
+    few = {f"F{i}": f"Issuer {i} Vibranium Daily ETF" for i in range(WORD_TOO_COMMON)}
+    assert company_word("Vibranium Mining Corp", few) == "vibranium"
+
+
+def test_counting_does_not_replace_reading_the_fund():
+    """A count CANNOT tell a company named after its industry from that
+    industry's funds: "space" is in about as many fund names as "nvidia".
+    Both stand here, and what SPCX's look-alikes are is settled by their own
+    descriptions (fundclass.py), not by this."""
+    from alphadesk.ingest.related_funds import company_word
+    listing = dict(SPACE_LISTING)
+    listing.update(LISTING)
+    assert company_word(SPACE_COMPANY, listing) == "space"
+    assert company_word("NVIDIA Corporation", listing) == "nvidia"
+
+
+def test_without_a_listing_the_hand_list_still_applies():
+    from alphadesk.ingest.related_funds import company_word
+    assert company_word("Strategy Inc") is None
+    assert company_word("NVIDIA Corporation") == "nvidia"

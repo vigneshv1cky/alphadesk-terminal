@@ -52,7 +52,9 @@ MAX_FUNDS = 40
 MAX_PRICED = 40
 
 #: A company word this common is not evidence: "Strategy" is MicroStrategy's
-#: new name and 232 funds use it as a noun.
+#: new name and 232 funds use it as a noun. KEPT AS THE FLOOR (2026-09-21)
+#: for a caller holding no listing to count against; WORD_TOO_COMMON below
+#: is what refuses a word nobody has thought of yet.
 _COMMON_WORDS = {
     "strategy", "growth", "income", "value", "global", "alpha", "core", "select", "capital",
     "technology", "energy", "materials", "health", "digital", "quality", "target", "premium",
@@ -70,12 +72,38 @@ _SUFFIXES = {"inc", "inc.", "incorporated", "corp", "corp.", "corporation", "co"
              "class", "a", "b", "c", "common", "stock", "the"}
 
 
-def company_word(name: str | None) -> str | None:
+#: A word MORE FUNDS THAN THIS use is the fund industry's vocabulary, not a
+#: company's name (2026-09-21). Counted against the vendor's own listing
+#: rather than kept in _COMMON_WORDS by hand, so a word nobody thought of is
+#: refused the first time it appears instead of the first time it is noticed.
+#: WHAT THIS DOES NOT DO: separate a company named after its industry from
+#: that industry's funds. "Strategy" is in 232 fund names, but "space" is in
+#: about as many as "nvidia" — roughly twenty each — so no count can tell
+#: SPCX's sector baskets from NVIDIA's real products. That is the fund's own
+#: description's job (fundclass.py), not this rule's.
+#: UNCALIBRATED: 232 for "strategy" is the only count ever measured here.
+#: A refusal logs its count, so the live logs are what should set this.
+WORD_TOO_COMMON = 60
+
+
+def word_uses(word: str, names: dict[str, str]) -> int:
+    """How many funds in the vendor's listing use `word` as a whole word.
+    Pure."""
+    pat = re.compile(rf"(?<![A-Za-z]){re.escape(word)}(?![A-Za-z])", re.I)
+    return sum(1 for n in names.values() if n and pat.search(n))
+
+
+def company_word(name: str | None, listing: dict[str, str] | None = None) -> str | None:
     """The distinctive word in a company's name, or None when it has none.
 
     "NVIDIA Corporation" gives nvidia; "Tesla, Inc." tesla; "Strategy Inc"
     nothing, because the only word left is one 232 unrelated funds use; a
-    fund's own name nothing, because its first word is its issuer."""
+    fund's own name nothing, because its first word is its issuer.
+
+    With the vendor's `listing`, how common the word is is COUNTED rather
+    than looked up in _COMMON_WORDS — see WORD_TOO_COMMON. Without one the
+    hand list still applies, which is what a caller holding no listing
+    (and every test of this function alone) gets."""
     low = str(name or "").lower()
     if any(re.search(rf"(?<![a-z]){w}(?![a-z])", low) for w in _FUND_WORDS):
         return None
@@ -84,7 +112,14 @@ def company_word(name: str | None) -> str | None:
     if not words:
         return None
     first = words[0]
-    return first if len(first) >= 4 and first not in _COMMON_WORDS else None
+    if len(first) < 4 or first in _COMMON_WORDS:
+        return None
+    if listing:
+        uses = word_uses(first, listing)
+        if uses > WORD_TOO_COMMON:
+            log.info("related funds: %r is in %d fund names — not evidence", first, uses)
+            return None
+    return first
 
 
 def _leverage(name: str) -> float | None:
@@ -156,7 +191,7 @@ def candidate_rows(names: dict[str, str], symbol: str, company: str | None) -> l
     sym = (symbol or "").upper()
     if not sym:
         return []
-    word = company_word(company)
+    word = company_word(company, names)
     ticker = re.compile(rf"(?<![A-Za-z0-9]){re.escape(sym)}(?![A-Za-z0-9])")
     rows = []
     for fund, name in names.items():
