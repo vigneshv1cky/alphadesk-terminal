@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useLocation, useSearchParams } from "react-router-dom"
 import { widgets } from "@/widgets/registry"
+import { whichWins } from "@/lib/boardSync"
 import { parseLayout, resolveLayout, serializeLayout, type LayoutEntry, type TileAlign } from "@/lib/layoutEntries"
 
 /** The Markets board's composition — which tiles render, in what order.
@@ -49,11 +50,28 @@ function readStored(pageKey: string): string | null {
   }
 }
 
-function writeStored(pageKey: string, serialized: string | null) {
+function writeStored(pageKey: string, serialized: string | null, at?: string) {
   try {
-    if (serialized === null) localStorage.removeItem(storageKey(pageKey))
-    else localStorage.setItem(storageKey(pageKey), serialized)
+    if (serialized === null) {
+      localStorage.removeItem(storageKey(pageKey))
+      localStorage.removeItem(`${storageKey(pageKey)}.at`)
+      return
+    }
+    localStorage.setItem(storageKey(pageKey), serialized)
+    // WHEN it was arranged, so two devices can be compared. A copy written
+    // before this existed has no time at all, and loses to the account's —
+    // which is the right way round: a board saved to the account was an
+    // edit someone made, and an undated local copy might be anything.
+    localStorage.setItem(`${storageKey(pageKey)}.at`, at ?? new Date().toISOString())
   } catch { /* private mode */ }
+}
+
+function storedAt(pageKey: string): string {
+  try {
+    return localStorage.getItem(`${storageKey(pageKey)}.at`) || ""
+  } catch {
+    return ""
+  }
 }
 
 /** THE BOARD FOLLOWS THE ACCOUNT, NOT THE BROWSER (2026-09-21).
@@ -69,16 +87,15 @@ function writeStored(pageKey: string, serialized: string | null) {
  * have changed. A refusal (signed out, offline) is an empty set, so an open
  * instance behaves exactly as it did.
  */
-let accountLayouts: Promise<Record<string, string>> | null = null
+type StoredLayout = { tiles: string; updated_at: string | null }
+let accountLayouts: Promise<Record<string, StoredLayout>> | null = null
 
-function fetchAccountLayouts(): Promise<Record<string, string>> {
-  if (!accountLayouts) {
-    accountLayouts = import("@/lib/api")
-      .then(({ api }) => api.getLayouts())
-      .then(r => r.layouts ?? {})
-      .catch(() => ({}))
-  }
-  return accountLayouts
+function fetchAccountLayouts(): Promise<Record<string, StoredLayout>> {
+  const pending = accountLayouts ?? (accountLayouts = import("@/lib/api")
+    .then(({ api }) => api.getLayouts())
+    .then(r => r.layouts ?? {})
+    .catch(() => ({} as Record<string, StoredLayout>)))
+  return pending
 }
 
 /** Written back a moment after a board settles. Debounced per page and
@@ -99,7 +116,10 @@ function mirrorLayout(pageKey: string, tiles: string) {
         mirrored.set(pageKey, tiles)
         // The session's cached answer is now stale in one entry; keep it
         // true rather than throwing the whole thing away.
-        if (accountLayouts) accountLayouts = accountLayouts.then(all => ({ ...all, [pageKey]: tiles }))
+        if (accountLayouts) {
+          const at = new Date().toISOString()
+          accountLayouts = accountLayouts.then(all => ({ ...all, [pageKey]: { tiles, updated_at: at } }))
+        }
       })
       .catch(() => { /* signed out or offline: retried on the next change */ })
   }, 1200))
@@ -210,25 +230,7 @@ export function usePageLayout<T extends PanelDef>(
       return
     }
     const stored = readStored(pageKey)
-    if (!stored?.length) {
-      // Nothing in this browser — but the ACCOUNT may hold this board from
-      // another one. Checked at the moment the answer lands, not when it was
-      // asked for: a reader who arranged something meanwhile, or navigated
-      // away, must not have it overwritten by a reply to an older question.
-      let dropped = false
-      void fetchAccountLayouts().then(all => {
-        const seed = all[pageKey]
-        if (dropped || !seed || window.location.pathname !== home.current) return
-        setParams(prev => {
-          const p = new URLSearchParams(prev)
-          if (p.get("tiles")) return prev
-          p.set("tiles", seed)
-          return p
-        }, { replace: true })
-        writeStored(pageKey, seed)
-      })
-      return () => { dropped = true }
-    }
+    if (!stored?.length) return
     // FUNCTIONAL update, not a snapshot: the strip's seed effect writes the
     // URL on the same mount, and two writers each building from their own
     // stale copy lose whichever landed first — this restore once erased the
@@ -243,6 +245,51 @@ export function usePageLayout<T extends PanelDef>(
     // full story. Terminates: with the key present, only the mirror runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
+
+  /** THE LATER ARRANGEMENT WINS (2026-09-21, second attempt).
+   *
+   * The first version only consulted the account when a browser held
+   * nothing, so two devices that had both been used each kept their own
+   * board forever and never converged — which is the whole point of putting
+   * it on the account. Now every page asks, once a session, and takes
+   * whichever copy was arranged later.
+   *
+   * A local copy with no time at all loses: it predates this and might be
+   * anything, whereas a row on the account is an edit somebody made. A page
+   * the account has never seen is pushed UP rather than left behind, so a
+   * board that was arranged before any of this existed still propagates
+   * without being touched again.
+   *
+   * Rules that still hold: the URL is authority while the reader is on the
+   * page, so an adoption is abandoned if they have arranged something
+   * meanwhile or navigated away; and the write is functional, because two
+   * writers on one mount otherwise erase each other.
+   */
+  useEffect(() => {
+    if (!athome) return
+    let dropped = false
+    const mine = readStored(pageKey) || ""
+    const mineAt = storedAt(pageKey)
+    void fetchAccountLayouts().then(all => {
+      if (dropped || window.location.pathname !== home.current) return
+      const theirs = all[pageKey]
+      const verdict = whichWins({ tiles: mine, at: mineAt }, theirs && { tiles: theirs.tiles, at: theirs.updated_at })
+      if (verdict === "keep") return
+      if (verdict === "push") {
+        if (mine) mirrorLayout(pageKey, mine)
+        return
+      }
+      writeStored(pageKey, theirs!.tiles, theirs!.updated_at ?? undefined)
+      setParams(prev => {
+        const p = new URLSearchParams(prev)
+        if ((p.get("tiles") || "") !== (mine || "")) return prev
+        p.set("tiles", theirs!.tiles)
+        return p
+      }, { replace: true })
+    })
+    return () => { dropped = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageKey, athome])
 
   const entries: LayoutEntry[] = isCustom
     ? custom

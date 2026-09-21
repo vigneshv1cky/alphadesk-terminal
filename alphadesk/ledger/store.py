@@ -2046,13 +2046,17 @@ _ACCOUNT_TABLES_BY_OWNER = ("news_articles", "news_vectors", "earnings_announcem
                             "press_release_checks", "earnings_forecasts", "reader_dollar_pools")
 
 
-def user_layouts(user_id: str) -> dict[str, str]:
-    """{page key: tiles} for one reader — every board they have arranged."""
+def user_layouts(user_id: str) -> dict[str, dict]:
+    """{page key: {tiles, updated_at}} for one reader — every board they have
+    arranged, each with WHEN. The time is what lets a browser decide between
+    its own copy and this one: the later arrangement wins, so two devices
+    converge instead of each keeping its own board forever."""
     if not user_id:
         return {}
     with _connect() as conn:
-        rows = conn.execute("SELECT page, tiles FROM user_layouts WHERE user_id=?", (user_id,)).fetchall()
-    return {r["page"]: r["tiles"] for r in rows}
+        rows = conn.execute("SELECT page, tiles, updated_at FROM user_layouts WHERE user_id=?",
+                            (user_id,)).fetchall()
+    return {r["page"]: {"tiles": r["tiles"], "updated_at": r["updated_at"]} for r in rows}
 
 
 def set_user_layout(user_id: str, page: str, tiles: str) -> None:

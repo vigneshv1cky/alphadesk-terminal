@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from "react"
 import { useSearchParams } from "react-router-dom"
 import { byRecency } from "@/lib/boardOrder"
+import { whichWins } from "@/lib/boardSync"
 import { normalize } from "@/lib/symbols"
 
 /** The strip, mirrored to browser storage so it survives navigation.
@@ -27,7 +28,7 @@ const KEY = "alphadesk.board"
  * a starting point, not a recommendation. */
 export const DEFAULT_SYMBOL = "NVDA"
 
-type StoredBoard = { symbols: string[]; active: string; seen?: string[] }
+type StoredBoard = { symbols: string[]; active: string; seen?: string[]; at?: string }
 
 /** The symbols most recently SCOPED TO, newest first — what orders the strip
  * (2026-09-20, the owner: "show the most recent viewed stocks on left most
@@ -72,6 +73,11 @@ function writeStored(board: StoredBoard) {
 let mirrorTimer: ReturnType<typeof setTimeout> | null = null
 let mirrored = ""
 function mirrorToAccount(board: StoredBoard) {
+  // NOT BEFORE THE ACCOUNT HAS BEEN ASKED (2026-09-21). This runs on every
+  // load, not only on a change — so a device that merely opened the page
+  // would stamp its own stale board as the newest and win, and the two
+  // devices would push their old boards at each other forever.
+  if (!boardSynced) return
   const body = JSON.stringify(board)
   if (body === mirrored) return
   if (mirrorTimer) clearTimeout(mirrorTimer)
@@ -96,19 +102,21 @@ function mirrorToAccount(board: StoredBoard) {
  * that is briefly wrong. The replacement is abandoned if the reader has
  * touched the strip meanwhile: what is on screen was chosen by a person and
  * outranks an answer to a question asked before they did. */
-let accountBoard: Promise<StoredBoard | null> | null = null
+/** True once this session has compared its board with the account's. */
+let boardSynced = false
+let accountBoard: Promise<{ board: StoredBoard; at: string } | null> | null = null
 
-function fetchAccountBoard(): Promise<StoredBoard | null> {
-  if (!accountBoard) {
-    accountBoard = import("@/lib/api")
-      .then(({ api }) => api.getBoard())
-      .then(b => {
-        const symbols = (b.symbols ?? []).map(normalize).filter(Boolean)
-        return symbols.length ? { symbols, active: normalize(b.active || "") || symbols[0] } : null
-      })
-      .catch(() => null)
-  }
-  return accountBoard
+function fetchAccountBoard(): Promise<{ board: StoredBoard; at: string } | null> {
+  const pending = accountBoard ?? (accountBoard = import("@/lib/api")
+    .then(({ api }) => api.getBoard())
+    .then(b => {
+      const symbols = (b.symbols ?? []).map(normalize).filter(Boolean)
+      return symbols.length
+        ? { board: { symbols, active: normalize(b.active || "") || symbols[0] }, at: b.updated_at || "" }
+        : null
+    })
+    .catch(() => null))
+  return pending
 }
 
 /** The symbol strip above the Markets board.
@@ -173,7 +181,10 @@ export function useBoardSymbols() {
     // Every gesture is persisted. An emptied board is written as empty here
     // and re-seeded with the default by the effect below — the board is
     // never blank.
-    writeStored({ symbols: next, active: nextActive })
+    // Stamped, because THIS is an arrangement a person made — the passive
+    // writes below are not, and a stamp on those would make merely opening
+    // the page outrank a board someone built on another device.
+    writeStored({ symbols: next, active: nextActive, at: new Date().toISOString() })
     setParams(p, { replace: true })
   }, [params, setParams])
 
@@ -205,24 +216,29 @@ export function useBoardSymbols() {
       if (board.active && board.symbols.includes(board.active)) p.set("symbol", board.active)
       return p
     }, { replace: true })
-    // Nothing in this browser: the account may hold a board from another
-    // one. Only replaces what was just seeded — see the note above.
-    if (!stored?.symbols.length) {
-      const seeded = board.symbols.join(",")
-      let dropped = false
-      void fetchAccountBoard().then(mine => {
-        if (dropped || !mine || mine.symbols.join(",") === seeded) return
-        setParams(prev => {
-          const p = new URLSearchParams(prev)
-          if ((p.get("symbols") || "") !== seeded) return prev
-          p.set("symbols", mine.symbols.join(","))
-          if (mine.active) p.set("symbol", mine.active)
-          return p
-        }, { replace: true })
-        writeStored(mine)
-      })
-      return () => { dropped = true }
-    }
+    // THE LATER BOARD WINS. Asked whatever this browser holds, not only
+    // when it holds nothing: two devices that have both been used each kept
+    // their own strip forever otherwise, which is the fault this was
+    // supposed to fix. A local board with no stamp predates this and loses
+    // to a row on the account, which is an arrangement somebody saved.
+    const seeded = board.symbols.join(",")
+    let dropped = false
+    void fetchAccountBoard().then(mine => {
+      boardSynced = true
+      if (dropped || !mine) return
+      const theirs = mine.board.symbols.join(",")
+      if (whichWins({ tiles: stored?.symbols.join(",") || "", at: stored?.at },
+                    { tiles: theirs, at: mine.at }) !== "adopt") return
+      setParams(prev => {
+        const p = new URLSearchParams(prev)
+        if ((p.get("symbols") || "") !== seeded) return prev      // the reader moved first
+        p.set("symbols", theirs)
+        if (mine.board.active) p.set("symbol", mine.board.active)
+        return p
+      }, { replace: true })
+      writeStored({ ...mine.board, at: mine.at })
+    })
+    return () => { dropped = true }
     // Keyed on PARAMS, not the derived board, and that is load-bearing: two
     // hooks restore into the URL on the same mount (this one and the board
     // layout's), the router batches same-tick navigations, and the swallowed
