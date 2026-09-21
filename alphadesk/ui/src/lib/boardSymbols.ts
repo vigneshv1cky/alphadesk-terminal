@@ -272,13 +272,20 @@ export function useBoardSymbols() {
   useEffect(() => {
     let dropped = false
     const stored = readStored()
-    const ours = stored?.symbols.join(",") || ""
+    const ourSymbols = stored?.symbols.join(",") || ""
+    // WHICH CHIP IS SELECTED IS PART OF THE BOARD (2026-09-21, the owner:
+    // "if I see VEEE on the laptop, on refresh it should change to VEEE").
+    // The comparison read the symbol LIST alone, so picking a different chip
+    // — which changes nothing about the list — looked like no change at all,
+    // the other device said "same board" and the focus never followed. It is
+    // saved to the account either way; only the reading side ignored it.
+    const ours = ourSymbols ? `${ourSymbols}|${stored?.active || ""}` : ""
     void fetchAccountBoard().then(mine => {
       boardSynced = true
       if (dropped) return
       const verdict = whichWins(
         { tiles: ours, at: stored?.at },
-        mine ? { tiles: mine.board.symbols.join(","), at: mine.at } : null,
+        mine ? { tiles: `${mine.board.symbols.join(",")}|${mine.board.active || ""}`, at: mine.at } : null,
       )
       if (verdict === "push") {
         if (stored?.symbols.length) mirrorToAccount(stored)
@@ -293,7 +300,7 @@ export function useBoardSymbols() {
         // it was seeded with when it had none. Anything else is the reader
         // acting while the account was being asked, and they outrank it.
         const now = p.get("symbols") || ""
-        if (now !== ours && now !== DEFAULT_SYMBOL) return prev
+        if (now !== ourSymbols && now !== DEFAULT_SYMBOL) return prev
         p.set("symbols", theirs)
         if (mine.board.active) p.set("symbol", mine.board.active)
         return p
