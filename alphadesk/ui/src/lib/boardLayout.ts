@@ -56,6 +56,55 @@ function writeStored(pageKey: string, serialized: string | null) {
   } catch { /* private mode */ }
 }
 
+/** THE BOARD FOLLOWS THE ACCOUNT, NOT THE BROWSER (2026-09-21).
+ *
+ * Arranging a board on a desktop and finding the default one on a phone is
+ * the whole of the complaint this answers. The browser's copy still LEADS —
+ * a reader mid-arrangement is never overruled by a row written from another
+ * device — and the account's copy is the fallback for a browser that has
+ * never seen this page. Same deal user_views has had since 2 September.
+ *
+ * Read ONCE per session rather than per page: a reader moving between tabs
+ * would otherwise ask again on every navigation, for an answer that cannot
+ * have changed. A refusal (signed out, offline) is an empty set, so an open
+ * instance behaves exactly as it did.
+ */
+let accountLayouts: Promise<Record<string, string>> | null = null
+
+function fetchAccountLayouts(): Promise<Record<string, string>> {
+  if (!accountLayouts) {
+    accountLayouts = import("@/lib/api")
+      .then(({ api }) => api.getLayouts())
+      .then(r => r.layouts ?? {})
+      .catch(() => ({}))
+  }
+  return accountLayouts
+}
+
+/** Written back a moment after a board settles. Debounced per page and
+ * skipped when unchanged: a width drag commits on every step, and each one
+ * would otherwise be a request. */
+const mirrorTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const mirrored = new Map<string, string>()
+
+function mirrorLayout(pageKey: string, tiles: string) {
+  if (mirrored.get(pageKey) === tiles) return
+  const pending = mirrorTimers.get(pageKey)
+  if (pending) clearTimeout(pending)
+  mirrorTimers.set(pageKey, setTimeout(() => {
+    mirrorTimers.delete(pageKey)
+    void import("@/lib/api")
+      .then(({ api }) => api.saveLayout(pageKey, tiles))
+      .then(() => {
+        mirrored.set(pageKey, tiles)
+        // The session's cached answer is now stale in one entry; keep it
+        // true rather than throwing the whole thing away.
+        if (accountLayouts) accountLayouts = accountLayouts.then(all => ({ ...all, [pageKey]: tiles }))
+      })
+      .catch(() => { /* signed out or offline: retried on the next change */ })
+  }, 1200))
+}
+
 /** One layout entry: a tile, and optionally the WIDTH the reader gave it.
  * `span: null` means "the component's own default" — the registry's note
  * holds: the editor overrides the rendered span, components keep owning
@@ -145,7 +194,9 @@ export function usePageLayout<T extends PanelDef>(
     const p = new URLSearchParams(params)
     if (entries && entries.length) p.set("tiles", serial(entries))
     else p.delete("tiles")
-    writeStored(pageKey, entries && entries.length ? serial(entries) : null)
+    const tiles = entries && entries.length ? serial(entries) : ""
+    writeStored(pageKey, tiles || null)
+    mirrorLayout(pageKey, tiles)
     setParams(p, { replace: true })
   }, [params, setParams, pageKey, serial])
 
@@ -159,7 +210,25 @@ export function usePageLayout<T extends PanelDef>(
       return
     }
     const stored = readStored(pageKey)
-    if (!stored?.length) return
+    if (!stored?.length) {
+      // Nothing in this browser — but the ACCOUNT may hold this board from
+      // another one. Checked at the moment the answer lands, not when it was
+      // asked for: a reader who arranged something meanwhile, or navigated
+      // away, must not have it overwritten by a reply to an older question.
+      let dropped = false
+      void fetchAccountLayouts().then(all => {
+        const seed = all[pageKey]
+        if (dropped || !seed || window.location.pathname !== home.current) return
+        setParams(prev => {
+          const p = new URLSearchParams(prev)
+          if (p.get("tiles")) return prev
+          p.set("tiles", seed)
+          return p
+        }, { replace: true })
+        writeStored(pageKey, seed)
+      })
+      return () => { dropped = true }
+    }
     // FUNCTIONAL update, not a snapshot: the strip's seed effect writes the
     // URL on the same mount, and two writers each building from their own
     // stale copy lose whichever landed first — this restore once erased the

@@ -1590,7 +1590,35 @@ class ViewIn(BaseModel):
     position: int = 0
 
 
+#: A layout's page key: the layout hook's own, including a view's
+#: "view:<id>" form.
+_LAYOUT_PAGE = re.compile(r"^[a-z0-9][a-z0-9:_-]{0,63}$")
 _VIEW_ID = re.compile(r"^[a-z0-9-]{4,40}$")
+
+
+class LayoutIn(BaseModel):
+    tiles: str = ""
+
+
+@app.get("/api/layouts")
+def api_layouts_get(request: Request):
+    """Every board this reader has arranged, as {page key: tiles} — what a
+    browser that has never seen them seeds itself from (2026-09-21). The
+    strip's symbols follow the account through /api/board; this is the rest
+    of the board."""
+    return {"layouts": store.user_layouts(_key_user(request))}
+
+
+@app.put("/api/layouts/{page}")
+def api_layouts_set(page: str, body: LayoutIn, request: Request):
+    """Keep one page's layout. An EMPTY string forgets it rather than storing
+    it: empty means "the page's default", and pinning that would freeze the
+    board as the defaults stood on the day it was saved, so a tile added to
+    the product later would never appear on it."""
+    if not _LAYOUT_PAGE.match(page):
+        raise HTTPException(422, "bad page key")
+    store.set_user_layout(_key_user(request), page, body.tiles.strip()[:2000])
+    return {"ok": True}
 
 
 @app.get("/api/views")
