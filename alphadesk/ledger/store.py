@@ -290,6 +290,22 @@ CREATE TABLE IF NOT EXISTS user_views (
     PRIMARY KEY (user_id, view_id)
 );
 
+-- A PAGE'S TILE LAYOUT, PER READER (2026-09-21), so a board follows the
+-- account rather than the browser it was arranged in. `page` is the layout
+-- hook's own page key — "markets", "earnings", "view:<id>" — and `tiles` is
+-- the same `id:span@place` string ?tiles= carries, so nothing is translated
+-- between the URL, the browser's copy and this one. The working copy in the
+-- browser still leads and this follows, the deal user_views already has: a
+-- reader mid-arrangement is never overruled by a row written from another
+-- device.
+CREATE TABLE IF NOT EXISTS user_layouts (
+    user_id    TEXT NOT NULL REFERENCES users(user_id),
+    page       TEXT NOT NULL,
+    tiles      TEXT NOT NULL DEFAULT '',
+    updated_at TEXT,
+    PRIMARY KEY (user_id, page)
+);
+
 -- Reader-made baskets (2026-09-18): a name, a line on what moves it and its
 -- symbols (a JSON list), beside the curated ones in config. Per reader, like
 -- views; the reader's agent reads them through the baskets tool.
@@ -2024,10 +2040,36 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
 # A new per-account table MUST be added here, or deletion leaves it behind —
 # tests/test_accounts.py checks the schema against this list.
 _ACCOUNT_TABLES_BY_USER = ("user_sign_ins", "user_api_keys", "user_views", "user_baskets",
-                           "user_boards", "agent_access_tokens", "oauth_codes", "oauth_grants",
-                           "user_chart_state", "warm_paths")
+                           "user_boards", "user_layouts", "agent_access_tokens", "oauth_codes",
+                           "oauth_grants", "user_chart_state", "warm_paths")
 _ACCOUNT_TABLES_BY_OWNER = ("news_articles", "news_vectors", "earnings_announcements", "release_habits",
                             "press_release_checks", "earnings_forecasts", "reader_dollar_pools")
+
+
+def user_layouts(user_id: str) -> dict[str, str]:
+    """{page key: tiles} for one reader — every board they have arranged."""
+    if not user_id:
+        return {}
+    with _connect() as conn:
+        rows = conn.execute("SELECT page, tiles FROM user_layouts WHERE user_id=?", (user_id,)).fetchall()
+    return {r["page"]: r["tiles"] for r in rows}
+
+
+def set_user_layout(user_id: str, page: str, tiles: str) -> None:
+    """Keep one page's layout, or forget it when `tiles` is empty — an empty
+    string is the page's DEFAULT, and storing that would pin a board to
+    whatever the defaults were on the day it was saved, so a new tile would
+    never appear on it again."""
+    if not user_id or not page:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock, _connect() as conn:
+        if not tiles:
+            conn.execute("DELETE FROM user_layouts WHERE user_id=? AND page=?", (user_id, page))
+            return
+        conn.execute("INSERT INTO user_layouts (user_id, page, tiles, updated_at) VALUES (?,?,?,?)"
+                     " ON CONFLICT (user_id, page) DO UPDATE SET tiles=excluded.tiles,"
+                     " updated_at=excluded.updated_at", (user_id, page, tiles[:2000], now))
 
 
 def delete_account(user_id: str) -> dict[str, int] | None:

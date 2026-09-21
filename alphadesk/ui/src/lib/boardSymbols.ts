@@ -84,6 +84,33 @@ function mirrorToAccount(board: StoredBoard) {
   }, 1500)
 }
 
+/** THE STRIP FOLLOWS THE ACCOUNT TOO (2026-09-21). It was already written
+ * to the account on every change — for the reader's own agent to read
+ * through the my_board tool — but never read back, so the names a reader
+ * put on the board in one browser were absent in the next.
+ *
+ * The DEFAULT is still seeded at once, and the account's board replaces it a
+ * moment later if there is one. The other way round — waiting for the answer
+ * before seeding anything — leaves every tile on its "pick a symbol"
+ * placeholder for the length of a round trip, which is worse than a default
+ * that is briefly wrong. The replacement is abandoned if the reader has
+ * touched the strip meanwhile: what is on screen was chosen by a person and
+ * outranks an answer to a question asked before they did. */
+let accountBoard: Promise<StoredBoard | null> | null = null
+
+function fetchAccountBoard(): Promise<StoredBoard | null> {
+  if (!accountBoard) {
+    accountBoard = import("@/lib/api")
+      .then(({ api }) => api.getBoard())
+      .then(b => {
+        const symbols = (b.symbols ?? []).map(normalize).filter(Boolean)
+        return symbols.length ? { symbols, active: normalize(b.active || "") || symbols[0] } : null
+      })
+      .catch(() => null)
+  }
+  return accountBoard
+}
+
 /** The symbol strip above the Markets board.
  *
  * Two params, one invariant. `?symbols=` is the strip, in the order you added
@@ -178,6 +205,24 @@ export function useBoardSymbols() {
       if (board.active && board.symbols.includes(board.active)) p.set("symbol", board.active)
       return p
     }, { replace: true })
+    // Nothing in this browser: the account may hold a board from another
+    // one. Only replaces what was just seeded — see the note above.
+    if (!stored?.symbols.length) {
+      const seeded = board.symbols.join(",")
+      let dropped = false
+      void fetchAccountBoard().then(mine => {
+        if (dropped || !mine || mine.symbols.join(",") === seeded) return
+        setParams(prev => {
+          const p = new URLSearchParams(prev)
+          if ((p.get("symbols") || "") !== seeded) return prev
+          p.set("symbols", mine.symbols.join(","))
+          if (mine.active) p.set("symbol", mine.active)
+          return p
+        }, { replace: true })
+        writeStored(mine)
+      })
+      return () => { dropped = true }
+    }
     // Keyed on PARAMS, not the derived board, and that is load-bearing: two
     // hooks restore into the URL on the same mount (this one and the board
     // layout's), the router batches same-tick navigations, and the swallowed

@@ -1200,6 +1200,13 @@ export const api = {
   adminExtendTrial: (userId: string, days: number) =>
     post<{ ok: boolean; trial_ends_at: string }>(`/api/admin/users/${encodeURIComponent(userId)}/trial`, { days }),
   saveBoard: (symbols: string[], active: string) => put<{ ok: boolean }>("/api/board", { symbols, active }),
+  /** The strip this account last had, from whichever browser arranged it. */
+  getBoard: () => get<{ symbols: string[]; active: string; updated_at: string | null }>("/api/board"),
+  /** Every board this account has arranged, as {page key: tiles}. */
+  getLayouts: () => get<{ layouts: Record<string, string> }>("/api/layouts"),
+  /** Keep one page's layout; an empty string forgets it. */
+  saveLayout: (page: string, tiles: string) =>
+    put<{ ok: boolean }>(`/api/layouts/${encodeURIComponent(page)}`, { tiles }),
   agentAccessTokens: () => get<{ url: string; tokens: AgentAccessToken[] }>("/api/agent/access-tokens"),
   issueAgentAccessToken: (name: string) =>
     post<AgentAccessToken & { token: string; url: string }>("/api/agent/access-tokens", { name }),
