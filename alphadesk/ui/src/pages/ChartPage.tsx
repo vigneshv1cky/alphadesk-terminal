@@ -565,9 +565,19 @@ export default function ChartPage() {
             ))}
           </div>
           {e.replay.active && <ReplayBar e={e} />}
+          {/* ONE STRIP, EVERY CELL (2026-09-21, the owner: "do it for all
+              chart"). It sits under the whole grid rather than inside a
+              cell, and a layout of two or four is for reading the same
+              stretch of time across symbols — so a range picked here is
+              picked for all of them, and pressing the one already showing
+              puts every cell back to where that range starts. It used to
+              act on the ACTIVE cell alone, which the strip could not even
+              show honestly: it highlighted one cell's range while the
+              others sat at whatever they had been left on. */}
           <div className="flex flex-wrap items-center gap-1 border-t border-row-rule px-2.5 py-1.5">
             {RANGES.map(r => (
-              <button key={r} type="button" onClick={() => e.setRange(r)}
+              <button key={r} type="button"
+                onClick={() => engines.slice(0, cells).forEach(x => x.pickRange(r))}
                 className={btnCls({ variant: "ghost", active: e.range === r })}>
                 {rangeLabel(r)}
               </button>

@@ -475,6 +475,17 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
     ? size.priceHeight
     : Math.max(160, size.totalHeight - budgeted)
 
+  /** What the range strip does with a click. Picking a DIFFERENT range
+   * changes it; picking the one already showing puts the view back where
+   * that range starts (2026-09-21, the owner: after scrolling through the
+   * chart, "I press the active 1D again, it should recalibrate for 1D").
+   * Before this the click was a state write of the value already held, so
+   * React did nothing and the button looked broken. */
+  const pickRange = (r: ChartRange) => {
+    if (r === range) viewRef.current?.reset()
+    else setRange(r)
+  }
+
   /** The panes' SERIES — volume always, the oscillators as the reader adds
    * them — computed off the stable bars. Heights are applied below, so a
    * divider drag does not recompute every oscillator per frame. */
@@ -514,7 +525,7 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
   return {
     provisional: replay.active ? [] : provisional,
     symbol, slot, applyPrefs, snapshotPrefs, replaceIndicators,
-    range, setRange, type, setType, scale, setScale,
+    range, setRange, pickRange, type, setType, scale, setScale,
     loadHistory, historyLoading: pages.loading, historyDone: pages.done, historyNote: pages.note, focusFrom, seriesId: seriesKey,
     timeZone, setTimeZone, priceLine, setPriceLine, viewRef,
     interval, setInterval, intervalPinned, setIntervalPinned, pinInterval, intervalByRange,
