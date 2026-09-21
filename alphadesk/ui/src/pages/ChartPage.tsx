@@ -567,7 +567,7 @@ export default function ChartPage() {
           {e.replay.active && <ReplayBar e={e} />}
           <div className="flex flex-wrap items-center gap-1 border-t border-row-rule px-2.5 py-1.5">
             {RANGES.map(r => (
-              <button key={r} type="button" onClick={() => e.setRange(r)}
+              <button key={r} type="button" onClick={() => e.pickRange(r)}
                 className={btnCls({ variant: "ghost", active: e.range === r })}>
                 {rangeLabel(r)}
               </button>
