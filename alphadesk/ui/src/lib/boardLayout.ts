@@ -58,11 +58,15 @@ function writeStored(pageKey: string, serialized: string | null, at?: string) {
       return
     }
     localStorage.setItem(storageKey(pageKey), serialized)
-    // WHEN it was arranged, so two devices can be compared. A copy written
-    // before this existed has no time at all, and loses to the account's —
-    // which is the right way round: a board saved to the account was an
-    // edit someone made, and an undated local copy might be anything.
-    localStorage.setItem(`${storageKey(pageKey)}.at`, at ?? new Date().toISOString())
+    // WHEN IT WAS ARRANGED — and only an ARRANGEMENT sets it. A commit
+    // passes the moment it happened and an adopted board passes the
+    // account's; everything else here is the mirror effect rewriting the
+    // same layout on a URL change, and that is not an arrangement. It used
+    // to stamp "now" regardless, which made this browser's copy look newer
+    // than anything the account held, so it would never adopt (2026-09-21).
+    // A copy with no stamp at all predates this and loses, deliberately.
+    const stamp = at ?? storedAt(pageKey)
+    if (stamp) localStorage.setItem(`${storageKey(pageKey)}.at`, stamp)
   } catch { /* private mode */ }
 }
 
@@ -215,7 +219,8 @@ export function usePageLayout<T extends PanelDef>(
     if (entries && entries.length) p.set("tiles", serial(entries))
     else p.delete("tiles")
     const tiles = entries && entries.length ? serial(entries) : ""
-    writeStored(pageKey, tiles || null)
+    // A gesture: this IS the arrangement, so it carries the time.
+    writeStored(pageKey, tiles || null, new Date().toISOString())
     mirrorLayout(pageKey, tiles)
     setParams(p, { replace: true })
   }, [params, setParams, pageKey, serial])
