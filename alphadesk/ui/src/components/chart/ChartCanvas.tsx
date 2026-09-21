@@ -860,6 +860,13 @@ export function ChartCanvas({
   if (last) tagRows.push(tagY)
   if (cursor) tagRows.push(cursor.y)
   const tagHides = (y: number) => tagRows.some(t => Math.abs(y - t) < TAG_HALF)
+  // Where the PRICE axis has already put a figure. A pane's own figures share
+  // that column, and its ceiling sits on the pane's top edge — which is the
+  // price pane's bottom edge — so the two land on each other (2026-09-21).
+  const priceLabelYs = ticks
+    .map(v => priceToY(s, v, log))
+    .filter(y => y >= 5 && !tagHides(y))
+  const crowded = (y: number) => tagHides(y) || priceLabelYs.some(p => Math.abs(y - p) < 11)
   const hoveredIdx = cursor
     ? Math.max(0, Math.min(bars.length - 1, Math.round(xToIndex(s, cursor.x) - 0.5)))
     : -1
@@ -1126,7 +1133,7 @@ export function ChartCanvas({
         ))}
 
         {/* the stacked panes */}
-        {paneLayout.map(({ pane, top, drawn, levels, axis, lookups, colors, band }) => (
+        {paneLayout.map(({ pane, top, drawn, levels, lookups, colors, band }) => (
           <g key={pane.id}>
             <line x1={0} y1={top} x2={plotW} y2={top} stroke={grid} strokeWidth={1} />
             {band && <rect x={0} y={band.y} width={plotW} height={band.h} fill={band.color} fillOpacity={0.07} />}
@@ -1166,13 +1173,6 @@ export function ChartCanvas({
             {levels.map(l => (
               <line key={l.v} x1={0} y1={l.y} x2={plotW} y2={l.y}
                 stroke={text} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 3" />
-            ))}
-            {axis.map((a, i) => (
-              tagHides(a.y) ? null : (
-                <text key={i} x={plotW + 6} y={a.y + 3.5} fill={text} fontSize={10} className="tnum">
-                  {paneAxisLabel(a.v, pane.compact)}
-                </text>
-              )
             ))}
             {drawn.map((d, i) =>
               d.kind === "histogram" ? (
@@ -1254,6 +1254,29 @@ export function ChartCanvas({
         ))}
 
         </g>
+
+        {/* EVERY PANE'S AXIS FIGURES, OUTSIDE THE CLIP (2026-09-21). They
+            were drawn inside the group above, which is clipped to the plot's
+            WIDTH, and they sit six pixels past its right edge — so each one
+            was rendered every frame and then clipped away, and the volume
+            band has never shown a figure on its axis. The price labels
+            escaped only by being drawn before that group opens. Anything
+            belonging to a pane but living in the gutter goes here. */}
+        {paneLayout.map(({ pane, axis }) => (
+          <g key={`axis-${pane.id}`}>
+            {axis.map((a, i) => {
+              // Turned INWARD at the edges: the ceiling reads below its line
+              // and the floor above it, so neither sits on the boundary it
+              // shares with the pane's neighbour. The middle one is centred.
+              const y = i === axis.length - 1 ? a.y + 10 : i === 0 ? a.y - 3 : a.y + 3.5
+              return crowded(y) ? null : (
+                <text key={i} x={plotW + 6} y={y} fill={text} fontSize={10} className="tnum">
+                  {paneAxisLabel(a.v, pane.compact)}
+                </text>
+              )
+            })}
+          </g>
+        ))}
 
         {/* last price, tagged on the axis. The dashed line and the filled tag
             take the TREND colour — where the last print sits against the first
