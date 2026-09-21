@@ -18,7 +18,7 @@
  */
 import assert from "node:assert/strict"
 import test from "node:test"
-import { paneExtent, sessionKind, sessionLayout } from "../../components/chart/panes.ts"
+import { columnBucket, paneExtent, sessionKind, sessionLayout, steadyColumnMax } from "../../components/chart/panes.ts"
 import {
   indexToX, xToIndex, priceToY, yToPrice, niceStep, priceTicks,
   padRange, padRangeInset, zoomAt, visibleExtent, scaledRange,
@@ -258,3 +258,31 @@ test("inside the series the bar under the cursor still stays put", () => {
   const held = zoomAt(s, 3_500, 2, 4_000)
   assert.ok(Math.abs((3_500 - held.from) / (held.to - held.from) - 0.45) < 0.01)
 })
+
+// ── a steady volume axis (2026-09-21) ──────────────────────────────────────
+// A quantity's column height IS the reading, so the ceiling is measured over
+// the whole series: panning must not make a quiet bar look busy once the busy
+// ones leave the screen.
+
+const vol = [
+  { t: "a", v: 10 }, { t: "b", v: 20 }, { t: "c", v: 900 }, { t: "d", v: 30 },
+]
+const at = (t: string) => ["a", "b", "c", "d"].indexOf(t)
+
+ok("one bar per column: the ceiling is the tallest bar anywhere",
+  steadyColumnMax(vol, at, 1) === 900)
+ok("the ceiling does not move when only part of the series is on screen",
+  steadyColumnMax(vol.slice(0, 2), at, 1) !== steadyColumnMax(vol, at, 1))
+ok("bucketed, the ceiling is the tallest SUM, not the tallest bar",
+  steadyColumnMax(vol, at, 2) === 930)     // c+d = 930 beats a+b = 30
+ok("a bucket is anchored to the absolute bar index",
+  steadyColumnMax(vol, at, 4) === 960)     // one bucket holds all four
+
+// A 40-bar view in an 800px plot has room for every bar; a 4,000-bar view
+// does not, and its columns are summed.
+const roomy = { from: 0, to: 40, width: 800, height: 100, min: 0, max: 1 }
+const packed = { from: 0, to: 4000, width: 800, height: 100, min: 0, max: 1 }
+ok("each bar draws its own column when there is room", columnBucket(40, roomy, 800, 7) === 1)
+ok("a view too dense to draw one column a bar sums them", columnBucket(4000, packed, 800, 7) > 1)
+ok("the bucket width follows the view's SPAN, so a pan does not change it",
+  columnBucket(4000, packed, 800, 7) === columnBucket(3000, packed, 800, 7))

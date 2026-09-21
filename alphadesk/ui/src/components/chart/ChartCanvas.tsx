@@ -4,7 +4,7 @@ import {
   clampView, indexToX, padRangeInset, priceDecimals, priceTicks, priceTicksLog, priceToY,
   RIGHT_GAP, scaledRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
 } from "@/lib/chartScales"
-import { paneAxisLabel, paneExtent, sessionLayout, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
+import { columnBucket, paneAxisLabel, paneExtent, sessionLayout, steadyColumnMax, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
 import { heikinAshi, type SeriesKind } from "@/lib/series"
 import { barCloseCountdown, countdownLabel, thinTicks, timeAxisTicks, timeParts } from "@/lib/chartTime"
 import { provisionalSlots } from "@/lib/provisional"
@@ -751,9 +751,26 @@ export function ChartCanvas({
         const i = byTimeIdx.get(t)
         return i != null && i >= from - 1 && i <= to + 1
       }
-      const ext = allGrouped
-        ? { min: 0, max: Math.max(1, ...[...grouped.values()].flat().map(c => c.v)) }
-        : paneExtent(pane, onScreen)
+      // A STEADY pane measures the whole series, not the bars on screen: a
+      // quantity's column height is the reading, and a scale that re-fits as
+      // the view moves makes a quiet bar look busy the moment the busy ones
+      // scroll off (2026-09-21). The same bucket width the visible columns
+      // are drawn with is used for the ceiling, so the two agree.
+      const steadyCeiling = () => {
+        let max = 0
+        for (const ser of pane.series) {
+          const per = ser.kind === "histogram" && ser.aggregate
+            ? columnBucket(Math.max(1, to - from + 1), s, seriesW, 7)
+            : 1
+          max = Math.max(max, steadyColumnMax(ser.points, t => byTimeIdx.get(t), per))
+        }
+        return { min: 0, max: Math.max(1, max) }
+      }
+      const ext = pane.steady
+        ? steadyCeiling()
+        : allGrouped
+          ? { min: 0, max: Math.max(1, ...[...grouped.values()].flat().map(c => c.v)) }
+          : paneExtent(pane, onScreen)
       const inner = Math.max(10, pane.height - 6)
       const yIn = (v: number) => {
         const r = ext.max - ext.min

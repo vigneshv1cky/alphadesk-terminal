@@ -53,6 +53,14 @@ export type Pane = {
   /** How to format this pane's axis. Volume and revenue want compact
    * notation; an oscillator wants plain numbers. */
   compact?: boolean
+  /** Measure the axis over the WHOLE series rather than the bars on screen
+   * (2026-09-21, the owner: volume "changes perception that volume was high
+   * or low when it wasn't"). For a QUANTITY the height of a column is the
+   * reading, so a scale that re-fits as you pan makes a quiet bar look busy
+   * the moment the busy ones scroll off. An oscillator is the opposite case
+   * — see paneExtent — so this is opt-in, and volume is the one that takes
+   * it. */
+  steady?: boolean
 }
 
 const fmtCompact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 })
@@ -70,6 +78,8 @@ export function volumePane(bars: ChartBar[], height: number, gain: string, loss:
     id: "volume",
     height,
     compact: true,
+    // One scale for the whole series: a column's height IS the reading.
+    steady: true,
     series: [{
       kind: "histogram",
       points: bars.map(b => ({ t: b.t, v: b.v ?? 0 })),
@@ -261,6 +271,31 @@ export function indicatorPane(
  * function rebuilt every render either has to be left out of the deps (a lie)
  * or put in (defeating the memo).
  */
+/** How many bars share one drawn column: 1 when each gets its own, otherwise
+ * the bucket width. Anchored to the view's SPAN, so it changes with the zoom
+ * and not with a pan — which is what lets a steady axis be measured over the
+ * whole series with the same buckets the visible ones are drawn with. Pure. */
+export function columnBucket(count: number, s: Scale, plotW: number, minPx: number): number {
+  if (plotW / Math.max(1, count) >= minPx) return 1
+  return Math.max(1, Math.ceil((s.to - s.from) / Math.max(1, Math.floor(plotW / minPx))))
+}
+
+/** The tallest column the whole series would draw at this bucket width — the
+ * ceiling a `steady` histogram keeps while the view moves. Pure. */
+export function steadyColumnMax(points: Point[], indexOf: (t: string) => number | undefined, per: number): number {
+  if (per <= 1) return points.reduce((m, p) => Math.max(m, p.v), 0)
+  const sums = new Map<number, number>()
+  for (const p of points) {
+    const i = indexOf(p.t)
+    if (i == null) continue
+    const k = Math.floor(i / per)
+    sums.set(k, (sums.get(k) ?? 0) + p.v)
+  }
+  let max = 0
+  for (const v of sums.values()) if (v > max) max = v
+  return max
+}
+
 export function volumeColumns(
 entries: { i: number; v: number; up: boolean }[],
 s: Scale, plotW: number, minPx: number,
@@ -278,7 +313,7 @@ if (natural >= minPx) {
 // and colour each time the view moved by one bar, and the histogram
 // shimmered under a pan. The bucket size follows the view's span, so it
 // only changes when the zoom does.
-const per = Math.max(1, Math.ceil((s.to - s.from) / Math.max(1, Math.floor(plotW / minPx))))
+const per = columnBucket(entries.length, s, plotW, minPx)
 const buckets = new Map<number, { sum: number; upVol: number }>()
 for (const e of entries) {
   const k = Math.floor(e.i / per)
