@@ -216,29 +216,6 @@ export function useBoardSymbols() {
       if (board.active && board.symbols.includes(board.active)) p.set("symbol", board.active)
       return p
     }, { replace: true })
-    // THE LATER BOARD WINS. Asked whatever this browser holds, not only
-    // when it holds nothing: two devices that have both been used each kept
-    // their own strip forever otherwise, which is the fault this was
-    // supposed to fix. A local board with no stamp predates this and loses
-    // to a row on the account, which is an arrangement somebody saved.
-    const seeded = board.symbols.join(",")
-    let dropped = false
-    void fetchAccountBoard().then(mine => {
-      boardSynced = true
-      if (dropped || !mine) return
-      const theirs = mine.board.symbols.join(",")
-      if (whichWins({ tiles: stored?.symbols.join(",") || "", at: stored?.at },
-                    { tiles: theirs, at: mine.at }) !== "adopt") return
-      setParams(prev => {
-        const p = new URLSearchParams(prev)
-        if ((p.get("symbols") || "") !== seeded) return prev      // the reader moved first
-        p.set("symbols", theirs)
-        if (mine.board.active) p.set("symbol", mine.board.active)
-        return p
-      }, { replace: true })
-      writeStored({ ...mine.board, at: mine.at })
-    })
-    return () => { dropped = true }
     // Keyed on PARAMS, not the derived board, and that is load-bearing: two
     // hooks restore into the URL on the same mount (this one and the board
     // layout's), the router batches same-tick navigations, and the swallowed
@@ -248,6 +225,56 @@ export function useBoardSymbols() {
     // it terminates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
+
+  /** THE LATER BOARD WINS — ITS OWN EFFECT, ONCE PER MOUNT (2026-09-21,
+   * second fix).
+   *
+   * This lived inside the restore effect above, in the branch that only
+   * runs when the URL carries NO symbols. A reload always carries them, so
+   * on every reload the effect returned at its first line and the
+   * comparison never happened at all. The flag that enables the mirror was
+   * set in that same dead branch, so the strip also stopped being written
+   * to the account — both directions off, which is why two devices stayed
+   * different however many times they were reloaded.
+   *
+   * It runs regardless of what the URL holds, because whether this browser
+   * has a board of its own says nothing about whether the account has a
+   * later one. The adoption is still abandoned if the reader has changed
+   * the strip while the answer was in flight.
+   */
+  useEffect(() => {
+    let dropped = false
+    const stored = readStored()
+    const ours = stored?.symbols.join(",") || ""
+    void fetchAccountBoard().then(mine => {
+      boardSynced = true
+      if (dropped) return
+      const verdict = whichWins(
+        { tiles: ours, at: stored?.at },
+        mine ? { tiles: mine.board.symbols.join(","), at: mine.at } : null,
+      )
+      if (verdict === "push") {
+        if (stored?.symbols.length) mirrorToAccount(stored)
+        return
+      }
+      if (verdict !== "adopt" || !mine) return
+      const theirs = mine.board.symbols.join(",")
+      writeStored({ ...mine.board, at: mine.at })
+      setParams(prev => {
+        const p = new URLSearchParams(prev)
+        // Only what this browser put there — its own board, or the default
+        // it was seeded with when it had none. Anything else is the reader
+        // acting while the account was being asked, and they outrank it.
+        const now = p.get("symbols") || ""
+        if (now !== ours && now !== DEFAULT_SYMBOL) return prev
+        p.set("symbols", theirs)
+        if (mine.board.active) p.set("symbol", mine.board.active)
+        return p
+      }, { replace: true })
+    })
+    return () => { dropped = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   /** Add a symbol to the strip and make it active. Adding one already on the
    * strip just activates it — a second identical chip is never what was
