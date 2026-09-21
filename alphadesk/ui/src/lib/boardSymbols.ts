@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo } from "react"
 import { useSearchParams } from "react-router-dom"
+import { byRecency } from "@/lib/boardOrder"
 import { normalize } from "@/lib/symbols"
 
 /** The strip, mirrored to browser storage so it survives navigation.
@@ -26,7 +27,22 @@ const KEY = "alphadesk.board"
  * a starting point, not a recommendation. */
 export const DEFAULT_SYMBOL = "NVDA"
 
-type StoredBoard = { symbols: string[]; active: string }
+type StoredBoard = { symbols: string[]; active: string; seen?: string[] }
+
+/** The symbols most recently SCOPED TO, newest first — what orders the strip
+ * (2026-09-20, the owner: "show the most recent viewed stocks on left most
+ * side"). Held here rather than in the URL: it is how this reader has been
+ * working, not part of the board a link describes, and writing it into
+ * `?symbols=` would reshuffle a shared link every time someone clicked a
+ * chip. Every change to it arrives with a change to the active symbol, so
+ * the strip re-renders without this needing to be React state. */
+let seen: string[] = []
+
+function noteSeen(symbol: string) {
+  const sym = normalize(symbol)
+  if (!sym) return
+  seen = [sym, ...seen.filter(s => s !== sym)].slice(0, 50)
+}
 
 function readStored(): StoredBoard | null {
   try {
@@ -34,16 +50,19 @@ function readStored(): StoredBoard | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as StoredBoard
     const symbols = (parsed.symbols ?? []).map(normalize).filter(Boolean)
-    return { symbols, active: normalize(parsed.active || "") }
+    const order = (parsed.seen ?? []).map(normalize).filter(Boolean)
+    if (order.length && !seen.length) seen = order
+    return { symbols, active: normalize(parsed.active || ""), seen: order }
   } catch {
     return null
   }
 }
 
 function writeStored(board: StoredBoard) {
-  try { localStorage.setItem(KEY, JSON.stringify(board)) } catch { /* private mode */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ ...board, seen })) } catch { /* private mode */ }
   mirrorToAccount(board)
 }
+
 
 /** The board, mirrored to the reader's account a moment after it settles,
  * so their own agent can see which names they follow (the my_board MCP
@@ -113,6 +132,8 @@ export function useBoardSymbols() {
   }, [raw, active])
 
   const commit = useCallback((next: string[], nextActive: string) => {
+    // Whatever the board is scoped to now is the most recently viewed.
+    noteSeen(nextActive)
     const p = new URLSearchParams(params)
     if (next.length) p.set("symbols", next.join(","))
     else p.delete("symbols")
@@ -138,6 +159,9 @@ export function useBoardSymbols() {
    * the restore is a no-op after the first one lands. */
   useEffect(() => {
     if (symbols.length) {
+      // An inbound link is a view too: arriving at ?symbol= counts, so a
+      // symbol opened from a movers row leads the strip on the next screen.
+      noteSeen(active)
       writeStored({ symbols, active })
       return
     }
@@ -201,13 +225,27 @@ export function useBoardSymbols() {
     commit([DEFAULT_SYMBOL], DEFAULT_SYMBOL)
   }, [symbols, commit])
 
-  /** The strip AS RENDERED: active first, everything else in the order it was
-   * added. Separate from `symbols` on purpose — add/activate/remove all reason
-   * about the real order, and only the tab bar reads this one. */
+  /** The strip AS RENDERED: MOST RECENTLY VIEWED FIRST (2026-09-20), which
+   * puts the active chip at the left because scoping the board to it is the
+   * most recent view there is. Symbols this browser has never opened — a
+   * shared link's — keep the link's own order behind them. Separate from
+   * `symbols` on purpose: add/activate/remove all reason about the real
+   * order, and only the tab bar reads this one, so `?symbols=` still
+   * restores a link exactly as it was sent.
+   *
+   * It used to be insertion order behind the active chip. The hazard that
+   * argued for that — a chip which moves when clicked can move out from
+   * under a second click — is unchanged, and is the reason this is worth
+   * knowing about rather than assuming. The owner asked for recency anyway:
+   * the names you are working between should be the ones nearest the left,
+   * not the ones you happened to add first. */
   const ordered = useMemo(
-    () => (active && symbols.includes(active)
-      ? [active, ...symbols.filter(s => s !== active)]
-      : symbols),
+    () => {
+      const by = byRecency(symbols, seen)
+      return active && symbols.includes(active)
+        ? [active, ...by.filter(s => s !== active)]
+        : by
+    },
     [symbols, active],
   )
 
