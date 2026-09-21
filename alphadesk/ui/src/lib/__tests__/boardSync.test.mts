@@ -40,3 +40,22 @@ test("an undated ACCOUNT row loses to a dated local one", () => {
 test("the same instant is not a change — this browser keeps and re-pushes", () => {
   assert.equal(whichWins({ tiles: "a", at: LATE }, { tiles: "b", at: LATE }), "push")
 })
+
+// Which chip is SELECTED is part of the board, not decoration. Picking a
+// different one changes nothing about the list, so a comparison that reads
+// only the list says "no change" and the focus never follows to the other
+// device (2026-09-21).
+test("the same symbols with a different one selected is a change", () => {
+  assert.equal(whichWins({ tiles: "NVDA,VEEE|NVDA", at: EARLY },
+                         { tiles: "NVDA,VEEE|VEEE", at: LATE }), "adopt")
+})
+
+test("the same symbols and the same selection is not a change", () => {
+  assert.equal(whichWins({ tiles: "NVDA,VEEE|VEEE", at: EARLY },
+                         { tiles: "NVDA,VEEE|VEEE", at: LATE }), "keep")
+})
+
+test("a selection made later wins over a list changed earlier", () => {
+  assert.equal(whichWins({ tiles: "NVDA,VEEE|VEEE", at: LATE },
+                         { tiles: "NVDA,VEEE,CVX|NVDA", at: EARLY }), "push")
+})
