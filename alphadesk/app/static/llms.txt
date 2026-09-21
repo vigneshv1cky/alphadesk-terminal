@@ -18,7 +18,7 @@ Hosted instance: https://alphadesk-764298799571.us-east4.run.app (free during ea
 - Earnings and corporate calendars, dated from the company's own release.
 - Options chains with implied volatility; crypto; sector and market movers.
 - US Treasury yield curve. No key needed.
-- 37 read-only MCP tools, for Claude, ChatGPT, Codex, Cursor and opencode.
+- 43 read-only MCP tools, for Claude, ChatGPT, Codex, Cursor and opencode.
 
 ## What it does not do
 

@@ -14,7 +14,7 @@ connect their own market-data and news providers; AlphaDesk is the workspace
 that connects, checks and presents what those providers — and the public
 record at SEC EDGAR and the US Treasury — actually say. Questions are asked
 in the reader's **own AI agent** (Claude, ChatGPT, Codex, Cursor, opencode),
-which reads the same records through **37 read-only agent tools** (MCP).
+which reads the same records through **43 read-only agent tools** (MCP).
 
 AlphaDesk **reads**: quotes and charts, news, SEC filings, financial
 statements, ownership and insider activity, earnings and corporate
@@ -310,7 +310,7 @@ each marked with the reason it is there.
 
 ## Agent access (MCP)
 
-AlphaDesk exposes the same records the interface shows as **37 read-only
+AlphaDesk exposes the same records the interface shows as **43 read-only
 tools** over the [Model Context Protocol](https://modelcontextprotocol.io),
 at `/api/agent/tools/mcp`. Every call runs **as the reader**, on their keys,
 rate-limited to 120 requests a minute per token.
@@ -380,7 +380,7 @@ The full account, session, key-vault and agent-credential design is in
   Browser (React SPA) ─┤  FastAPI · one process · one port            │
   Reader's agent (MCP) ┤                                              │
                        │  /api/*  ── panels, composed per request     │
-                       │  /api/agent/tools/mcp ── 37 read-only tools  │
+                       │  /api/agent/tools/mcp ── 43 read-only tools  │
                        │  OAuth 2.1 at the root (/authorize, /token…) │
                        │                                              │
                        │  Per-reader DataRouter ──► reader's vendors  │──► Alpaca · FMP · Polygon

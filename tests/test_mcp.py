@@ -412,3 +412,25 @@ def test_every_default_basket_is_well_formed():
     # shows it above the members.
     assert all(t.get("why", "").startswith("These ") and "move up or down based on" in t["why"]
                for t in _DEFAULT_THEMES)
+
+
+def test_every_data_surface_the_app_has_is_reachable_by_an_agent():
+    """The agent sees what the screen sees (2026-09-21). Six panels had no
+    tool: the funds built on a company, a symbol's events, its reported
+    record, the crypto list, the cross-asset board, and the calendar's own
+    accuracy against the SEC."""
+    from alphadesk import mcp_server
+    named = {t for t in dir(mcp_server) if not t.startswith("_")}
+    for tool in ("related_funds", "symbol_events", "earnings_context",
+                 "crypto_movers", "index_board", "calendar_accuracy"):
+        assert tool in named, tool
+
+
+def test_the_funds_tool_answers_the_opposite_question_to_fund_profile():
+    """One says what a fund holds; the other says what is built on a stock.
+    Confusing them is the easy mistake, so both descriptions say which."""
+    from alphadesk import mcp_server
+    built_on = (mcp_server.related_funds.__doc__ or "").lower()
+    holds = (mcp_server.fund_profile.__doc__ or "").lower()
+    assert "built on" in built_on and "fund_profile" in built_on
+    assert "hold" in holds
