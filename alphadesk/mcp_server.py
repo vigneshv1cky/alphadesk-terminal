@@ -1054,6 +1054,78 @@ def transcript_text(symbol: str, id: str, page: int = 1) -> dict:
             "text": text[start:start + _FILING_PAGE_CHARS]}
 
 
+@mcp.tool()
+def related_funds(symbol: str) -> dict:
+    """The funds BUILT ON one company: the leveraged and inverse single-stock
+    products, the option-income and buffered ones, each priced and grouped by
+    what it does to the stock, with the leverage it states.
+
+    The opposite question to fund_profile, which answers what a given fund
+    holds. This one says where leverage sits on a name. NOT the funds that
+    hold the stock in an ordinary portfolio — no vendor a reader here can
+    reach carries per-stock exposure, so that is absent rather than guessed.
+    A fund asked about itself answers an empty list and says so."""
+    from alphadesk.ingest import related_funds as rf
+    return rf.related_funds(_symbol(symbol))
+
+
+@mcp.tool()
+def symbol_events(symbol: str, days: int = 400) -> dict:
+    """Dated events for one company over the last `days` (30-3650, default
+    400): earnings releases read from the SEC filing itself, each with its
+    accession, plus dividends and splits. What to line a price series up
+    against."""
+    from alphadesk.ingest.events import events
+    return events(_symbol(symbol), days=max(30, min(int(days), 3650)))
+
+
+@mcp.tool()
+def earnings_context(symbol: str) -> dict:
+    """One company's reported record: the last four quarters' estimate,
+    actual and surprise, the quarterly revenue and net-income trend, and the
+    consensus for the next quarter. Every figure is fetched, none derived."""
+    from alphadesk.ingest import earnings_record
+    return earnings_record.context(_symbol(symbol))
+
+
+@mcp.tool()
+def crypto_movers(top: int = 20) -> dict:
+    """Crypto over a rolling 24 hours: {all, most_active, gainers, losers},
+    `top` rows each (1-50, default 20).
+
+    With an Alpaca key the list is only the coins THAT ACCOUNT CAN TRADE, so
+    it is the tradable universe rather than the market's. Liquidity may be
+    that one venue's rather than worldwide — the payload says which."""
+    from alphadesk.providers import get_prices
+    return get_prices().ask("crypto_movers", top=max(1, min(int(top), 50)))
+
+
+@mcp.tool()
+def index_board() -> dict:
+    """The cross-asset board: indices, rates, commodities and currencies,
+    each with its level and change. Wider than market_tape, which is the
+    strip's condensed form of the same idea."""
+    from alphadesk.providers import get_prices
+    return {"indices": get_prices().ask("index_board")}
+
+
+@mcp.tool()
+def calendar_accuracy(days: int = 30) -> dict:
+    """HOW RIGHT THIS READER'S EARNINGS CALENDAR HAS BEEN, scored against the
+    SEC's record of when each company actually released: one day, three days
+    and a week ahead, over the last `days` (1-120, default 30).
+
+    A measured record of which vendor's dates proved right, rather than a
+    claim about them — worth weighting an upcoming date by. Empty until the
+    calendar has been captured for a while; the capture runs once a day."""
+    from alphadesk.ingest import calendar_accuracy as acc
+    from alphadesk.providers import registry
+    uid = registry._request_uid()
+    if not uid:
+        raise ValueError("this tool runs as a signed-in reader — the standalone server has no identity")
+    return acc.report(uid, max(1, min(int(days), 120)))
+
+
 def stdio_main() -> None:
     """Console-script entry point (`alphadesk-mcp`), for MCP clients that
     start a server by command. stdio carries the protocol on stdout, so

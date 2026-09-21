@@ -60,7 +60,7 @@ running a shared instance for other people.
 
 ## What are the MCP tools, and why would I want them?
 
-AlphaDesk exposes 37 read-only tools over the Model Context Protocol, so
+AlphaDesk exposes 43 read-only tools over the Model Context Protocol, so
 Claude, ChatGPT, Codex, Cursor or opencode can read the same records the
 screen shows — with your subscription doing the reasoning.
 
