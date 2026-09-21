@@ -53,14 +53,31 @@ function readStored(): StoredBoard | null {
     const symbols = (parsed.symbols ?? []).map(normalize).filter(Boolean)
     const order = (parsed.seen ?? []).map(normalize).filter(Boolean)
     if (order.length && !seen.length) seen = order
-    return { symbols, active: normalize(parsed.active || ""), seen: order }
+    // `at` MUST come back out. This rebuilt the board field by field and
+    // dropped it, so every comparison saw an undated local board — which by
+    // the rule in boardSync loses to the account's saved row. The account
+    // therefore always won: a symbol you added vanished a moment later, and
+    // what looked like two devices converging was really both of them being
+    // overwritten by whatever the account last held.
+    return { symbols, active: normalize(parsed.active || ""), seen: order,
+             ...(parsed.at ? { at: parsed.at } : {}) }
   } catch {
     return null
   }
 }
 
 function writeStored(board: StoredBoard) {
-  try { localStorage.setItem(KEY, JSON.stringify({ ...board, seen })) } catch { /* private mode */ }
+  // THE STAMP SURVIVES A PASSIVE WRITE (2026-09-21). `at` means "when a
+  // PERSON last arranged this", and only a gesture supplies one — the
+  // mirror effect below rewrites the same board on every URL change and
+  // passes none. Without this line that write erased the stamp moments
+  // after an add, the next sync saw an undated local board, and by the
+  // rule in boardSync an undated copy loses to the account's saved row —
+  // so the symbol you had just added vanished and the old board came back.
+  const at = board.at ?? readStored()?.at
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ ...board, ...(at ? { at } : {}), seen }))
+  } catch { /* private mode */ }
   mirrorToAccount(board)
 }
 
