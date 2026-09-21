@@ -1,5 +1,6 @@
 import { BoardEditor } from "@/components/BoardEditor"
 import { TileSlot } from "@/components/terminal"
+import { BoardDragContext, useBoardDrag } from "@/components/BoardDrag"
 import { usePageLayout } from "@/lib/boardLayout"
 
 /** A page's panels, composed by the reader — the Markets board's Customize
@@ -35,19 +36,29 @@ export function ComposedBoard({ page, panels, before, title }: {
   title?: string
 }) {
   const layout = usePageLayout(page, panels)
+  // Dragging a tile moves it; dragging the grip in its header sizes it.
+  // Same layout, same URL — see components/BoardDrag.
+  const drag = useBoardDrag({
+    ids: layout.items.map(i => i.def.id),
+    spanOf: id => layout.items.find(i => i.def.id === id)?.span ?? 12,
+    moveTo: layout.moveTo,
+    setSpan: layout.setSpan,
+  })
   return (
     <>
       <div className="px-4 pt-2">
         <BoardEditor layout={layout} title={title ?? PAGE_TITLES[page]} />
       </div>
-      <div className="collage !pt-0">
-        {before}
-        {layout.items.map(({ def, span, align }) => (
-          <TileSlot key={def.id} span={span} align={align}>
-            {def.node}
-          </TileSlot>
-        ))}
-      </div>
+      <BoardDragContext.Provider value={drag}>
+        <div ref={drag.gridRef} className="collage !pt-0">
+          {before}
+          {layout.items.map(({ def, span, align }) => (
+            <TileSlot key={def.id} id={def.id} span={span} align={align}>
+              {def.node}
+            </TileSlot>
+          ))}
+        </div>
+      </BoardDragContext.Provider>
     </>
   )
 }

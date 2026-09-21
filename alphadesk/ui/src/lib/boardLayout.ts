@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useLocation, useSearchParams } from "react-router-dom"
 import { widgets } from "@/widgets/registry"
-import { parseLayout, resolveLayout, serializeLayout, type LayoutEntry, type TileAlign } from "@/lib/layoutEntries"
+import { parseLayout, reorder, resolveLayout, serializeLayout, type LayoutEntry, type TileAlign } from "@/lib/layoutEntries"
 
 /** The Markets board's composition — which tiles render, in what order.
  *
@@ -82,6 +82,9 @@ export type LayoutApi<T extends PanelDef> = {
   items: { def: T; span: number | null; align: TileAlign | null }[]
   isCustom: boolean
   move: (id: string, dir: -1 | 1) => void
+  /** Drop a tile at a position counted in the list as it looks now — what a
+   * drag commits. See layoutEntries.reorder. */
+  moveTo: (id: string, to: number) => void
   setSpan: (id: string, span: number | null) => void
   /** Place a tile narrower than its row: left (null), centre or right. */
   setAlign: (id: string, align: TileAlign | null) => void
@@ -179,6 +182,11 @@ export function usePageLayout<T extends PanelDef>(
     ? custom
     : all.filter(w => !w.optIn).map(w => ({ id: w.id, span: null }))
 
+  const moveTo = useCallback((id: string, to: number) => {
+    const next = reorder(entries, id, to)
+    if (next !== entries) commit(next)
+  }, [entries, commit])
+
   const move = useCallback((id: string, dir: -1 | 1) => {
     const i = entries.findIndex(e => e.id === id)
     const j = i + dir
@@ -211,5 +219,5 @@ export function usePageLayout<T extends PanelDef>(
 
   const reset = useCallback(() => commit(null), [commit])
 
-  return { all, items, isCustom, move, setSpan, setAlign, applyIds, reset }
+  return { all, items, isCustom, move, moveTo, setSpan, setAlign, applyIds, reset }
 }

@@ -2,6 +2,7 @@ import * as React from "react"
 import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { useModalFocus, usePopoverFocus } from "@/lib/focus"
+import { TileId, useTileDrag } from "@/components/BoardDrag"
 
 /** The terminal primitives — hand-rolled, dependency-free replacements for
  * the shadcn/ui set that used to live in components/ui/.
@@ -164,14 +165,18 @@ export const SpanOverride = React.createContext<number | null>(null)
 /** Where the reader placed a tile narrower than its row (2026-09-18). */
 export const AlignOverride = React.createContext<"center" | "right" | null>(null)
 
-/** A board slot: the reader's width and place for the tile inside it. */
-export function TileSlot({ span, align, children }: {
-  span: number | null; align?: "center" | "right" | null; children: React.ReactNode
+/** A board slot: the reader's width and place for the tile inside it, and
+ * which tile it is — the Widget names itself to the drag layer with that
+ * (components/BoardDrag). */
+export function TileSlot({ id, span, align, children }: {
+  id?: string; span: number | null; align?: "center" | "right" | null; children: React.ReactNode
 }) {
   return (
-    <SpanOverride.Provider value={span}>
-      <AlignOverride.Provider value={align ?? null}>{children}</AlignOverride.Provider>
-    </SpanOverride.Provider>
+    <TileId.Provider value={id ?? null}>
+      <SpanOverride.Provider value={span}>
+        <AlignOverride.Provider value={align ?? null}>{children}</AlignOverride.Provider>
+      </SpanOverride.Provider>
+    </TileId.Provider>
   )
 }
 
@@ -262,6 +267,10 @@ export function Widget({
 
   const overrideSpan = React.useContext(SpanOverride)
   const align = React.useContext(AlignOverride)
+  // The board's drag layer, when this tile is on a board at all. Null
+  // everywhere else, so a Widget off a board is exactly what it was.
+  const tile = useTileDrag()
+  const drag = tile?.api
   // OPEN IS A POPUP, not an in-place stretch: the tile keeps its size and
   // place in the grid (nothing reflows under the reader), and the content
   // moves to a centered dialog with real height. The old span-12 expansion
@@ -292,7 +301,18 @@ export function Widget({
       // flex-basis trap in the comment above is real and the earnings
       // calendar fell into it. A numeric height is a cap on the body instead,
       // so it reserves nothing here.
+      data-tile-id={tile?.id}
       style={{
+        // Carried: lifted off the board rather than outlined, so nothing is
+        // drawn that was not there before the drag started.
+        ...(drag?.dragging === tile?.id && drag?.dragging ? { opacity: 0.55 } : {}),
+        // Where it would land: one accent line on the neighbour's near edge,
+        // inset so it does not fight the card's own border.
+        ...(drag && tile && drag.dropBefore === tile.id
+          ? { boxShadow: "inset 3px 0 0 0 var(--color-accent)" }
+          : drag && tile && drag.dropAfter === tile.id
+            ? { boxShadow: "inset -3px 0 0 0 var(--color-accent)" }
+            : {}),
         // Centre or right: an explicit start column, so the tile sits there
         // in its row; left is the grid's own flow. A full-width tile has no
         // room to move, and the phone layout's one column overrides it.
@@ -309,7 +329,10 @@ export function Widget({
       )}
     >
       {(title || actions) && (
-        <header data-slot="widget-header" className="flex h-[40px] shrink-0 items-center gap-2 border-b border-card-rule bg-card px-3">
+        <header data-slot="widget-header"
+          onPointerDown={drag && tile ? e => drag.grab(tile.id, e) : undefined}
+          className={cn("flex h-[40px] shrink-0 items-center gap-2 border-b border-card-rule bg-card px-3",
+                        drag && tile && "cursor-grab active:cursor-grabbing")}>
           {symbol && (
             <span className="shrink-0 text-body font-bold tracking-ticker text-accent">{symbol}</span>
           )}
@@ -342,6 +365,28 @@ export function Widget({
           )}
           {subtitle && <div className="min-w-0 flex-1 sm:hidden" />}
           {!subtitle && <div className="min-w-0 flex-1" />}
+          {/* THE RESIZE GRIP, and why it is here rather than on the tile's
+              right edge where a resize handle usually goes. That edge is
+              taken twice over: the body's scrollbar runs down it, and a
+              handle over a scrollbar takes the scroll away; and the header's
+              own end holds the tile's buttons. A strip down the whole tile
+              would also swallow clicks on the right of every table row. The
+              header has room here, before the controls, and the header is
+              already the drag handle — so the two gestures sit together,
+              move in the middle, size at the end. Nothing is drawn until
+              the pointer is on it. */}
+          {drag && tile && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={`Resize ${titleText(title)}`}
+              onPointerDown={e => drag.startResize(tile.id, e)}
+              title="Drag to resize"
+              className="group -my-2 hidden h-[40px] w-[10px] shrink-0 cursor-col-resize items-center justify-center sm:flex"
+            >
+              <span className="h-[14px] w-px bg-border opacity-0 transition-opacity group-hover:opacity-100" />
+            </div>
+          )}
           {!isOpen && actions}
           {capped && (overflows || showAll) && (
             <button

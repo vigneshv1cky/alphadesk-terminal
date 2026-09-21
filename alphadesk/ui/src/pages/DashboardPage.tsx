@@ -6,6 +6,7 @@ import "@/widgets/more"
 import "@/widgets/desk"         // declarative tiles from widget backends
 import { BoardEditor } from "@/components/BoardEditor"
 import { TileSlot } from "@/components/terminal"
+import { BoardDragContext, useBoardDrag } from "@/components/BoardDrag"
 import { useBoardLayout } from "@/lib/boardLayout"
 
 /** The collage — the tiles this READER composed, on one canvas.
@@ -21,6 +22,14 @@ import { useBoardLayout } from "@/lib/boardLayout"
  */
 export default function DashboardPage() {
   const layout = useBoardLayout()
+  // Dragging a tile moves it; dragging the grip in its header sizes it.
+  // Same layout, same URL — see components/BoardDrag.
+  const drag = useBoardDrag({
+    ids: layout.items.map(i => i.def.id),
+    spanOf: id => layout.items.find(i => i.def.id === id)?.span ?? 12,
+    moveTo: layout.moveTo,
+    setSpan: layout.setSpan,
+  })
   return (
     <>
       {/* Same 16px inset the collage gives its tiles; the collage's own top
@@ -28,18 +37,20 @@ export default function DashboardPage() {
       <div className="px-4 pt-2">
         <BoardEditor layout={layout} title="Markets" />
       </div>
-      <div className="collage !pt-0">
-        {layout.items.map(({ def, span, align }) => {
-          const W = def.component
-          return (
-            // The reader's width, where they set one, over the component's
-            // own — the override mechanism the registry note reserved.
-            <TileSlot key={def.id} span={span} align={align}>
-              <W />
-            </TileSlot>
-          )
-        })}
-      </div>
+      <BoardDragContext.Provider value={drag}>
+        <div ref={drag.gridRef} className="collage !pt-0">
+          {layout.items.map(({ def, span, align }) => {
+            const W = def.component
+            return (
+              // The reader's width, where they set one, over the component's
+              // own — the override mechanism the registry note reserved.
+              <TileSlot key={def.id} id={def.id} span={span} align={align}>
+                <W />
+              </TileSlot>
+            )
+          })}
+        </div>
+      </BoardDragContext.Provider>
     </>
   )
 }

@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { BoardEditor } from "@/components/BoardEditor"
 import { Empty, OverflowMenu, TileSlot, Widget, btnCls } from "@/components/terminal"
+import { BoardDragContext, useBoardDrag } from "@/components/BoardDrag"
 import { usePageLayout } from "@/lib/boardLayout"
 import { useMyViews, viewLayoutKey, type MyViewsApi } from "@/lib/customViews"
 import { WidgetLibraryDialog } from "@/components/WidgetLibrary"
@@ -127,6 +128,15 @@ function Board({ viewId, viewName, mine, editorOpen, onEditorOpenChange, library
   }, [serialized, viewId, mine.serverBacked])
   useEffect(() => () => flushRef.current(), [])   // unmount = flush
 
+  // Dragging a tile moves it; dragging the grip in its header sizes it.
+  // Same layout, same URL — see components/BoardDrag.
+  const drag = useBoardDrag({
+    ids: layout.items.map(i => i.def.id),
+    spanOf: id => layout.items.find(i => i.def.id === id)?.span ?? 12,
+    moveTo: layout.moveTo,
+    setSpan: layout.setSpan,
+  })
+
   return (
     <>
       {libraryOpen && (
@@ -151,16 +161,18 @@ function Board({ viewId, viewName, mine, editorOpen, onEditorOpenChange, library
           doneLabel="Save"
         />
       </div>
-      <div className="collage !pt-0">
-        {layout.items.map(({ def, span, align }) => {
-          const W = def.component
-          return (
-            <TileSlot key={def.id} span={span} align={align}>
-              <W />
-            </TileSlot>
-          )
-        })}
-      </div>
+      <BoardDragContext.Provider value={drag}>
+        <div ref={drag.gridRef} className="collage !pt-0">
+          {layout.items.map(({ def, span, align }) => {
+            const W = def.component
+            return (
+              <TileSlot key={def.id} id={def.id} span={span} align={align}>
+                <W />
+              </TileSlot>
+            )
+          })}
+        </div>
+      </BoardDragContext.Provider>
     </>
   )
 }

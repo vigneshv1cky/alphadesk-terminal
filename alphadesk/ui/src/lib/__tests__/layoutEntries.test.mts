@@ -5,7 +5,7 @@
  */
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { parseLayout, resolveLayout, serializeLayout } from "../layoutEntries.ts"
+import { parseLayout, reorder, resolveLayout, serializeLayout } from "../layoutEntries.ts"
 
 const analysis = [
   { id: "chart" }, { id: "filings" }, { id: "performance" }, { id: "stats" }, { id: "history" }, { id: "news" },
@@ -60,4 +60,38 @@ test("a tile's place in its row round-trips, and left is not written", () => {
   assert.equal(serializeLayout(visible, all, false), raw)
   // A place on an auto-width tile is kept too; an unknown place is dropped.
   assert.deepEqual(parseLayout("news@c,chart@x", all).visible, [{ id: "news", span: null, align: "center" }, { id: "chart", span: null }])
+})
+
+// ── drag-to-reorder (2026-09-21) ───────────────────────────────────────────
+// The drop position is counted in the list as the reader SEES it, before the
+// dragged tile is taken out of it.
+
+const board = (...ids: string[]) => ids.map(id => ({ id, span: null }))
+const order = (rows: { id: string }[]) => rows.map(r => r.id).join(",")
+
+test("a tile moves to where it was dropped", () => {
+  assert.equal(order(reorder(board("a", "b", "c"), "c", 0)), "c,a,b")
+  assert.equal(order(reorder(board("a", "b", "c"), "a", 3)), "b,c,a")
+})
+
+test("a one-place move to the right works", () => {
+  // The gap AFTER b is index 2 in the list as shown; removing a first would
+  // make that index mean "where b already is" and the drag would do nothing.
+  assert.equal(order(reorder(board("a", "b", "c"), "a", 2)), "b,a,c")
+})
+
+test("dropping a tile beside itself leaves the board alone", () => {
+  const rows = board("a", "b", "c")
+  assert.equal(reorder(rows, "b", 1), rows)
+  assert.equal(reorder(rows, "b", 2), rows)
+})
+
+test("an unknown tile changes nothing", () => {
+  const rows = board("a", "b")
+  assert.equal(reorder(rows, "zzz", 0), rows)
+})
+
+test("a drop past either end is clamped", () => {
+  assert.equal(order(reorder(board("a", "b", "c"), "b", 99)), "a,c,b")
+  assert.equal(order(reorder(board("a", "b", "c"), "b", -5)), "b,a,c")
 })

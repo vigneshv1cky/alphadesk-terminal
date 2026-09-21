@@ -95,3 +95,25 @@ export function serializeLayout(
   }
   return parts.join(",")
 }
+
+/** `entries` with `id` moved so it sits at `to` — the drop position counted
+ * in the list AS IT LOOKS NOW, before the tile is taken out of it (2026-09-21,
+ * drag-to-reorder).
+ *
+ * That distinction is the whole of this function. Pull the tile out first and
+ * every index after it shifts by one, so dropping a tile on the gap just to
+ * its right returns it to where it started and the drag does nothing. Taking
+ * the removal into account is what makes a one-place move to the right
+ * possible at all. Pure; an unknown id or a no-op returns the same order.
+ */
+export function reorder(entries: LayoutEntry[], id: string, to: number): LayoutEntry[] {
+  const from = entries.findIndex(e => e.id === id)
+  if (from < 0) return entries
+  const target = Math.max(0, Math.min(entries.length, Math.round(to)))
+  // Counted before removal, so a drop into the gap on either side of the
+  // tile's own place means "leave it alone".
+  if (target === from || target === from + 1) return entries
+  const rest = entries.filter((_, i) => i !== from)
+  const at = target > from ? target - 1 : target
+  return [...rest.slice(0, at), entries[from], ...rest.slice(at)]
+}
