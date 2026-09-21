@@ -860,6 +860,13 @@ export function ChartCanvas({
   if (last) tagRows.push(tagY)
   if (cursor) tagRows.push(cursor.y)
   const tagHides = (y: number) => tagRows.some(t => Math.abs(y - t) < TAG_HALF)
+  // Where the PRICE axis has already put a figure. A pane's own figures share
+  // that column, and its ceiling sits on the pane's top edge — which is the
+  // price pane's bottom edge — so the two land on each other (2026-09-21).
+  const priceLabelYs = ticks
+    .map(v => priceToY(s, v, log))
+    .filter(y => y >= 5 && !tagHides(y))
+  const crowded = (y: number) => tagHides(y) || priceLabelYs.some(p => Math.abs(y - p) < 11)
   const hoveredIdx = cursor
     ? Math.max(0, Math.min(bars.length - 1, Math.round(xToIndex(s, cursor.x) - 0.5)))
     : -1
@@ -1257,13 +1264,17 @@ export function ChartCanvas({
             belonging to a pane but living in the gutter goes here. */}
         {paneLayout.map(({ pane, axis }) => (
           <g key={`axis-${pane.id}`}>
-            {axis.map((a, i) => (
-              tagHides(a.y) ? null : (
-                <text key={i} x={plotW + 6} y={a.y + 3.5} fill={text} fontSize={10} className="tnum">
+            {axis.map((a, i) => {
+              // Turned INWARD at the edges: the ceiling reads below its line
+              // and the floor above it, so neither sits on the boundary it
+              // shares with the pane's neighbour. The middle one is centred.
+              const y = i === axis.length - 1 ? a.y + 10 : i === 0 ? a.y - 3 : a.y + 3.5
+              return crowded(y) ? null : (
+                <text key={i} x={plotW + 6} y={y} fill={text} fontSize={10} className="tnum">
                   {paneAxisLabel(a.v, pane.compact)}
                 </text>
               )
-            ))}
+            })}
           </g>
         ))}
 
