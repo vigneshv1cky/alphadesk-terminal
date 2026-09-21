@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { Menu, Monitor, Moon, Sun } from "lucide-react"
-import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom"
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom"
 import { api } from "@/lib/api"
 import { useTheme } from "@/lib/theme"
 import { SubscribePage } from "@/components/SubscribePage"
@@ -93,10 +93,18 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
                   className={btnCls({ variant: "ghost", size: "lg", icon: true }, "-ml-1 sm:hidden")}>
             <Menu className="h-[18px] w-[18px]" aria-hidden="true" />
           </button>
-          <span aria-hidden="true" className="h-[14px] w-[14px] rounded-xs bg-accent" />
-          {/* The wordmark shows on a phone too since 2026-09-18: the page
+          {/* The mark and the wordmark go to PORTFOLIO (2026-09-21, the
+              owner's call — Markets was asked for first and changed within
+              the minute). NOT to "/", which is the landing page: that is
+              where a signed-in reader least wants to be sent from inside
+              the app. The whole lockup is the target, mark included.
+              The wordmark shows on a phone too since 2026-09-18: the page
               tabs moved into the menu drawer there, which frees the room. */}
-          <span className="text-figure font-extrabold tracking-tight">ALPHADESK</span>
+          <Link to="/portfolio" aria-label="AlphaDesk — go to Portfolio"
+                className="flex items-center gap-2.5 rounded-xs hover:opacity-80">
+            <span aria-hidden="true" className="h-[14px] w-[14px] rounded-xs bg-accent" />
+            <span className="text-figure font-extrabold tracking-tight">ALPHADESK</span>
+          </Link>
         </div>
         {/* No tagline (2026-09-18, the owner's call). "Research workspace — no
             order routing" and its divider sat here; the not-a-broker stance
