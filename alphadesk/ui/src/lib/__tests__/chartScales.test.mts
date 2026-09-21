@@ -18,7 +18,7 @@
  */
 import assert from "node:assert/strict"
 import test from "node:test"
-import { MIN_COLUMN_PX, columnBucket, columnHeight, paneExtent, sessionKind, sessionLayout, steadyColumnMax } from "../../components/chart/panes.ts"
+import { MIN_COLUMN_PX, columnBucket, columnHeight, paneExtent, sessionKind, sessionLayout, steadyColumnStats } from "../../components/chart/panes.ts"
 import {
   indexToX, xToIndex, priceToY, yToPrice, niceStep, priceTicks,
   padRange, padRangeInset, zoomAt, visibleExtent, scaledRange,
@@ -270,13 +270,19 @@ const vol = [
 const at = (t: string) => ["a", "b", "c", "d"].indexOf(t)
 
 ok("one bar per column: the ceiling is the tallest bar anywhere",
-  steadyColumnMax(vol, at, 1) === 900)
+  steadyColumnStats(vol, at, 1).max === 900)
 ok("the ceiling does not move when only part of the series is on screen",
-  steadyColumnMax(vol.slice(0, 2), at, 1) !== steadyColumnMax(vol, at, 1))
+  steadyColumnStats(vol.slice(0, 2), at, 1).max !== steadyColumnStats(vol, at, 1).max)
 ok("bucketed, the ceiling is the tallest SUM, not the tallest bar",
-  steadyColumnMax(vol, at, 2) === 930)     // c+d = 930 beats a+b = 30
+  steadyColumnStats(vol, at, 2).max === 930)     // c+d = 930 beats a+b = 30
 ok("a bucket is anchored to the absolute bar index",
-  steadyColumnMax(vol, at, 4) === 960)     // one bucket holds all four
+  steadyColumnStats(vol, at, 4).max === 960)     // one bucket holds all four
+ok("the average is of the columns, at the drawn bucket width",
+  steadyColumnStats(vol, at, 1).mean === 240)    // (10+20+900+30)/4
+ok("a wider bucket has a taller average column",
+  steadyColumnStats(vol, at, 2).mean === 480)    // (30 + 930)/2
+ok("a session with no trades is left out of the average, not counted as zero",
+  steadyColumnStats([...vol, { t: "e", v: 0 }], (t) => ["a","b","c","d","e"].indexOf(t), 1).mean === 240)
 
 // A 40-bar view in an 800px plot has room for every bar; a 4,000-bar view
 // does not, and its columns are summed.
@@ -291,7 +297,11 @@ ok("the bucket width follows the view's SPAN, so a pan does not change it",
 // busy one — but a TRUE ZERO draws nothing, or a session with no trades would
 // show a row of bars.
 ok("a tall column keeps its own height", columnHeight(500, 100, 20) === 80)
-ok("a column too short to see is held up to the floor", columnHeight(1, 100, 99.8) === MIN_COLUMN_PX)
-ok("no trades draws no column at all", columnHeight(0, 100, 100) === 0)
 ok("a negative value is as tall as its distance from zero",
   columnHeight(-40, 100, 140) === 40)
+
+// The floor is one pixel — the owner preferred true heights to a floor tall
+// enough to misread — but a true zero still draws nothing.
+ok("the floor is a single pixel", MIN_COLUMN_PX === 1)
+ok("a column too short to see is held up to it", columnHeight(1, 100, 99.9) === 1)
+ok("no trades draws no column at all", columnHeight(0, 100, 100) === 0)

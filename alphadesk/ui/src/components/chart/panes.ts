@@ -61,6 +61,14 @@ export type Pane = {
    * — see paneExtent — so this is opt-in, and volume is the one that takes
    * it. */
   steady?: boolean
+  /** Draw the average of the columns that traded as a reference line, and cap
+   * the columns that reach UNUSUAL_VOLUME times it. Volume only: it is the
+   * pane where a column's height is a quantity to be measured against
+   * normal, rather than a shape to be read. */
+  average?: boolean
+  /** Faint horizontal lines at the axis figures, so a column is read against
+   * a number instead of against the tallest column on screen. */
+  grid?: boolean
 }
 
 const fmtCompact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 })
@@ -80,6 +88,8 @@ export function volumePane(bars: ChartBar[], height: number, gain: string, loss:
     compact: true,
     // One scale for the whole series: a column's height IS the reading.
     steady: true,
+    average: true,
+    grid: true,
     series: [{
       kind: "histogram",
       points: bars.map(b => ({ t: b.t, v: b.v ?? 0 })),
@@ -94,20 +104,27 @@ export function volumePane(bars: ChartBar[], height: number, gain: string, loss:
   }
 }
 
-/** THE FLOOR A COLUMN IS DRAWN TO, in pixels (2026-09-21, the owner: "keep a
- * minimum height for bars, so even low ones are visible"). With the volume
- * band measured over the whole series, one busy session leaves a quiet one
- * sub-pixel — present in the data and invisible on the screen, which is the
- * same fault as the scale that moved, in the other direction.
+/** THE FLOOR A COLUMN IS DRAWN TO, in pixels. One, deliberately: two was
+ * tried on 2026-09-21 and the owner preferred the true heights, because a
+ * floor tall enough to notice is a floor tall enough to misread — a quiet
+ * session drawn at the same height as a merely small one says they were
+ * alike. What makes a low column legible here is the AVERAGE LINE and the
+ * gridlines beside it, not a taller bar: the reader is given something to
+ * measure against instead of a shape flattered into visibility.
  *
- * A column is held up to this, and a TRUE ZERO is drawn at nothing at all.
- * That distinction is the whole reason this is not simply a minimum: the
- * floor is there so "small" is legible, and zero must stay distinguishable
- * from small rather than being rounded up into it. The previous code held
- * every column to 1px INCLUDING the zeroes, which drew a row of bars along
- * a session with no trades.
+ * A TRUE ZERO still draws nothing at all. That is not the floor — it is the
+ * distinction the floor must not erase, and the code before this held every
+ * column to a pixel INCLUDING the zeroes, so a stretch with no trades drew
+ * a row of bars along the axis.
  */
-export const MIN_COLUMN_PX = 2
+export const MIN_COLUMN_PX = 1
+
+/** The mark on a column worth noticing: a solid cap across its top, two
+ * pixels deep, drawn INSIDE the column so the tallest one cannot push it out
+ * of the pane. Pure. */
+export function capPath(x: number, topY: number, w: number): string {
+  return `M${x.toFixed(1)},${topY.toFixed(1)}h${w.toFixed(1)}v2h${(-w).toFixed(1)}Z`
+}
 
 /** A column's drawn height: its true height, or the floor when that would be
  * invisible, or nothing at all when the value is zero. Pure. */
@@ -302,21 +319,44 @@ export function columnBucket(count: number, s: Scale, plotW: number, minPx: numb
   return Math.max(1, Math.ceil((s.to - s.from) / Math.max(1, Math.floor(plotW / minPx))))
 }
 
-/** The tallest column the whole series would draw at this bucket width — the
- * ceiling a `steady` histogram keeps while the view moves. Pure. */
-export function steadyColumnMax(points: Point[], indexOf: (t: string) => number | undefined, per: number): number {
-  if (per <= 1) return points.reduce((m, p) => Math.max(m, p.v), 0)
-  const sums = new Map<number, number>()
-  for (const p of points) {
-    const i = indexOf(p.t)
-    if (i == null) continue
-    const k = Math.floor(i / per)
-    sums.set(k, (sums.get(k) ?? 0) + p.v)
+/** What the whole series would draw at this bucket width: the tallest column
+ * — the ceiling a `steady` histogram keeps while the view moves — and the
+ * average of the columns that traded.
+ *
+ * Measured at the SAME bucket width the visible columns are drawn with, so
+ * both mean the same thing as what is on screen: at a wider zoom each column
+ * holds more bars, so the average column is taller, and a line drawn from
+ * per-bar averages would sit near the floor and say nothing. Sessions with
+ * no trades are left out of the average rather than dragging it down — the
+ * question is what a session that traded looks like. Pure.
+ */
+export function steadyColumnStats(
+  points: Point[], indexOf: (t: string) => number | undefined, per: number,
+): { max: number; mean: number } {
+  const totals: number[] = []
+  if (per <= 1) {
+    for (const p of points) totals.push(p.v)
+  } else {
+    const sums = new Map<number, number>()
+    for (const p of points) {
+      const i = indexOf(p.t)
+      if (i == null) continue
+      const k = Math.floor(i / per)
+      sums.set(k, (sums.get(k) ?? 0) + p.v)
+    }
+    totals.push(...sums.values())
   }
-  let max = 0
-  for (const v of sums.values()) if (v > max) max = v
-  return max
+  const traded = totals.filter(v => v > 0)
+  const max = totals.reduce((m, v) => Math.max(m, v), 0)
+  const mean = traded.length ? traded.reduce((a, v) => a + v, 0) / traded.length : 0
+  return { max, mean }
 }
+
+/** How many times the average a column must be to be MARKED (2026-09-21, the
+ * owner asked for markers on the volume band). Twice is the convention and
+ * it is a measured multiple, not a score: the mark says "at least twice the
+ * average column here", which the average line beside it shows. */
+export const UNUSUAL_VOLUME = 2
 
 export function volumeColumns(
 entries: { i: number; v: number; up: boolean }[],

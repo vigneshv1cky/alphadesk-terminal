@@ -4,7 +4,7 @@ import {
   clampView, indexToX, padRangeInset, priceDecimals, priceTicks, priceTicksLog, priceToY,
   RIGHT_GAP, scaledRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
 } from "@/lib/chartScales"
-import { columnBucket, columnHeight, paneAxisLabel, paneExtent, sessionLayout, steadyColumnMax, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
+import { UNUSUAL_VOLUME, capPath, columnBucket, columnHeight, paneAxisLabel, paneExtent, sessionLayout, steadyColumnStats, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
 import { heikinAshi, type SeriesKind } from "@/lib/series"
 import { barCloseCountdown, countdownLabel, thinTicks, timeAxisTicks, timeParts } from "@/lib/chartTime"
 import { provisionalSlots } from "@/lib/provisional"
@@ -756,21 +756,24 @@ export function ChartCanvas({
       // the view moves makes a quiet bar look busy the moment the busy ones
       // scroll off (2026-09-21). The same bucket width the visible columns
       // are drawn with is used for the ceiling, so the two agree.
-      const steadyCeiling = () => {
-        let max = 0
-        for (const ser of pane.series) {
-          const per = ser.kind === "histogram" && ser.aggregate
-            ? columnBucket(Math.max(1, to - from + 1), s, seriesW, 7)
-            : 1
-          max = Math.max(max, steadyColumnMax(ser.points, t => byTimeIdx.get(t), per))
-        }
-        return { min: 0, max: Math.max(1, max) }
-      }
-      const ext = pane.steady
-        ? steadyCeiling()
+      const steady = pane.steady
+        ? pane.series.reduce((acc, ser) => {
+            const per = ser.kind === "histogram" && ser.aggregate
+              ? columnBucket(Math.max(1, to - from + 1), s, seriesW, 7)
+              : 1
+            const st = steadyColumnStats(ser.points, t => byTimeIdx.get(t), per)
+            return { max: Math.max(acc.max, st.max), mean: Math.max(acc.mean, st.mean) }
+          }, { max: 0, mean: 0 })
+        : null
+      const ext = steady
+        ? { min: 0, max: Math.max(1, steady.max) }
         : allGrouped
           ? { min: 0, max: Math.max(1, ...[...grouped.values()].flat().map(c => c.v)) }
           : paneExtent(pane, onScreen)
+      // What a column is measured against: the average column, and the line
+      // above which one is worth noticing. Both at the drawn bucket width.
+      const mean = pane.average && steady?.mean ? steady.mean : 0
+      const unusual = mean ? mean * UNUSUAL_VOLUME : Infinity
       const inner = Math.max(10, pane.height - 6)
       const yIn = (v: number) => {
         const r = ext.max - ext.min
@@ -780,7 +783,7 @@ export function ChartCanvas({
       const byTime = byTimeIdx
       const drawn = pane.series.map(ser => {
         if (ser.kind === "histogram" && grouped.has(ser)) {
-          const up: string[] = [], down: string[] = []
+          const up: string[] = [], down: string[] = [], caps: string[] = []
           for (const c of grouped.get(ser)!) {
             if (c.x < -c.w || c.x > seriesW + c.w) continue
             const h = columnHeight(c.v, zeroY, yIn(c.v))
@@ -788,12 +791,13 @@ export function ChartCanvas({
             const half2 = c.w / 2
             ;(c.up ? up : down).push(
               `M${(c.x - half2).toFixed(1)},${(zeroY - h).toFixed(1)}h${c.w.toFixed(1)}v${h.toFixed(1)}h${(-c.w).toFixed(1)}Z`)
+            if (c.v >= unusual) caps.push(capPath(c.x - half2, zeroY - h, c.w))
           }
           return { kind: "histogram" as const, up: up.join(""), down: down.join(""),
-                   color: ser.color, downColor: ser.downColor ?? ser.color }
+                   caps: caps.join(""), color: ser.color, downColor: ser.downColor ?? ser.color }
         }
         if (ser.kind === "histogram") {
-          const up: string[] = [], down: string[] = []
+          const up: string[] = [], down: string[] = [], caps: string[] = []
           const upWeak: string[] = [], downWeak: string[] = []
           let prev: number | null = null
           for (const p of ser.points) {
@@ -818,8 +822,10 @@ export function ChartCanvas({
             const weak = !!ser.shade && before != null && Math.abs(p.v) < Math.abs(before)
             ;(isUp ? (weak ? upWeak : up) : (weak ? downWeak : down)).push(
               `M${(x - half).toFixed(1)},${topY.toFixed(1)}h${barW.toFixed(1)}v${h.toFixed(1)}h${(-barW).toFixed(1)}Z`)
+            if (p.v >= unusual) caps.push(capPath(x - half, topY, barW))
           }
           return { kind: "histogram" as const, up: up.join(""), down: down.join(""),
+                   caps: caps.join(""),
                    upWeak: upWeak.join(""), downWeak: downWeak.join(""), shade: !!ser.shade,
                    color: ser.color, downColor: ser.downColor ?? ser.color }
         }
@@ -840,13 +846,14 @@ export function ChartCanvas({
       const lookups = pane.series.map(ser => new Map(ser.points.map(p => [p.t, p.v])))
       const colors = pane.series.map(ser => ser.color)
       const levels = (pane.levels ?? []).map(v => ({ v, y: yIn(v) }))
+      const average = mean ? { v: mean, y: yIn(mean) } : null
       const axis = [ext.min, (ext.min + ext.max) / 2, ext.max]
         .map(v => ({ v, y: yIn(v) }))
       const band = pane.band
         ? { y: Math.min(yIn(pane.band.from), yIn(pane.band.to)),
             h: Math.abs(yIn(pane.band.to) - yIn(pane.band.from)), color: pane.band.color }
         : null
-      return { pane, top, drawn, levels, axis, lookups, colors, band }
+      return { pane, top, drawn, levels, average, axis, lookups, colors, band }
     })
   }, [panes, priceH, bars, s, barW, half, seriesW, from, to, indexByTime])
 
@@ -1146,7 +1153,7 @@ export function ChartCanvas({
         ))}
 
         {/* the stacked panes */}
-        {paneLayout.map(({ pane, top, drawn, levels, axis, lookups, colors, band }) => (
+        {paneLayout.map(({ pane, top, drawn, levels, average, axis, lookups, colors, band }) => (
           <g key={pane.id}>
             <line x1={0} y1={top} x2={plotW} y2={top} stroke={grid} strokeWidth={1} />
             {band && <rect x={0} y={band.y} width={plotW} height={band.h} fill={band.color} fillOpacity={0.07} />}
@@ -1183,10 +1190,26 @@ export function ChartCanvas({
                 }}
               />
             )}
+            {/* Figures to read a column against, rather than the tallest
+                column on screen. Fainter than a level: it is a ruler. */}
+            {pane.grid && axis.map((a, i) => (
+              <line key={`g${i}`} x1={0} y1={a.y} x2={plotW} y2={a.y}
+                stroke={text} strokeOpacity={0.1} strokeWidth={1} />
+            ))}
             {levels.map(l => (
               <line key={l.v} x1={0} y1={l.y} x2={plotW} y2={l.y}
                 stroke={text} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 3" />
             ))}
+            {/* The average column that traded — what "unusual" is twice of. */}
+            {average && (
+              <g>
+                <line x1={0} y1={average.y} x2={plotW} y2={average.y}
+                  stroke={text} strokeOpacity={0.45} strokeWidth={1} strokeDasharray="4 3" />
+                <text x={4} y={average.y - 3} fill={text} fillOpacity={0.7} fontSize={9} className="tnum">
+                  avg {paneAxisLabel(average.v, pane.compact)}
+                </text>
+              </g>
+            )}
             {axis.map((a, i) => (
               tagHides(a.y) ? null : (
                 <text key={i} x={plotW + 6} y={a.y + 3.5} fill={text} fontSize={10} className="tnum">
@@ -1203,6 +1226,10 @@ export function ChartCanvas({
                       fading ones faint. */}
                   <path d={d.up} fill={d.color} fillOpacity={"shade" in d && d.shade ? 0.85 : 0.42} />
                   <path d={d.down} fill={d.downColor} fillOpacity={"shade" in d && d.shade ? 0.85 : 0.42} />
+                  {/* The mark on a column of at least twice the average. In
+                      the ink colour, not the column's: it says "unusual",
+                      which is not a direction. */}
+                  {"caps" in d && d.caps ? <path d={d.caps} fill={text} fillOpacity={0.75} /> : null}
                   {"upWeak" in d && d.upWeak && <path d={d.upWeak} fill={d.color} fillOpacity={0.3} />}
                   {"downWeak" in d && d.downWeak && <path d={d.downWeak} fill={d.downColor} fillOpacity={0.3} />}
                 </g>
