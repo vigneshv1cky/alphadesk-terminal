@@ -66,7 +66,7 @@ function readStored(): StoredBoard | null {
   }
 }
 
-function writeStored(board: StoredBoard) {
+function writeStored(board: StoredBoard, mirror = true) {
   // THE STAMP SURVIVES A PASSIVE WRITE (2026-09-21). `at` means "when a
   // PERSON last arranged this", and only a gesture supplies one — the
   // mirror effect below rewrites the same board on every URL change and
@@ -78,7 +78,12 @@ function writeStored(board: StoredBoard) {
   try {
     localStorage.setItem(KEY, JSON.stringify({ ...board, ...(at ? { at } : {}), seen }))
   } catch { /* private mode */ }
-  mirrorToAccount(board)
+  // ADOPTING IS NOT ARRANGING (2026-09-21). Taking the account's board and
+  // writing it straight back bumped the account's `updated_at` to now, which
+  // made the account permanently newer than any local stamp: every load
+  // adopted again, every adopt pushed again, and a change made here could
+  // never win. The logs showed it as a GET and a PUT every few seconds.
+  if (mirror) mirrorToAccount(board)
 }
 
 
@@ -217,7 +222,12 @@ export function useBoardSymbols() {
       // An inbound link is a view too: arriving at ?symbol= counts, so a
       // symbol opened from a movers row leads the strip on the next screen.
       noteSeen(active)
-      writeStored({ symbols, active })
+      // Storage only. Opening a page is not arranging a board, and a write
+      // to the account stamps it "newest" — so a device left on a stale
+      // board would overwrite a newer one from another device just by being
+      // opened. The account is written by a gesture (commit) and by the
+      // sync when the account has nothing of its own.
+      writeStored({ symbols, active }, false)
       return
     }
     const stored = readStored()
@@ -276,7 +286,7 @@ export function useBoardSymbols() {
       }
       if (verdict !== "adopt" || !mine) return
       const theirs = mine.board.symbols.join(",")
-      writeStored({ ...mine.board, at: mine.at })
+      writeStored({ ...mine.board, at: mine.at }, false)
       setParams(prev => {
         const p = new URLSearchParams(prev)
         // Only what this browser put there — its own board, or the default
