@@ -6,8 +6,10 @@ not, so a board built on a desktop was absent on a phone."""
 def test_a_layout_is_kept_and_read_back(store):
     store.set_user_layout("u1", "markets", "market-chart:12,news-tape:6")
     store.set_user_layout("u1", "earnings", "calendar:12")
-    assert store.user_layouts("u1") == {
+    got = store.user_layouts("u1")
+    assert {k: v["tiles"] for k, v in got.items()} == {
         "markets": "market-chart:12,news-tape:6", "earnings": "calendar:12"}
+    assert all(v["updated_at"] for v in got.values()), "each carries when it was arranged"
 
 
 def test_another_reader_sees_none_of_it(store):
@@ -28,19 +30,19 @@ def test_an_empty_layout_is_forgotten_rather_than_stored(store):
 def test_arranging_it_again_replaces_the_row(store):
     store.set_user_layout("u1", "markets", "a:6")
     store.set_user_layout("u1", "markets", "b:12")
-    assert store.user_layouts("u1")["markets"] == "b:12"
+    assert store.user_layouts("u1")["markets"]["tiles"] == "b:12"
 
 
 def test_a_views_layout_rides_the_same_table(store):
     """A custom view's page key carries a colon; the route must accept it."""
     store.set_user_layout("u1", "view:abc123", "chart:12")
-    assert store.user_layouts("u1")["view:abc123"] == "chart:12"
+    assert store.user_layouts("u1")["view:abc123"]["tiles"] == "chart:12"
 
 
 def test_the_route_keeps_and_returns_a_layout(client):
     assert client.put("/api/layouts/markets", json={"tiles": "chart:12,news:6"}).status_code == 200
     got = client.get("/api/layouts").json()["layouts"]
-    assert got["markets"] == "chart:12,news:6"
+    assert got["markets"]["tiles"] == "chart:12,news:6"
 
 
 def test_the_route_refuses_a_page_key_it_does_not_recognise(client):
