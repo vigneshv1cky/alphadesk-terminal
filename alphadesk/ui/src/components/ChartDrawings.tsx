@@ -217,7 +217,7 @@ type Drag = {
 
 export function ChartDrawings({
   projection, bars, tool, onToolDone, drawings, onChange, visible, height,
-  magnet, onUndo, onRedo, onArm,
+  magnet, onUndo, onRedo, onArm, onWheel,
 }: {
   /** Supplied by the renderer. Null before the first layout. */
   projection: Projection | null
@@ -238,8 +238,17 @@ export function ChartDrawings({
   onRedo?: () => void
   /** A keyboard shortcut picked a tool (Alt+T and friends). */
   onArm?: (k: Kind) => void
+  /** The chart's own wheel handler. This layer covers the plot whenever a
+   * tool is armed, and each drawn shape takes the pointer even when none is,
+   * so a wheel over either lands here and bubbles to the shared parent —
+   * never to the chart, which is a SIBLING. Scrolling therefore stopped
+   * zooming the moment a tool was picked (2026-09-20). A wheel is not a
+   * drawing gesture, so it is handed straight back. */
+  onWheel?: (e: WheelEvent) => void
 }) {
   const wrap = useRef<HTMLDivElement>(null)
+  const wheel = useRef(onWheel)
+  wheel.current = onWheel
   const [pending, setPending] = useState<Anchor[]>([])
   /** THE MEASUREMENT IS A GLANCE, NOT A DRAWING (2026-09-16). Theirs shows
    * the span and its numbers until the next click and then it is gone, which
@@ -259,6 +268,23 @@ export function ChartDrawings({
   // Bumped whenever the chart moves, to force a re-projection.
   const [, setTick] = useState(0)
   useEffect(() => { setTick(t => t + 1) }, [projection])
+
+  /** Hand every wheel over this layer back to the chart (see `onWheel`).
+   * Bound here rather than as a React prop for the same reason the chart
+   * binds its own: React registers wheel on its root as PASSIVE, and the
+   * handler has to preventDefault — on macOS an unprevented sideways wheel
+   * is the browser's back gesture. The drawing CHROME is left alone: a
+   * style strip is a control, not the plot. */
+  useEffect(() => {
+    const el = wrap.current
+    if (!el) return
+    const forward = (e: WheelEvent) => {
+      if ((e.target as Element | null)?.closest?.("[data-drawing-ui]")) return
+      wheel.current?.(e)
+    }
+    el.addEventListener("wheel", forward, { passive: false })
+    return () => el.removeEventListener("wheel", forward)
+  }, [])
 
   const width = wrap.current?.clientWidth ?? 0
   const plotW = Math.max(0, width - AXIS_W)

@@ -100,7 +100,7 @@ export function ChartCanvas({
    * anything. */
   live?: boolean
   /** Filled with the view controls, so a menu outside can reset the view. */
-  controlRef?: React.MutableRefObject<{ reset: () => void } | null>
+  controlRef?: React.MutableRefObject<{ reset: () => void; wheel: (e: WheelEvent) => void } | null>
   /** Right-click on the plot: where, and what price and time sit there. */
   onContextMenu?: (at: { clientX: number; clientY: number; price: number | null; time: string | null }) => void
   /** Drag a pane's top edge. Down shrinks the pane, up grows it; the caller
@@ -141,6 +141,9 @@ export function ChartCanvas({
   onRemovePane?: (id: string) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
+  // The live wheel handler, so the drawing layer over the plot can hand
+  // its own wheel events back to the chart (see the wheel effect below).
+  const wheelRef = useRef<((e: WheelEvent) => void) | null>(null)
   const [box, setBox] = useState({ w: 0, h: height })
   // Opens on the range's focus from the first paint: the effect below
   // resets only when the series CHANGES, and at mount it has not.
@@ -513,7 +516,7 @@ export function ChartCanvas({
     const el = host.current
     if (!el) return
     const total = edgeLen
-    const onWheel = (e: WheelEvent) => {
+    const onWheel: (e: WheelEvent) => void = (e: WheelEvent) => {
       if (!total) return
       if (e.ctrlKey || e.metaKey) return        // the browser's, not ours
       const sideways = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)
@@ -546,8 +549,14 @@ export function ChartCanvas({
         return zoomAt(sc, xToIndex(sc, x), factor, total)
       })
     }
+    // Also handed out on the control ref: the drawing layer covers the plot
+    // while a tool is armed, and a wheel landing on it bubbles to the shared
+    // parent, never to this sibling — so scrolling stopped zooming the
+    // moment a tool was picked (2026-09-20). A wheel is not a drawing
+    // gesture; the layer forwards it here.
+    wheelRef.current = onWheel
     el.addEventListener("wheel", onWheel, { passive: false })
-    return () => el.removeEventListener("wheel", onWheel)
+    return () => { el.removeEventListener("wheel", onWheel); wheelRef.current = null }
   }, [bars.length, seriesW, edgeLen])
 
   /** The plot pan runs on POINTER events with capture, like the gutters: on
@@ -894,7 +903,10 @@ export function ChartCanvas({
   // The view controls, for whoever holds the ref.
   useEffect(() => {
     if (!controlRef) return
-    controlRef.current = { reset: () => { setView(focusView()); setYZoom(1); setHeld(null); userMoved.current = false } }
+    controlRef.current = {
+      reset: () => { setView(focusView()); setYZoom(1); setHeld(null); userMoved.current = false },
+      wheel: (e: WheelEvent) => wheelRef.current?.(e),
+    }
     return () => { controlRef.current = null }
   }, [controlRef, bars.length, focusFrom])  // eslint-disable-line react-hooks/exhaustive-deps
 
