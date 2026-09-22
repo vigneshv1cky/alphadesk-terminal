@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from alphadesk.providers.base import ProviderError
@@ -324,12 +324,237 @@ class YahooPrices:
         return None
 
 
+class NasdaqCalendars:
+    """The four corporate calendars — earnings, dividends, splits and new
+    listings — from the routes Nasdaq's own calendar pages read.
+
+    These are the calendars a reader with no key cannot otherwise see: the
+    keyed vendors that carry them are a paid plan or a free one that omits
+    the session. Nasdaq states the SESSION outright ("time-pre-market"),
+    which is the one fact the earnings calendar otherwise has to infer from
+    a company's filing history.
+
+    EACH CALENDAR IS A DAY AT A TIME, so a window costs one request per day
+    and the pacing gate above spaces them. A window wider than
+    `_MAX_DAYS` is refused rather than served slowly and partially — the
+    router then moves on and the panel says what it could not fill, which is
+    truer than a calendar missing its later half without saying so.
+    """
+
+    name = "nasdaq"
+    label = "Nasdaq calendars"
+    official = False
+
+    _BASE = "https://api.nasdaq.com/api"
+    #: Days a range request may span. Three weeks is the earnings window the
+    #: calendar asks for (-14/+7); beyond that the cost is the reader's
+    #: patience rather than a vendor's bill, and it is still too long.
+    _MAX_DAYS = 31
+
+    def __init__(self, api_key: str | None = None, api_secret: str | None = None) -> None:
+        self.reader_id: str | None = None
+
+    # ── helpers ────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _days(start: str, end: str) -> list[str] | None:
+        """Every calendar day in the window, or None when it is too wide."""
+        from datetime import date as _date
+        try:
+            a = _date.fromisoformat(start[:10])
+            b = _date.fromisoformat(end[:10])
+        except ValueError:
+            return None
+        if b < a or (b - a).days > NasdaqCalendars._MAX_DAYS:
+            return None
+        out, day = [], a
+        while day <= b:
+            # Weekends carry no corporate calendar, so they are not asked for.
+            if day.weekday() < 5:
+                out.append(day.isoformat())
+            day += timedelta(days=1)
+        return out
+
+    @staticmethod
+    def _us_date(value: Any) -> str | None:
+        """Nasdaq writes dates as M/D/YYYY; the app speaks ISO throughout."""
+        from datetime import datetime as _dt
+        text = str(value or "").strip()
+        if not text or text.upper() in ("N/A", "--"):
+            return None
+        for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                return _dt.strptime(text, fmt).date().isoformat()
+            except ValueError:
+                continue
+        return None
+
+    @staticmethod
+    def _money(value: Any) -> float | None:
+        """A figure Nasdaq writes for a page — "$78,656,864,000", "N/A"."""
+        text = str(value or "").replace("$", "").replace(",", "").strip()
+        return _f(text) if text and text.upper() not in ("N/A", "--") else None
+
+    def _rows(self, path: str, holder: str = "rows") -> list[dict]:
+        body = _get_json(f"{self._BASE}/{path}")
+        data = (body or {}).get("data") or {}
+        if holder != "rows" and isinstance(data.get(holder), dict):
+            data = data[holder]
+        rows = data.get("rows")
+        return [r for r in (rows or []) if isinstance(r, dict)]
+
+    # ── the calendars ──────────────────────────────────────────────────────
+
+    def earnings_calendar(self, start: str, end: str, symbol: str | None = None) -> list[dict] | None:
+        """The market's reporters, day by day, WITH the session each states.
+
+        One company is not asked for separately: this route is a day's list,
+        so a single symbol is that reader's window filtered — which is what
+        the caller does with the result anyway."""
+        days = self._days(start, end)
+        if days is None:
+            return None
+        # "time-pre-market" / "time-after-hours" / "time-not-supplied".
+        session = {"time-pre-market": "BMO", "time-after-hours": "AMC"}
+        want = (symbol or "").upper()
+        out: list[dict] = []
+        for day in days:
+            try:
+                rows = self._rows(f"calendar/earnings?date={day}")
+            except ProviderError as exc:
+                log.debug("nasdaq earnings %s: %s", day, exc)
+                continue
+            for r in rows:
+                sym = str(r.get("symbol") or "").upper()
+                if not sym or (want and sym != want):
+                    continue
+                when = session.get(str(r.get("time") or "").lower())
+                out.append({"symbol": sym, "report_date": day, "session": when,
+                            # A stated session is the company's own schedule,
+                            # not a guess; a missing one stays silent so the
+                            # calendar predicts it from filing history.
+                            "confirmed": when is not None,
+                            "eps_estimate": self._money(r.get("epsForecast")),
+                            "eps_actual": None,
+                            "revenue_estimate": None, "revenue_actual": None,
+                            "market_cap": self._money(r.get("marketCap")),
+                            "source": self.name})
+        return out or None
+
+    def dividend_calendar(self, start: str, end: str) -> list[dict] | None:
+        days = self._days(start, end)
+        if days is None:
+            return None
+        out: list[dict] = []
+        for day in days:
+            try:
+                rows = self._rows(f"calendar/dividends?date={day}", holder="calendar")
+            except ProviderError as exc:
+                log.debug("nasdaq dividends %s: %s", day, exc)
+                continue
+            for r in rows:
+                sym = str(r.get("symbol") or "").upper()
+                ex = self._us_date(r.get("dividend_Ex_Date"))
+                if not sym or not ex:
+                    continue
+                out.append({"symbol": sym, "ex_date": ex,
+                            "record_date": self._us_date(r.get("record_Date")),
+                            "payment_date": self._us_date(r.get("payment_Date")),
+                            "declaration_date": self._us_date(r.get("announcement_Date")),
+                            "amount": _f(r.get("dividend_Rate")),
+                            # Nasdaq states the cash rate only; an adjusted
+                            # figure would be ours to compute, so it is absent
+                            # rather than invented.
+                            "adjusted_amount": None,
+                            "annual_amount": _f(r.get("indicated_Annual_Dividend")),
+                            "source": self.name})
+        return out or None
+
+    def split_calendar(self, start: str, end: str) -> list[dict] | None:
+        """Splits, asked for ONCE and filtered here.
+
+        Unlike the earnings and dividend routes, this one IGNORES the date it
+        is given and answers the same upcoming list every time (measured
+        2026-09-22: a six-day window returned thirteen distinct splits six
+        times over, some of them weeks past the window's end). Asking per day
+        would have put every split in the calendar six times and added dates
+        nobody asked for. One request, filtered to the window, is both correct
+        and cheaper — the shape of the answer decides the shape of the ask."""
+        if self._days(start, end) is None:          # the same width guard
+            return None
+        try:
+            rows = self._rows("calendar/splits?date=" + start[:10])
+        except ProviderError as exc:
+            log.debug("nasdaq splits: %s", exc)
+            return None
+        out: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for r in rows:
+            sym = str(r.get("symbol") or "").upper()
+            when = self._us_date(r.get("executionDate"))
+            # "3 : 1" — the ratio as the page prints it.
+            parts = [_f(x) for x in str(r.get("ratio") or "").split(":")]
+            if not sym or not when or len(parts) != 2 or not all(parts):
+                continue
+            if not (start[:10] <= when <= end[:10]) or (sym, when) in seen:
+                continue
+            seen.add((sym, when))
+            out.append({"symbol": sym, "date": when, "to": parts[0], "from": parts[1],
+                        "kind": None, "source": self.name})
+        return out or None
+
+    def ipo_calendar(self, start: str, end: str) -> list[dict] | None:
+        """New listings. This route is a MONTH at a time and answers four
+        lists; the priced and upcoming ones are the listings a reader is
+        looking for, and a filed or withdrawn registration is not a date."""
+        from datetime import date as _date
+        try:
+            a, b = _date.fromisoformat(start[:10]), _date.fromisoformat(end[:10])
+        except ValueError:
+            return None
+        if b < a or (b - a).days > 370:
+            return None
+        months, cursor = [], a.replace(day=1)
+        while cursor <= b and len(months) < 14:
+            months.append(cursor.strftime("%Y-%m"))
+            cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+        out: list[dict] = []
+        for month in months:
+            try:
+                body = _get_json(f"{self._BASE}/ipo/calendar?date={month}")
+            except ProviderError as exc:
+                log.debug("nasdaq ipo %s: %s", month, exc)
+                continue
+            data = (body or {}).get("data") or {}
+            for holder in ("priced", "upcoming"):
+                block = data.get(holder) or {}
+                rows = block.get("rows") or (block.get("upcomingTable") or {}).get("rows") or []
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    when = self._us_date(r.get("pricedDate") or r.get("expectedPriceDate"))
+                    if not when or not (start[:10] <= when <= end[:10]):
+                        continue
+                    price = self._money(r.get("proposedSharePrice"))
+                    out.append({"symbol": str(r.get("proposedTickerSymbol") or "").upper() or None,
+                                "date": when, "company": r.get("companyName") or None,
+                                "exchange": r.get("proposedExchange") or None,
+                                "status": r.get("dealStatus") or holder,
+                                "shares": self._money(r.get("sharesOffered")),
+                                "price_low": price, "price_high": price,
+                                "market_cap": self._money(r.get("dollarValueOfSharesOffered")),
+                                "source": self.name})
+        return out or None
+
+
 register("prices", YahooPrices.name, YahooPrices)
+register("prices", NasdaqCalendars.name, NasdaqCalendars)
 
 #: Every scraped source registered here, by the name the router knows it by.
 #: The Account page reads it to offer a button instead of a key field, and
 #: provenance reads it to mark an answer.
-SCRAPED_SOURCES: dict[str, type] = {YahooPrices.name: YahooPrices}
+SCRAPED_SOURCES: dict[str, type] = {YahooPrices.name: YahooPrices,
+                                    NasdaqCalendars.name: NasdaqCalendars}
 
 
 def is_scraped(vendor: str | None) -> bool:
@@ -339,4 +564,4 @@ def is_scraped(vendor: str | None) -> bool:
     return bool(vendor) and vendor in SCRAPED_SOURCES
 
 
-__all__ = ["SCRAPED_SOURCES", "YahooPrices", "is_scraped"]
+__all__ = ["SCRAPED_SOURCES", "NasdaqCalendars", "YahooPrices", "is_scraped"]

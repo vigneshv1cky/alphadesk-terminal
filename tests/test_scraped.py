@@ -123,3 +123,76 @@ def test_the_agent_can_resolve_a_vendor_name_it_was_given():
     # keyed answered rather than for a listed surface.
     assert by_name["yahoo"]["serves"] == ["whatever no keyed vendor carried"]
     assert by_name["alpaca"]["serves"]
+
+
+# ── Nasdaq's calendars ────────────────────────────────────────────────────
+
+from alphadesk.providers.scraped import NasdaqCalendars  # noqa: E402
+
+
+def test_a_window_wider_than_the_source_can_serve_is_refused():
+    """Each calendar is a day at a time, so a wide window is a long queue of
+    requests. Refusing it lets the router move on and the panel say what it
+    could not fill — truer than a calendar quietly missing its later half."""
+    n = NasdaqCalendars()
+    assert n._days("2026-01-01", "2026-09-30") is None
+    assert n.earnings_calendar("2026-01-01", "2026-09-30") is None
+    assert n.dividend_calendar("2026-01-01", "2026-09-30") is None
+    assert n.split_calendar("2026-01-01", "2026-09-30") is None
+    # Backwards, and unparseable, are refused the same way.
+    assert n._days("2026-09-30", "2026-09-01") is None
+    assert n._days("not-a-date", "2026-09-30") is None
+
+
+def test_only_weekdays_are_asked_for():
+    """No corporate calendar lists a Saturday, so asking for one is a request
+    spent to be told nothing."""
+    days = NasdaqCalendars()._days("2026-09-18", "2026-09-22")   # Friday to Tuesday
+    assert days == ["2026-09-18", "2026-09-21", "2026-09-22"]
+
+
+def test_the_splits_route_is_asked_once_because_it_ignores_the_date():
+    """MEASURED 2026-09-22: this route answers the same upcoming list
+    whatever date it is given. Asking per day put every split in the calendar
+    once per day of the window — thirteen splits returned as sixty-five rows
+    — and carried in dates weeks past the window's end. One request,
+    filtered here."""
+    calls = []
+    same_list_every_time = [
+        {"symbol": "ZCSH", "ratio": "3 : 1", "executionDate": "9/30/2026"},
+        {"symbol": "DXJ", "ratio": "2 : 1", "executionDate": "10/9/2026"},   # past the window
+        {"symbol": "ZCSH", "ratio": "3 : 1", "executionDate": "9/30/2026"},  # and repeated
+    ]
+    n = NasdaqCalendars()
+    n._rows = lambda path, holder="rows": (calls.append(path), same_list_every_time)[1]
+    rows = n.split_calendar("2026-09-23", "2026-09-30")
+    assert len(calls) == 1, "one request, not one per day"
+    assert rows == [{"symbol": "ZCSH", "date": "2026-09-30", "to": 3.0, "from": 1.0,
+                     "kind": None, "source": "nasdaq"}]
+
+
+def test_a_stated_session_is_carried_and_a_missing_one_stays_silent():
+    """The session is the one fact no free key states, and the reason this
+    source is worth having. A company that states none must not be given
+    one — the calendar predicts it from filing history instead."""
+    n = NasdaqCalendars()
+    n._rows = lambda path, holder="rows": [
+        {"symbol": "CTAS", "time": "time-pre-market", "epsForecast": "$1.35", "marketCap": "$78,656,864,000"},
+        {"symbol": "XXXX", "time": "time-after-hours", "epsForecast": "N/A", "marketCap": "N/A"},
+        {"symbol": "YYYY", "time": "time-not-supplied", "epsForecast": "$0.10", "marketCap": "$1,000"},
+    ]
+    rows = {r["symbol"]: r for r in n.earnings_calendar("2026-09-23", "2026-09-23")}
+    assert rows["CTAS"]["session"] == "BMO" and rows["CTAS"]["confirmed"] is True
+    assert rows["CTAS"]["eps_estimate"] == 1.35 and rows["CTAS"]["market_cap"] == 78_656_864_000.0
+    assert rows["XXXX"]["session"] == "AMC" and rows["XXXX"]["eps_estimate"] is None
+    assert rows["YYYY"]["session"] is None and rows["YYYY"]["confirmed"] is False
+
+
+def test_a_figure_written_for_a_page_is_read_as_a_number_or_not_at_all():
+    money = NasdaqCalendars._money
+    assert money("$78,656,864,000") == 78_656_864_000.0
+    assert money("15.00") == 15.0
+    assert money("N/A") is None and money("--") is None and money("") is None and money(None) is None
+    us = NasdaqCalendars._us_date
+    assert us("9/23/2026") == "2026-09-23" and us("2026-09-23") == "2026-09-23"
+    assert us("N/A") is None and us("") is None and us(None) is None
