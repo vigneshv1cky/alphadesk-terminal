@@ -1060,6 +1060,19 @@ def api_movers(top: int = 20):
     return get_prices().ask("movers", top=max(1, min(top, 50)))
 
 
+@app.get("/api/halts")
+def api_trading_halts(limit: int = 100):
+    """Today's trading halts and resumptions (2026-09-22).
+
+    A catalyst with its own clock: the exchange stopped the stock at a stated
+    time for a stated reason and said when it would resume. No keyed vendor in
+    the catalogue carries it, so this answers 428 until a source that does is
+    switched on."""
+    from alphadesk.providers import get_prices
+    return {"halts": get_prices().ask("trading_halts", limit=max(1, min(limit, 500)),
+                                      surface="trading_halts")}
+
+
 @app.get("/api/sectors")
 def api_sectors():
     """The Sectors page: the eleven S&P sector funds and a set of industry

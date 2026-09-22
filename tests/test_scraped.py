@@ -196,3 +196,61 @@ def test_a_figure_written_for_a_page_is_read_as_a_number_or_not_at_all():
     us = NasdaqCalendars._us_date
     assert us("9/23/2026") == "2026-09-23" and us("2026-09-23") == "2026-09-23"
     assert us("N/A") is None and us("") is None and us(None) is None
+
+
+def test_a_halt_is_a_record_with_its_own_clock():
+    """A halt is a catalyst nothing else here carries: the exchange stopped
+    the stock at a stated time for a stated reason. The record is handed over
+    whole — code included — and the times are the exchange's, in New York."""
+    feed = """<rss><channel>
+      <item><ndaq:IssueSymbol>JAGX</ndaq:IssueSymbol><ndaq:IssueName>Jaguar Health, Inc. Cmn</ndaq:IssueName>
+        <ndaq:Market>NASDAQ</ndaq:Market><ndaq:ReasonCode>LUDP</ndaq:ReasonCode>
+        <ndaq:HaltDate>09/22/2026</ndaq:HaltDate><ndaq:HaltTime>14:54:49.693</ndaq:HaltTime>
+        <ndaq:ResumptionDate>09/22/2026</ndaq:ResumptionDate>
+        <ndaq:ResumptionQuoteTime>14:54:49</ndaq:ResumptionQuoteTime>
+        <ndaq:ResumptionTradeTime>14:59:49</ndaq:ResumptionTradeTime>
+        <ndaq:PauseThresholdPrice /></item>
+      <item><ndaq:IssueSymbol>STOP</ndaq:IssueSymbol><ndaq:IssueName>Still Halted Co</ndaq:IssueName>
+        <ndaq:Market>NYSE</ndaq:Market><ndaq:ReasonCode>T1</ndaq:ReasonCode>
+        <ndaq:HaltDate>09/22/2026</ndaq:HaltDate><ndaq:HaltTime>15:30:00.000</ndaq:HaltTime>
+        <ndaq:ResumptionDate /><ndaq:ResumptionQuoteTime /><ndaq:ResumptionTradeTime /></item>
+      <item><ndaq:IssueSymbol>ZZZZ</ndaq:IssueSymbol><ndaq:ReasonCode>WAT</ndaq:ReasonCode>
+        <ndaq:HaltDate>09/22/2026</ndaq:HaltDate><ndaq:HaltTime>09:31:00.000</ndaq:HaltTime></item>
+    </channel></rss>"""
+    import alphadesk.providers.scraped as sc
+    n = NasdaqCalendars()
+    original, sc._get_text = sc._get_text, lambda url, timeout=20.0: feed
+    try:
+        rows = n.trading_halts()
+    finally:
+        sc._get_text = original
+
+    by = {r["symbol"]: r for r in rows}
+    # Newest first, and the times are the exchange's own, stated as New York.
+    assert [r["symbol"] for r in rows] == ["STOP", "JAGX", "ZZZZ"]
+    assert by["JAGX"]["halted_at"] == "2026-09-22T14:54:49"
+    assert by["JAGX"]["timezone"] == "America/New_York"
+    assert by["JAGX"]["resumption_trade_at"] == "2026-09-22T14:59:49"
+    assert by["JAGX"]["resumed"] is True
+    assert by["JAGX"]["reason"] == "Volatility pause (limit up–limit down)"
+    # Still stopped: no resumption named. This is the state that matters.
+    assert by["STOP"]["resumed"] is False
+    assert by["STOP"]["resumption_trade_at"] is None
+    assert by["STOP"]["reason"] == "News pending"
+    # A code nobody publishes stays a code rather than being given a meaning.
+    assert by["ZZZZ"]["reason_code"] == "WAT" and by["ZZZZ"]["reason"] is None
+
+
+def test_the_same_stock_halted_twice_is_two_events():
+    """Each pause is its own catalyst; collapsing them would hide the second."""
+    feed = "<rss><channel>" + "".join(
+        f"""<item><ndaq:IssueSymbol>RAIN</ndaq:IssueSymbol><ndaq:ReasonCode>LUDP</ndaq:ReasonCode>
+            <ndaq:HaltDate>09/22/2026</ndaq:HaltDate><ndaq:HaltTime>{t}</ndaq:HaltTime></item>"""
+        for t in ("14:28:18.900", "14:22:24.146")) + "</channel></rss>"
+    import alphadesk.providers.scraped as sc
+    original, sc._get_text = sc._get_text, lambda url, timeout=20.0: feed
+    try:
+        rows = NasdaqCalendars().trading_halts()
+    finally:
+        sc._get_text = original
+    assert [r["halted_at"] for r in rows] == ["2026-09-22T14:28:18", "2026-09-22T14:22:24"]

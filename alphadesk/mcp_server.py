@@ -1153,6 +1153,31 @@ def calendar_accuracy(days: int = 30) -> dict:
 
 
 @mcp.tool()
+def trading_halts(limit: int = 50) -> dict:
+    """TODAY'S TRADING HALTS AND RESUMPTIONS on the US exchanges, newest
+    first — a catalyst with its own clock, which no other tool here carries.
+
+    Each row: the symbol, the exchange, WHEN it was halted, the exchange's
+    reason CODE and its published wording, and when quoting and trading were
+    set to resume. `resumed` is false while no resumption has been named,
+    which is the state that matters most — the stock is still stopped.
+
+    Read the codes rather than the prose: "LUDP" is a volatility pause, which
+    says only that the price moved fast, while "T1" or "T3" is news pending
+    or released, and "H10" is an SEC suspension. A stock can be halted
+    several times in a day; each pause is its own row, not a duplicate.
+
+    The wording beside a code is the exchange's where one is published and
+    absent otherwise — this tool never invents a meaning for a code. The
+    source is SCRAPED (see `data_sources`), so treat it as weaker evidence
+    than a keyed vendor and say so when a conclusion rests on it."""
+    from alphadesk.providers import get_prices
+    rows = get_prices().ask("trading_halts", limit=max(1, min(int(limit), 500)),
+                            surface="trading_halts")
+    return {"halts": rows or [], "count": len(rows or [])}
+
+
+@mcp.tool()
 def data_sources() -> dict:
     """WHERE THIS READER'S MARKET DATA COMES FROM, and which of those sources
     are SCRAPED rather than licensed.
