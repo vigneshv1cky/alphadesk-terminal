@@ -254,3 +254,83 @@ def test_the_same_stock_halted_twice_is_two_events():
     finally:
         sc._get_text = original
     assert [r["halted_at"] for r in rows] == ["2026-09-22T14:28:18", "2026-09-22T14:22:24"]
+
+
+# ── social: the one source anyone can write into ──────────────────────────
+
+from alphadesk.providers.scraped import SocialPulse  # noqa: E402
+
+
+def test_social_is_off_until_a_reader_switches_it_on():
+    """Government feeds are on for everyone because an agency is accountable
+    for what it publishes. A social post is accountable to nobody, so this
+    one is opt-in like every other scraped source."""
+    assert catalogue.VENDORS["social"].official is False
+    assert "social" in SCRAPED_SOURCES
+    for surface in catalogue.SURFACES.values():
+        assert "social" not in [n for n, _ in surface.vendors], surface.id
+
+
+def test_no_ticker_is_read_out_of_a_post(monkeypatch):
+    """A ticker inside a post is the AUTHOR'S CLAIM about which company the
+    post concerns. Attaching it would route an unverified assertion into
+    that symbol's context, so the text is handed over whole and nothing is
+    inferred from it."""
+    feed = """<rss><channel><item>
+      <title>post</title>
+      <pubDate>Tue, 22 Sep 2026 11:14:40 +0000</pubDate>
+      <link>https://www.trumpstruth.org/statuses/41842</link>
+      <description><![CDATA[<p>BREAKING: (NASDAQ: FAKE) announces a merger with (NYSE: ALSOFAKE)</p>]]></description>
+    </item></channel></rss>"""
+    import alphadesk.providers.scraped as sc
+    original, sc._get_text = sc._get_text, lambda url, timeout=20.0: feed
+    try:
+        rows = SocialPulse().social_posts()
+    finally:
+        sc._get_text = original
+    assert len(rows) == 1
+    row = rows[0]
+    # The claim survives as TEXT and reaches no symbol field anywhere.
+    assert "NASDAQ: FAKE" in row["text"]
+    assert "symbol" not in row and "symbols" not in row and "tickers" not in row
+    assert row["at"] == "2026-09-22T11:14:40+00:00"
+    # Every row carries the warning, not only the tool's description.
+    assert "unverified" in row["trust"]
+    assert "mirror" in row["via"]
+
+
+def test_trending_passes_the_vendors_own_rank_and_never_a_score(monkeypatch):
+    """Invariant 3: AlphaDesk ranks nothing. The order and the figures are
+    StockTwits' own, and the row says what they measure."""
+    import json
+    payload = json.dumps({"symbols": [
+        {"symbol": "vktx", "title": "Viking Therapeutics Inc", "rank": 1, "watchlist_count": 39113,
+         "sector": "Healthcare", "industry": "Biotechnology"},
+        {"symbol": "GME", "title": "GameStop Corp", "rank": 2, "watchlist_count": 307932},
+        {"symbol": "", "title": "no symbol"},
+    ]})
+    import alphadesk.providers.scraped as sc
+    original, sc._get_text = sc._get_text, lambda url, timeout=20.0: payload
+    try:
+        rows = SocialPulse().social_trending()
+    finally:
+        sc._get_text = original
+    assert [r["symbol"] for r in rows] == ["VKTX", "GME"]
+    assert rows[0]["rank"] == 1.0 and rows[0]["watchers"] == 39113.0
+    assert "attention" in rows[0]["measures"]
+    assert not any("score" in k for r in rows for k in r)
+
+
+def test_a_social_source_that_cannot_be_read_answers_none_not_empty(monkeypatch):
+    """None means "this source did not answer" and lets the router move on;
+    an empty list would claim nobody posted anything."""
+    import alphadesk.providers.scraped as sc
+    from alphadesk.providers.base import ProviderError
+    def refuse(url, timeout=20.0):
+        raise ProviderError("scraped source refused (403)")
+    original, sc._get_text = sc._get_text, refuse
+    try:
+        assert SocialPulse().social_posts() is None
+        assert SocialPulse().social_trending() is None
+    finally:
+        sc._get_text = original

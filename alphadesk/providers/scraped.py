@@ -102,6 +102,20 @@ def _get_text(url: str, timeout: float = 20.0) -> str:
         raise ProviderError(f"scraped source unreachable: {exc}") from exc
 
 
+def _rfc822(text: str) -> str | None:
+    """"Tue, 22 Sep 2026 11:14:40 +0000" as an ISO instant. Pure."""
+    from email.utils import parsedate_to_datetime
+    try:
+        at = parsedate_to_datetime(text)
+    except (TypeError, ValueError):
+        return None
+    if at is None:
+        return None
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=timezone.utc)
+    return at.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
 def _f(v: Any) -> float | None:
     try:
         x = float(v)
@@ -642,14 +656,111 @@ class NasdaqCalendars:
         return out or None
 
 
+class SocialPulse:
+    """WHAT PEOPLE ARE POSTING AND WATCHING (2026-09-22).
+
+    THIS IS THE ONE SOURCE ANYONE CAN WRITE INTO ON PURPOSE. An exchange, the
+    SEC and a federal agency are accountable for what they publish; a social
+    post is accountable to nobody, and a post reading "(NASDAQ: XYZ)
+    announces merger" costs nothing to write. That makes this the only feed
+    here that is a manipulation surface as well as a signal, and three
+    decisions follow from it:
+
+      IT IS OFF UNTIL A READER SWITCHES IT ON, like every scraped source and
+      unlike the government feeds, which are on for everyone.
+
+      NO TICKER IS EXTRACTED FROM POST TEXT. A ticker inside a post is the
+      AUTHOR'S CLAIM about which company the post concerns, not a fact, and
+      tagging it would route an unverified assertion into that symbol's
+      context. The text is handed over whole and the reader's agent decides.
+
+      ATTENTION IS NOT NEWS. The trending list below is StockTwits' own
+      ranking of what is being watched and posted about. Manufactured
+      attention is precisely what a pump is, so a symbol trending is
+      evidence that people are talking, and evidence of nothing else.
+    """
+
+    name = "social"
+    label = "Social posts and attention"
+    official = False
+
+    def __init__(self, api_key: str | None = None, api_secret: str | None = None) -> None:
+        self.reader_id: str | None = None
+
+    def social_posts(self, limit: int = 20) -> list[dict] | None:
+        """Recent posts from the Truth Social account mirror at
+        trumpstruth.org, newest first.
+
+        A MIRROR, NOT THE SOURCE. Truth Social's own API refuses us (403,
+        measured 2026-09-22), so this is a third party's copy: it can lag,
+        it can miss posts, and it is not the account itself. The row says so
+        rather than presenting the mirror as the platform."""
+        try:
+            body = _get_text("https://trumpstruth.org/feed")
+        except ProviderError as exc:
+            log.debug("social posts: %s", exc)
+            return None
+        out: list[dict] = []
+        for chunk in re.findall(r"<item>(.*?)</item>", body, re.S):
+            def field(tag: str) -> str:
+                m = re.search(rf"<{tag}>(.*?)</{tag}>", chunk, re.S)
+                text = (m.group(1) if m else "").strip()
+                inner = re.match(r"^<!\[CDATA\[(.*?)\]\]>$", text, re.S)
+                return (inner.group(1) if inner else text).strip()
+            when, link = field("pubDate"), field("link")
+            text = re.sub(r"<[^>]+>", " ", field("description"))
+            text = re.sub(r"\s+", " ", text).strip()
+            at = _rfc822(when)
+            if not at or not text:
+                continue
+            out.append({"at": at, "text": text, "url": link or None,
+                        "account": "realDonaldTrump", "platform": "Truth Social",
+                        "via": "trumpstruth.org (mirror)",
+                        # Said on every row, not only in the tool description:
+                        # whatever reads this next must not act on it.
+                        "trust": "unverified: anyone may write a social post, "
+                                 "and this is a third party's copy of one",
+                        "source": self.name})
+        out.sort(key=lambda r: r["at"], reverse=True)
+        return out[:max(1, min(int(limit), 100))] or None
+
+    def social_trending(self, limit: int = 30) -> list[dict] | None:
+        """The symbols StockTwits says are being talked about, in ITS rank
+        order with ITS figures — never a score of ours (invariant 3)."""
+        import json as _json
+        try:
+            body = _get_text("https://api.stocktwits.com/api/2/trending/symbols.json")
+            data = _json.loads(body)
+        except (ProviderError, ValueError) as exc:
+            log.debug("social trending: %s", exc)
+            return None
+        out = []
+        for row in (data or {}).get("symbols") or []:
+            sym = str(row.get("symbol") or "").upper()
+            if not sym:
+                continue
+            out.append({"symbol": sym, "name": row.get("title") or None,
+                        # The vendor's own numbers, passed through.
+                        "rank": _f(row.get("rank")),
+                        "watchers": _f(row.get("watchlist_count")),
+                        "sector": row.get("sector") or None,
+                        "industry": row.get("industry") or None,
+                        "measures": "attention, not news — how many are watching "
+                                    "and posting, which can be manufactured",
+                        "source": self.name})
+        return out[:max(1, min(int(limit), 100))] or None
+
+
 register("prices", YahooPrices.name, YahooPrices)
 register("prices", NasdaqCalendars.name, NasdaqCalendars)
+register("prices", SocialPulse.name, SocialPulse)
 
 #: Every scraped source registered here, by the name the router knows it by.
 #: The Account page reads it to offer a button instead of a key field, and
 #: provenance reads it to mark an answer.
 SCRAPED_SOURCES: dict[str, type] = {YahooPrices.name: YahooPrices,
-                                    NasdaqCalendars.name: NasdaqCalendars}
+                                    NasdaqCalendars.name: NasdaqCalendars,
+                                    SocialPulse.name: SocialPulse}
 
 
 def is_scraped(vendor: str | None) -> bool:
@@ -659,4 +770,4 @@ def is_scraped(vendor: str | None) -> bool:
     return bool(vendor) and vendor in SCRAPED_SOURCES
 
 
-__all__ = ["SCRAPED_SOURCES", "NasdaqCalendars", "YahooPrices", "is_scraped"]
+__all__ = ["SCRAPED_SOURCES", "NasdaqCalendars", "SocialPulse", "YahooPrices", "is_scraped"]
