@@ -434,3 +434,37 @@ def test_the_funds_tool_answers_the_opposite_question_to_fund_profile():
     holds = (mcp_server.fund_profile.__doc__ or "").lower()
     assert "built on" in built_on and "fund_profile" in built_on
     assert "hold" in holds
+
+
+def test_the_publisher_and_the_delivering_feed_are_separate_fields(reader):
+    """An agent reading a merged window has to be able to tell WHO WROTE a
+    story from WHICH OF THE READER'S FEEDS carried it (2026-09-22). One
+    `source` string answered neither reliably: it holds the publisher where
+    the feed named one and the feed's own name where it did not, so a story
+    with no stated publisher read as "Alpaca". A story two connected feeds
+    both delivered names both — the only corroboration signal here."""
+    from alphadesk.ledger import store
+    both = {**_story("n5", "Carried twice", ["NVDA"], 1), "feeds": ["alpaca", "polygon"]}
+    alone = {**_story("n6", "Carried once", ["NVDA"], 2, ), "source": "", "feeds": ["polygon"]}
+    store.save_articles([both, alone], owner="r1")
+
+    rows = {a["title"]: a for a in mcp_server.symbol_news("nvda")["articles"]}
+    assert rows["Carried twice"]["feeds"] == ["alpaca", "polygon"]
+    assert rows["Carried twice"]["source"] == "Benzinga"        # who wrote it
+    assert rows["Carried once"]["feeds"] == ["polygon"]
+    # A story stored before the feeds were recorded says nothing rather than
+    # naming a feed it was never known to have come from.
+    assert rows["Nvidia newest"]["feeds"] == []
+
+    found = {a["title"]: a for a in mcp_server.news_search("carried")["articles"]}
+    assert found["Carried twice"]["feeds"] == ["alpaca", "polygon"]
+
+    one = mcp_server.news_story(found["Carried twice"]["article_id"])
+    assert one["feeds"] == ["alpaca", "polygon"] and one["source"] == "Benzinga"
+
+
+def test_every_news_tool_says_the_two_fields_apart(tools):
+    """The distinction is useless if the agent is not told it exists."""
+    for name in ("symbol_news", "news_search", "news_story", "market_today"):
+        d = tools[name].description
+        assert "feeds" in d and "publisher" in d.lower(), name
