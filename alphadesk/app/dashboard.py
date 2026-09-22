@@ -1060,6 +1060,21 @@ def api_movers(top: int = 20):
     return get_prices().ask("movers", top=max(1, min(top, 50)))
 
 
+@app.get("/api/filings/feed")
+def api_filing_feed(groups: str = "", limit: int = 50, symbol: str = "",
+                    listed_only: bool = True):
+    """WHAT HAS JUST BEEN FILED, market-wide, newest first (2026-09-22).
+
+    Keyless — EDGAR is public government data. Every other filings surface
+    here reads ONE company; this one answers "what was just filed", with the
+    SEC's own acceptance time on each row."""
+    from alphadesk.ingest import edgar_feed
+    picked = [g.strip() for g in groups.split(",") if g.strip()]
+    return edgar_feed.recent(groups=picked or None, limit=max(1, min(limit, 200)),
+                             symbol=symbol.strip().upper() or None,
+                             listed_only=listed_only)
+
+
 @app.get("/api/halts")
 def api_trading_halts(limit: int = 100):
     """Today's trading halts and resumptions (2026-09-22).
