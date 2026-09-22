@@ -53,6 +53,11 @@ VENDORS: dict[str, Vendor] = {
                note="Free demo key: crypto markets by market cap, coin profiles."),
         # SCRAPED, and listed on no surface above, so the router reaches it
         # only after every keyed vendor the reader connected (2026-09-22).
+        Vendor("nasdaq", "Nasdaq calendars", "", official=False,
+               note="No key: earnings, dividends, splits and new listings, read from the routes "
+                    "Nasdaq's own calendar pages use — including the session a company says it "
+                    "will report in, which no free key states. Read rather than licensed, and "
+                    "any keyed vendor you connect is asked before it."),
         Vendor("yahoo", "Yahoo Finance", "", official=False,
                note="No key: charts, quotes and daily history read from a public page, "
                     "including pre-market and after-hours prices. Read rather than licensed — "
