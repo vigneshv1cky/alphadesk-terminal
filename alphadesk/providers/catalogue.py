@@ -59,6 +59,12 @@ VENDORS: dict[str, Vendor] = {
                     "states the session a company will report in, which no free key gives, and "
                     "halts are carried by no vendor in this list at all. Read rather than "
                     "licensed, and any keyed vendor you connect is asked before it."),
+        Vendor("social", "Social posts and attention", "", official=False,
+               note="No key: recent posts from a Truth Social account mirror, and the symbols "
+                    "StockTwits says are being talked about. THE ONLY SOURCE HERE ANYONE CAN "
+                    "WRITE INTO: a post is accountable to nobody, no ticker is read out of post "
+                    "text, and trending means attention rather than news. Off until you switch "
+                    "it on."),
         Vendor("yahoo", "Yahoo Finance", "", official=False,
                note="No key: charts, quotes and daily history read from a public page, "
                     "including pre-market and after-hours prices. Read rather than licensed — "

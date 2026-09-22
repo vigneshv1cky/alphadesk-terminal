@@ -1060,6 +1060,24 @@ def api_movers(top: int = 20):
     return get_prices().ask("movers", top=max(1, min(top, 50)))
 
 
+@app.get("/api/social/posts")
+def api_social_posts(limit: int = 20):
+    """Recent social posts — 428 until the reader switches the social source
+    on. Unverified user-generated text (2026-09-22)."""
+    from alphadesk.providers import get_prices
+    return {"posts": get_prices().ask("social_posts", limit=max(1, min(limit, 100)),
+                                      surface="social") or []}
+
+
+@app.get("/api/social/trending")
+def api_social_trending(limit: int = 30):
+    """The symbols being talked about, in the vendor's own rank order.
+    Attention, not news."""
+    from alphadesk.providers import get_prices
+    return {"symbols": get_prices().ask("social_trending", limit=max(1, min(limit, 100)),
+                                        surface="social") or []}
+
+
 @app.get("/api/gov/feed")
 def api_gov_feed(sources: str = "", days: int = 7, limit: int = 50,
                  agencies: str = "", types: str = ""):
