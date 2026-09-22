@@ -452,8 +452,14 @@ def _build(router, key: str, cat: str, top: int, mp: float, ml_floor: tuple[Opti
     # dollars traded beside it are still that closed session's.
     moment = session_label()
     extended = moment != "Open" and any(r.get("extended") for t in tabs for r in t["rows"])
+    from alphadesk.providers.scraped import is_scraped
     result = {"category": cat, "label": CATEGORIES[cat], "change_label": CHANGE_LABEL.get(cat, "1D"),
               "extended": extended, "session_label": moment if extended else None,
+              # Whether the vendor that answered is a keyed one or a scraped
+              # source (2026-09-22): the tile says so, and so does the agent
+              # tool, because a figure read off a public page must never pass
+              # for one delivered under a licence.
+              "official": not is_scraped(source),
               "source": source, "filling": bool(isinstance(got, dict) and got.get("filling")), "note": got.get("note") if isinstance(got, dict) else None,
               "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
                          "default_min_price": d_price, "default_min_turnover": d_turn},

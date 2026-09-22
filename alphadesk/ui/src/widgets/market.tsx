@@ -510,7 +510,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   const subtitle = q.data?.source
     ? `${q.data.change_label === "24h" ? "rolling 24h" : q.data.change_label === "1D bp" ? "daily curve · change in bp"
         : category === "currencies" ? "since 5pm New York"
-        : q.data.session_label ? `${q.data.session_label.toLowerCase()} · since the last close` : "session"} · ${SOURCE_LABELS[q.data.source] ?? q.data.source}${q.data.filling ? " · filling in…" : ""}`
+        : q.data.session_label ? `${q.data.session_label.toLowerCase()} · since the last close` : "session"} · ${SOURCE_LABELS[q.data.source] ?? q.data.source}${q.data.official === false ? " · scraped" : ""}${q.data.filling ? " · filling in…" : ""}`
     : q.isPending ? "loading…" : isNeedsKey(q.error) ? "needs a data key" : "unavailable right now"
   return (
     <Widget

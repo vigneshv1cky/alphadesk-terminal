@@ -1594,6 +1594,32 @@ def api_data_vendors(request: Request):
                         for v in catalogue.VENDORS.values()]}
 
 
+@app.put("/api/sources/{name}")
+def api_source_enable(name: str, request: Request):
+    """Switch on a SCRAPED source (2026-09-22). There is no key to paste, so
+    the Account page offers a button and this stores the same kind of row a
+    key does with an empty credential — which is what makes switching one off
+    identical to removing a key, purge and all.
+
+    It is stored on the prices seam like any market-data vendor, so the
+    router picks it up on the reader's next request; the catalogue lists it
+    against no surface, so every vendor they keyed is still asked first."""
+    from alphadesk.ledger import vault
+    from alphadesk.providers import registry
+    from alphadesk.providers.scraped import SCRAPED_SOURCES
+    user_id = _key_user(request)
+    if name not in SCRAPED_SOURCES:
+        raise HTTPException(404, f"{name!r} is not a scraped source")
+    if not vault.enabled():
+        raise HTTPException(503, "the key vault is not enabled on this instance"
+                                 " (ALPHADESK_VAULT_KEY is not set)")
+    store.set_user_key(user_id, "prices", name,
+                       vault.encrypt({"api_key": "", "api_secret": "", "base_url": "", "model": ""}),
+                       "")
+    registry.forget_user_keys(user_id)
+    return {"ok": True, "seam": "prices", "provider": name, "official": False}
+
+
 @app.put("/api/keys/{seam}")
 def api_keys_set(seam: str, body: KeyIn, request: Request):
     """Store (or replace) the reader's key for one seam. The plaintext exists

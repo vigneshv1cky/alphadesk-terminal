@@ -577,6 +577,9 @@ export interface DataVendors {
   connected: string[]
   vendors: {
     name: string; label: string; signup: string; needs_secret: boolean; note: string
+    /** False for a SCRAPED source: read off a public page, no key to paste,
+     * switched on with a button, and asked only after every keyed vendor. */
+    official?: boolean
     serves: { surface: string; label: string; tier: "free" | "paid" }[]
     /** What the connected key's plan delivers; Alpaca only. */
     plan?: { realtime: boolean; stocks: "sip" | "iex"; options: "opra" | "indicative" | null; chart_delay_minutes: number } | null
@@ -1047,6 +1050,9 @@ export interface CategoryMovers {
   /** "venue": liquidity counts only the vendor's own exchange (Alpaca's
    * crypto), not the whole market. */
   liquidity_scope?: "venue"
+  /** False when the vendor that answered is a SCRAPED source — read off a
+   * public page rather than delivered under a key. The tile says so. */
+  official?: boolean
   /** The prices were struck outside the regular session, so the change is
    * measured from the last close while the volume beside it is that closed
    * session's. */
@@ -1249,6 +1255,10 @@ export const api = {
     put<{ ok: boolean; id: string; symbols: string[] }>(`/api/baskets/${encodeURIComponent(id)}`, body),
   deleteBasket: (id: string) => del<{ ok: boolean }>(`/api/baskets/${encodeURIComponent(id)}`),
   dataVendors: () => get<DataVendors>("/api/data/vendors"),
+  /** Switch a scraped source on. There is no key, so this is the whole of
+   * connecting one; switching off is the ordinary key removal. */
+  enableSource: (name: string) =>
+    put<{ ok: boolean }>(`/api/sources/${encodeURIComponent(name)}`, {}),
   setKey: (seam: KeySeam, body: { provider: string; api_key: string; api_secret?: string; base_url?: string; model?: string }) =>
     put<{ ok: boolean; key_hint: string }>(`/api/keys/${seam}`, body),
   deleteKey: (seam: KeySeam, provider?: string) =>
