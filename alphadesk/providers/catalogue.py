@@ -27,6 +27,12 @@ class Vendor:
     needs_secret: bool = False
     note: str = ""
     kind: str = "data"          # data | news | model — which Account section it belongs to
+    #: False for a SCRAPED source (2026-09-22): read off a public page rather
+    #: than delivered under the reader's key. It takes no credential, so the
+    #: Account page offers a switch instead of a field, and every answer it
+    #: gives is marked so a reader — or an agent — never mistakes it for
+    #: licensed data. See providers/scraped.py.
+    official: bool = True
 
 
 VENDORS: dict[str, Vendor] = {
@@ -45,6 +51,13 @@ VENDORS: dict[str, Vendor] = {
                     "earnings and economic calendars."),
         Vendor("coingecko", "CoinGecko", "https://www.coingecko.com/en/developers/dashboard",
                note="Free demo key: crypto markets by market cap, coin profiles."),
+        # SCRAPED, and listed on no surface above, so the router reaches it
+        # only after every keyed vendor the reader connected (2026-09-22).
+        Vendor("yahoo", "Yahoo Finance", "", official=False,
+               note="No key: charts, quotes and daily history read from a public page, "
+                    "including pre-market and after-hours prices. Read rather than licensed — "
+                    "every figure it answers is marked as scraped, and any keyed vendor you "
+                    "connect is asked before it."),
     )
 }
 

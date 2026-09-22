@@ -205,6 +205,13 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
     try { await api.deleteKey(seam, provider); done() }
     catch (err) { setError(String((err as Error).message ?? err)) }
   }
+  // A SCRAPED source has no key to paste, so switching it on is the button
+  // itself rather than a dialog (2026-09-22). Switching it off is the
+  // ordinary removal above, which is why there is only one of these.
+  const enable = async (name: string) => {
+    try { await api.enableSource(name); done() }
+    catch (err) { setError(String((err as Error).message ?? err)) }
+  }
 
   const pollMinutes = data?.news_poll_minutes
   const transcript = stored("transcripts")
@@ -255,6 +262,8 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                 <tbody>
                   {vendorList.map(v => {
                     const row = stored("prices", v.name)
+                    // Read off a public page rather than delivered under a key.
+                    const scraped = v.official === false
                     const free = v.serves.filter(x => x.tier === "free").length
                     const labels = v.serves.map(x => x.label)
                     const plan = row && v.plan ? v.plan : null
@@ -267,22 +276,30 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                       <TR key={v.name}>
                         <TD className="font-extrabold">{v.label}</TD>
                         <TD mono className="text-muted-foreground">
-                          {row ? <>····{row.key_hint}{!row.last_used_at && <span className="block text-label font-sans">not used yet</span>}</> : "—"}
+                          {scraped ? <span className="font-sans text-label">no key</span>
+                            : row ? <>····{row.key_hint}{!row.last_used_at && <span className="block text-label font-sans">not used yet</span>}</> : "—"}
                         </TD>
                         <TD className="truncate text-caption text-muted-foreground" title={labels.join(" · ")}>
                           {row ? labels.slice(0, 3).join(" · ") : v.note}
                           {row && labels.length > 3 && <span className="text-foreground"> +{labels.length - 3}</span>}
                         </TD>
-                        <TD align="right" mono>{v.serves.length}</TD>
-                        <TD align="right" mono className="text-muted-foreground">{free}</TD>
-                        <TD title={planText}>
-                          {!row ? <Pill tone="muted">Not connected</Pill>
+                        <TD align="right" mono>{scraped ? "—" : v.serves.length}</TD>
+                        <TD align="right" mono className="text-muted-foreground">{scraped ? "—" : free}</TD>
+                        <TD title={scraped ? "Read from a public page, not delivered under a key — asked only where no vendor you keyed carries the panel" : planText}>
+                          {scraped ? (row ? <Pill tone="warn">Scraped</Pill> : <Pill tone="muted">Off</Pill>)
+                            : !row ? <Pill tone="muted">Not connected</Pill>
                             : plan ? <Pill tone={plan.realtime ? "gain" : "warn"}>{plan.realtime ? "Real-time" : "Free plan"}</Pill>
                             : <Pill tone="gain">Connected</Pill>}
                         </TD>
                         <TD align="right">
                           <span className="inline-flex items-center justify-end gap-1.5">
-                            {row ? (
+                            {/* Nothing to paste and nothing to replace: the
+                                button IS the whole of switching one on. */}
+                            {scraped ? (
+                              row
+                                ? <button type="button" onClick={() => void remove("prices", v.name)} className={BTN_DANGER}>Switch off</button>
+                                : <button type="button" onClick={() => void enable(v.name)} className={BTN_PRIMARY}>Switch on</button>
+                            ) : row ? (
                               <>
                                 <button type="button" onClick={() => open("prices", v.name)} className={BTN}>Replace</button>
                                 <button type="button" onClick={() => void remove("prices", v.name)} className={BTN_DANGER}>Remove</button>
@@ -304,22 +321,33 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
             <div className="@[820px]:hidden">
               {vendorList.map(v => {
                 const row = stored("prices", v.name)
+                const scraped = v.official === false
                 const free = v.serves.filter(x => x.tier === "free").length
                 const plan = row && v.plan ? v.plan : null
                 return (
-                  <Row key={v.name} label={v.label} actions={row ? <>
+                  <Row key={v.name} label={v.label} actions={scraped ? (
+                    row
+                      ? <button type="button" onClick={() => void remove("prices", v.name)} className={BTN_DANGER}>Switch off</button>
+                      : <button type="button" onClick={() => void enable(v.name)} className={BTN_PRIMARY}>Switch on</button>
+                  ) : row ? <>
                     <button type="button" onClick={() => open("prices", v.name)} className={BTN}>Replace</button>
                     <button type="button" onClick={() => void remove("prices", v.name)} className={BTN_DANGER}>Remove</button>
                   </> : <button type="button" onClick={() => open("prices", v.name)} className={BTN_PRIMARY}>Connect</button>}>
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      {row && <span className="num text-foreground">····{row.key_hint}</span>}
-                      {!row ? <Pill tone="muted">Not connected</Pill>
+                      {row && !scraped && <span className="num text-foreground">····{row.key_hint}</span>}
+                      {scraped ? (row ? <Pill tone="warn">Scraped</Pill> : <Pill tone="muted">Off</Pill>)
+                        : !row ? <Pill tone="muted">Not connected</Pill>
                         : plan ? <Pill tone={plan.realtime ? "gain" : "warn"}>{plan.realtime ? "Real-time" : "Free plan"}</Pill>
                         : <Pill tone="gain">Connected</Pill>}
                     </span>
                     <span className="mt-1 block text-caption">
-                      {v.serves.length} panels · {free === v.serves.length ? `all ${free}` : free || "none"} on a free key
-                      {!row && <>{" · "}<a href={v.signup} target="_blank" rel="noopener noreferrer" className="text-accent-700 underline underline-offset-2">Get a key</a></>}
+                      {/* A scraped source serves no named panel: it is asked
+                          wherever nothing keyed answered, so a count of
+                          panels and a free-key line would both be fiction. */}
+                      {scraped
+                        ? "No key · read from a public page · asked only where no vendor you keyed carries the panel"
+                        : <>{v.serves.length} panels · {free === v.serves.length ? `all ${free}` : free || "none"} on a free key
+                          {!row && <>{" · "}<a href={v.signup} target="_blank" rel="noopener noreferrer" className="text-accent-700 underline underline-offset-2">Get a key</a></>}</>}
                     </span>
                   </Row>
                 )

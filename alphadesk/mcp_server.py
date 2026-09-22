@@ -1152,6 +1152,46 @@ def calendar_accuracy(days: int = 30) -> dict:
     return acc.report(uid, max(1, min(int(days), 120)))
 
 
+@mcp.tool()
+def data_sources() -> dict:
+    """WHERE THIS READER'S MARKET DATA COMES FROM, and which of those sources
+    are SCRAPED rather than licensed.
+
+    Every other tool here names the vendor that answered it — a chart says
+    which feed drew it, a movers list names its source, a story names the
+    feed that delivered it. This resolves those names: {sources: [{name,
+    label, official, connected, serves}], scraped: [names]}.
+
+    `official` FALSE means the figures were READ OFF A PUBLIC PAGE, not
+    delivered under a key the reader holds. Treat them as weaker evidence
+    than a keyed vendor's: nobody is contracted to keep them right, they can
+    stop without notice, and they carry no licence. Say so when you rest a
+    conclusion on one. A keyed vendor is always asked before a scraped
+    source, so a scraped figure means no connected vendor carried that
+    surface.
+
+    This is a statement of PROVENANCE, not of accuracy: a scraped number is
+    not necessarily wrong, and a licensed one is not necessarily right."""
+    from alphadesk.ledger import store
+    from alphadesk.providers import catalogue, registry
+    from alphadesk.providers.scraped import SCRAPED_SOURCES
+    uid = registry._request_uid()
+    connected = sorted({r["provider"] for r in store.get_user_keys(uid, "prices")}) if uid else []
+    serves: dict[str, list[str]] = {}
+    for surface in catalogue.SURFACES.values():
+        for name, _tier in surface.vendors:
+            serves.setdefault(name, []).append(surface.label)
+    rows = [{"name": v.name, "label": v.label, "official": v.official,
+             "connected": v.name in connected,
+             # A scraped source is listed against no surface on purpose: it
+             # is asked only after every vendor the reader keyed.
+             "serves": serves.get(v.name, []) or (["whatever no keyed vendor carried"]
+                                                  if not v.official else [])}
+            for v in catalogue.VENDORS.values()]
+    return {"sources": rows, "scraped": sorted(SCRAPED_SOURCES),
+            "connected": connected}
+
+
 def stdio_main() -> None:
     """Console-script entry point (`alphadesk-mcp`), for MCP clients that
     start a server by command. stdio carries the protocol on stdout, so
