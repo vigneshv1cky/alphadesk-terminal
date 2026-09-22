@@ -1153,6 +1153,50 @@ def calendar_accuracy(days: int = 30) -> dict:
 
 
 @mcp.tool()
+def government_actions(sources: str = "", days: int = 7, limit: int = 30,
+                       agencies: str = "", types: str = "") -> dict:
+    """WHAT THE GOVERNMENT JUST DID — agency rulemaking, the Federal
+    Reserve's own announcements, and Treasury auction results.
+
+    `sources` is a comma-separated pick from: agencies (the Federal
+    Register), fed, treasury. Default is all three.
+
+    READ `at_precision` BEFORE YOU REASON ABOUT TIMING. The Federal Register
+    is a DAILY publication, so an agency row's stamp is a DATE ("day") and
+    the decision was frequently announced before it appeared there — a
+    market reaction can precede this row by days. Fed rows carry a real
+    moment ("second"). Treating a day stamp as a moment will tell you a
+    stock moved before the news, which is simply the publication lag.
+
+    `agencies` takes the Federal Register's own slugs, so any of its 473
+    agencies can be asked for by name — "surface-transportation-board",
+    "federal-energy-regulatory-commission", "food-and-drug-administration".
+    The default shortlist is the agencies whose actions move listed
+    companies, and it LEAVES OUT the FAA on purpose: measured, it filed 47
+    of 92 rules in a fortnight, nearly all airworthiness directives naming
+    one aircraft model. Ask for it by name if you want it.
+
+    `types` picks from RULE, PRORULE (proposed), NOTICE, PRESDOCU
+    (presidential documents); the default is rules and proposed rules,
+    because notices are the bulk of the Register and mostly routine.
+
+    NOT HERE: FDA drug approvals. openFDA's date filter matches an
+    application rather than the submission inside it, so asking for this
+    month returns approvals from 1993 — do not substitute it. FDA RULES do
+    come through the agency source above.
+
+    A source that could not be read is named in `unavailable` and never
+    reported as a source with nothing in it. This is public government
+    data, keyless — not a vendor, not scraped."""
+    from alphadesk.ingest import gov_feed
+    def pick(text: str) -> list[str]:
+        return [x.strip() for x in str(text or "").split(",") if x.strip()]
+    return gov_feed.recent(sources=pick(sources) or None, days=max(1, min(int(days), 90)),
+                           limit=max(1, min(int(limit), 200)),
+                           agencies=pick(agencies) or None, types=pick(types) or None)
+
+
+@mcp.tool()
 def filing_feed(groups: str = "", limit: int = 30, symbol: str = "",
                 listed_only: bool = True) -> dict:
     """WHAT HAS JUST BEEN FILED WITH THE SEC, market-wide, newest first —
