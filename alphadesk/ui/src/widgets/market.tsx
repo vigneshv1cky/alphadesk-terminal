@@ -104,7 +104,11 @@ export function EquityOverview() {
    * quote's to state. */
   const fresh = tick && !tick.stale && tick.symbol === q.symbol ? tick.price : null
   const price = fresh ?? q.price
-  const prev = q.previous_close
+  // What the quote itself measured from — the previous close in the session,
+  // the session's own close once it has ended (2026-09-22). Measuring a
+  // live after-hours print against the previous close would disagree with
+  // the figure the quote states.
+  const prev = q.change_from ?? q.previous_close
   const change = fresh != null && prev ? fresh - prev : q.change
   const changePct = fresh != null && prev ? ((fresh - prev) / prev) * 100 : q.change_pct
 
@@ -208,8 +212,13 @@ export function TabStrip<T extends string>({ tabs, value, onChange }: {
  * option contract is not a board symbol, so its row is inert. */
 function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = true, options = false, rank = null, nameHead = "Name",
   volTip = "Annualised volatility of daily returns over the last twenty sessions",
-  liqTip = "Average dollar volume a day over the last twenty sessions", liquidity = true }: {
+  liqTip = "Average dollar volume a day over the last twenty sessions", liquidity = true, session = null }: {
   rows: CategoryMoverRow[]; empty?: string; changeHead?: string; linkable?: boolean
+  /** The session these prices were struck in when it is not the regular one
+   * ("Pre-market", "After hours", "Overnight", "Weekend"): the change is
+   * then measured from the last close, and the volume beside it is that
+   * closed session's, so both columns say so (2026-09-22). */
+  session?: string | null
   /** What the Volatility and Liquidity columns measure, when not a stock's
    * twenty sessions: a coin's twenty days, a venue's own volume. */
   volTip?: string; liqTip?: string
@@ -295,12 +304,14 @@ function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = tru
         <TH align="right" width={share(!rank ? 19 : options ? 14 : 16)} title={
           changeTip ?? (bonds ? "Change in yield since the previous business day's curve, in basis points: one basis point is 0.01 percentage point"
           : changeHead === "24h" ? "Change over the last 24 hours. Crypto trades around the clock, so there is no daily close to measure from"
+          : session ? `Change since the last close. These prices were struck in the ${session.toLowerCase()} session; a row that has not traded since the bell shows the closed session's own move`
           : "Change since the previous session's close")}>{changeHead}</TH>
         {/* The figure the tab ranks by, beside the day's change (2026-09-15):
             an extra column, so Liquidity and Premium stay on every tab. */}
         {rank && (
           <TH align="right" width={share(options ? 16 : 15)} title={
-            rank === "shares" ? "Shares traded today — what this tab is ranked by"
+            session ? `${rank === "shares" ? "Shares" : rank === "contracts" ? "Contracts" : "Dollars"} traded in the last regular session — what this tab is ranked by. Extended-hours volume is not counted`
+            : rank === "shares" ? "Shares traded today — what this tab is ranked by"
             : rank === "contracts" ? "Contracts traded today — what this tab is ranked by"
             : "Dollars traded — what this tab is ranked by"}>
             {rank === "shares" ? "Volume" : rank === "contracts" ? "Contracts" : "Traded"}
@@ -323,7 +334,10 @@ function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = tru
               <TD align="right" mono>
                 {r.price != null ? <Flash value={r.price}>{bonds ? `${num(r.price, 2)}%` : num(r.price, decimals)}</Flash> : "—"}
               </TD>
-              <TD align="right" mono className={`font-semibold ${up ? "text-gain" : "text-loss"}`}>
+              <TD align="right" mono className={`font-semibold ${up ? "text-gain" : "text-loss"}`}
+                  title={!session ? undefined
+                    : r.extended ? `${session}, since the last close${r.extended_at ? ` · ${new Date(r.extended_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}${r.regular_pct != null ? ` · the closed session itself: ${moveText(r.regular_pct)}` : ""}`
+                    : "No trade since the closing bell — this is the closed session's own move"}>
                 {r.change_pct == null ? "—" : bonds
                   ? `${up ? "+" : ""}${r.change_pct.toFixed(1)}`
                   : moveText(r.change_pct)}
@@ -495,7 +509,8 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   }), [rows, live, cryptoTicks, streamable, category])
   const subtitle = q.data?.source
     ? `${q.data.change_label === "24h" ? "rolling 24h" : q.data.change_label === "1D bp" ? "daily curve · change in bp"
-        : category === "currencies" ? "since 5pm New York" : "session"} · ${SOURCE_LABELS[q.data.source] ?? q.data.source}${q.data.filling ? " · filling in…" : ""}`
+        : category === "currencies" ? "since 5pm New York"
+        : q.data.session_label ? `${q.data.session_label.toLowerCase()} · since the last close` : "session"} · ${SOURCE_LABELS[q.data.source] ?? q.data.source}${q.data.filling ? " · filling in…" : ""}`
     : q.isPending ? "loading…" : isNeedsKey(q.error) ? "needs a data key" : "unavailable right now"
   return (
     <Widget
@@ -522,7 +537,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         // A currency pair or a Treasury tenor is not a symbol the board can
         // chart, so those rows do not open anything.
         : <>
-        <MoversTable rows={priced} changeHead={q.data?.change_label ?? "1D"}
+        <MoversTable rows={priced} changeHead={q.data?.change_label ?? "1D"} session={q.data?.session_label ?? null}
                        changeTip={category === "currencies" ? "Change since the 5pm New York rollover, where the currency trading day begins" : undefined}
                        {...(category === "crypto" ? {
                          volTip: "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",

@@ -38,6 +38,7 @@ import logging
 import threading
 import time
 from datetime import date, datetime, timedelta, timezone
+from datetime import time as dtime
 from typing import Any
 
 from alphadesk.providers.base import EntitlementError, ProviderError
@@ -165,30 +166,67 @@ def rank_dollar_volume(bars: dict[str, list[dict]], sessions: int, min_dollars: 
     return [sym for _, sym in sorted(scored, reverse=True)[:max_size]]
 
 
+def _stamp(value: Any) -> datetime | None:
+    """An Alpaca timestamp, or None when it is missing or malformed. Pure."""
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
 def snapshot_dollar_rows(snaps: dict[str, dict], today: date) -> list[dict]:
     """Movers rows from raw snapshots, most dollars traded first: the day's
-    volume × its volume-weighted price. Before the day's first bar exists
-    the latest session stands in whole — its close and its change — as a
-    quote does. Pure."""
+    volume × its volume-weighted price.
+
+    The change is always measured from the last regular close BEFORE the
+    price shown, so the figure answers the same question in every session
+    (2026-09-22). While the regular session runs that is the previous close;
+    once it has ended — after hours, overnight, or the next morning before
+    the opening bell — a trade printed after four o'clock New York time is
+    the price, and the session that just closed is what it is measured
+    against. The row says so (`extended`), carries the closed session's own
+    move (`regular_pct`) and when the extended print was struck
+    (`extended_at`), because its VOLUME and dollars traded remain that
+    session's and nothing else.
+
+    Before this the latest trade counted only while the day's own bar
+    existed, so every list stood still from four in the afternoon until the
+    next opening bell. Pure."""
     from alphadesk.config import ET
     rows = []
     for sym, s in snaps.items():
         day, prev, trade = s.get("dailyBar") or {}, s.get("prevDailyBar") or {}, s.get("latestTrade") or {}
         if not day.get("v"):
             continue
-        try:
-            session = datetime.fromisoformat(str(day.get("t", "")).replace("Z", "+00:00")).astimezone(ET).date()
-        except ValueError:
+        at = _stamp(day.get("t"))
+        if at is None:
             continue
-        price = _f(trade.get("p")) if session == today else None
-        price = price or _f(day.get("c"))
+        session = at.astimezone(ET).date()
+        close = _f(day.get("c"))
         base = _f(prev.get("c"))
+        regular = round(100 * (close / base - 1), 2) if close and base else None
+        # A print struck after the session's own closing bell is an
+        # extended-hours trade, whatever the clock says here.
+        struck = _stamp(trade.get("t"))
+        bell = datetime.combine(session, dtime(16, 0), ET)
+        late = _f(trade.get("p")) if struck and struck.astimezone(ET) > bell else None
+        if late and close:
+            price, change, extended = late, round(100 * (late / close - 1), 2), True
+        elif session == today:
+            # The session is running: the live print against the previous close.
+            price, extended = _f(trade.get("p")) or close, False
+            change = round(100 * (price / base - 1), 2) if price and base else None
+        else:
+            price, change, extended = close, regular, False
         if not price:
             continue
-        dollars = (_f(day.get("vw")) or price) * day["v"]
-        rows.append({"symbol": sym, "name": None, "price": price,
-                     "change_pct": round(100 * (price / base - 1), 2) if base else None,
-                     "volume": int(day["v"]), "turnover": dollars, "session": session.isoformat()})
+        dollars = (_f(day.get("vw")) or close or price) * day["v"]
+        row = {"symbol": sym, "name": None, "price": price, "change_pct": change,
+               "volume": int(day["v"]), "turnover": dollars, "session": session.isoformat()}
+        if extended:
+            row.update({"extended": True, "regular_pct": regular,
+                        "extended_at": struck.astimezone(ET).isoformat()})
+        rows.append(row)
     return sorted(rows, key=lambda r: -r["turnover"])
 
 
@@ -945,7 +983,19 @@ class AlpacaPrices:
                 session = last_bar
                 prior = bars[-2] if len(bars) > 1 else None
                 prev = prior["close"] if prior else _f(getattr(getattr(snap, "previous_daily_bar", None), "close", None))
-                if in_session:
+                # A trade struck after the session's own closing bell is an
+                # extended-hours print: it is the price, and the session that
+                # just closed is what it is measured against (2026-09-22,
+                # snapshot_dollar_rows' rule). Before this the test was the
+                # hour of the day, which saw the evening and never the
+                # morning, and the quote stood still until the opening bell.
+                bell = (datetime.combine(session["ts"].astimezone(ET).date(), dtime(16, 0), ET)
+                        if session else None)
+                late = (trade_px if (session and trade_px and trade_ts and bell
+                                     and trade_ts.astimezone(ET) > bell) else None)
+                if late:
+                    price, as_of = late, trade_ts
+                elif in_session:
                     price = trade_px or session["close"]
                     as_of = trade_ts
                 else:
@@ -954,17 +1004,18 @@ class AlpacaPrices:
                 if price is None:
                     continue
                 extended = None
-                if not in_session and session and trade_px and trade_ts and trade_ts.astimezone(ET).date() >= session["ts"].astimezone(ET).date() \
-                        and trade_ts.astimezone(ET).hour >= 16 and abs(trade_px - session["close"]) > 1e-9:
-                    extended = {"price": trade_px, "change_pct": round(100 * (trade_px / session["close"] - 1), 2),
+                if late and session and abs(late - session["close"]) > 1e-9:
+                    extended = {"price": late, "change_pct": round(100 * (late / session["close"] - 1), 2),
+                                "from_close": session["close"],
                                 "as_of": trade_ts.astimezone(ET).isoformat()}
+                base = session["close"] if (late and session) else prev
                 name, exch = named.get(sym, (None, None))
                 dp = 4 if price < 1 else 2
                 out[sym] = {
                     "symbol": sym, "name": name or sym,
                     "exchange": exch, "exchange_name": exch,
                     "quote_source": ("Alpaca · real-time consolidated" if feed == "sip" else "Alpaca · IEX last trade")
-                                    if in_session else "Alpaca · consolidated close",
+                                    if (in_session or late) else "Alpaca · consolidated close",
                     "feed": feed, "realtime": feed == "sip",
                     # The last session's close is struck at 16:00 in New York.
                     "as_of": as_of.astimezone(ET).isoformat() if as_of else (
@@ -972,8 +1023,11 @@ class AlpacaPrices:
                         if session else None),
                     "currency": "USD",
                     "price": round(price, dp),
-                    "change": round(price - prev, dp) if prev else None,
-                    "change_pct": round(100 * (price - prev) / prev, 2) if prev else None,
+                    "change": round(price - base, dp) if base else None,
+                    "change_pct": round(100 * (price - base) / base, 2) if base else None,
+                    # What the change above is measured from — the previous
+                    # close in the session, the session's own close after it.
+                    "change_from": base,
                     "previous_close": prev,
                     "open": session["open"] if session else None,
                     "day_low": session["low"] if session else None,
@@ -1036,10 +1090,19 @@ class AlpacaPrices:
                 q = quotes.get(r.symbol)
                 if not q:
                     continue
-                chg = _f(getattr(r, "percent_change", None)) if use_screen_change else None
-                out.append({"symbol": r.symbol, "name": q.get("name"), "price": q["price"],
-                            "change_pct": round(chg, 2) if chg is not None else q.get("change_pct"),
-                            "volume": int(_f(getattr(r, "volume", None)) or q.get("volume") or 0)})
+                # The screener's own percentage is the REGULAR session's and
+                # stops moving with it, so once a stock has an extended-hours
+                # print the quote's figure wins (2026-09-22) — otherwise the
+                # gainers and losers stood still from the closing bell to the
+                # next opening one.
+                late = bool(q.get("extended_hours"))
+                chg = _f(getattr(r, "percent_change", None)) if (use_screen_change and not late) else None
+                row = {"symbol": r.symbol, "name": q.get("name"), "price": q["price"],
+                       "change_pct": round(chg, 2) if chg is not None else q.get("change_pct"),
+                       "volume": int(_f(getattr(r, "volume", None)) or q.get("volume") or 0)}
+                if late:
+                    row["extended"] = True
+                out.append(row)
             return out
         out: dict[str, Any] = {"most_active": rows(act, False), "gainers": rows(gain, True), "losers": rows(lose, True)}
         try:
@@ -1202,7 +1265,8 @@ class AlpacaPrices:
                 snaps.update(got)
         rows = snapshot_dollar_rows(snaps, datetime.now(ET).date())
         return {back.get(r["symbol"], r["symbol"]): {"price": r["price"], "change_pct": r["change_pct"],
-                                                     "session": r["session"], "turnover": r["turnover"]}
+                                                     "session": r["session"], "turnover": r["turnover"],
+                                                     **({"extended": True} if r.get("extended") else {})}
                 for r in rows}
 
     def listed_quotes(self, universe: tuple[tuple[str, str], ...]) -> list[dict]:
@@ -1385,8 +1449,12 @@ class AlpacaPrices:
                 ], "source": "alpaca", "funds": "only"}
         if category in ("etfs", "indices"):
             universe = LISTED_ETFS if category == "etfs" else MARKET_ETFS
-            rows = [_row(r["symbol"], r["price"], r.get("change_pct"), r.get("volume"), name=r["name"])
-                    for r in self.listed_quotes(universe)]
+            rows = []
+            for r in self.listed_quotes(universe):
+                row = _row(r["symbol"], r["price"], r.get("change_pct"), r.get("volume"), name=r["name"])
+                if r.get("extended_hours"):
+                    row["extended"] = True
+                rows.append(row)
             if not rows:
                 return None
             return {"tabs": tabs_from_list(rows, with_active=True), "source": "alpaca",

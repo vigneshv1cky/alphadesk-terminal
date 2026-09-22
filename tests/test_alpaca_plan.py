@@ -482,3 +482,69 @@ def test_a_vendor_at_its_floor_is_not_asked_five_times(monkeypatch):
     out = a.chart_series("VEEA", range_key="1D", interval="1m", before=cursor, need=2_000)
     assert len(tries) == 2                    # the second brought nothing new
     assert len(out["bars"]) == 30
+
+
+def test_the_change_is_measured_from_the_last_close_in_every_session():
+    """A movers row does not stand still from the closing bell to the next
+    opening one (2026-09-22). A print struck after four o'clock New York time
+    is the price, and the session that just closed is what it is measured
+    against; the volume beside it stays that closed session's."""
+    from datetime import date
+    from alphadesk.providers.alpaca import snapshot_dollar_rows
+    day = {"t": "2026-09-15T04:00:00Z", "c": 212.0, "v": 36_000_000, "vw": 211.0}
+    # Half past six in the evening, New York: the after-hours print.
+    rows = snapshot_dollar_rows(
+        {"NVDA": {"latestTrade": {"p": 215.0, "t": "2026-09-15T22:30:00Z"}, "dailyBar": day,
+                  "prevDailyBar": {"c": 218.29}}}, date(2026, 9, 15))
+    assert rows[0]["price"] == 215.0 and rows[0]["extended"] is True
+    assert rows[0]["change_pct"] == round(100 * (215.0 / 212.0 - 1), 2)
+    assert rows[0]["regular_pct"] == round(100 * (212.0 / 218.29 - 1), 2)
+    assert rows[0]["volume"] == 36_000_000 and rows[0]["session"] == "2026-09-15"
+
+    # Two in the morning, the day after: the same close is still the base.
+    rows = snapshot_dollar_rows(
+        {"NVDA": {"latestTrade": {"p": 209.0, "t": "2026-09-16T06:00:00Z"}, "dailyBar": day,
+                  "prevDailyBar": {"c": 218.29}}}, date(2026, 9, 16))
+    assert rows[0]["price"] == 209.0 and rows[0]["extended"] is True
+    assert rows[0]["change_pct"] == round(100 * (209.0 / 212.0 - 1), 2)
+
+    # Half past seven in the morning, before the bell: yesterday's close.
+    rows = snapshot_dollar_rows(
+        {"OLD": {"latestTrade": {"p": 11.0, "t": "2026-09-15T11:30:00Z"},
+                 "dailyBar": {"t": "2026-09-14T04:00:00Z", "c": 10.0, "v": 10_000_000, "vw": 10.0},
+                 "prevDailyBar": {"c": 8.0}}}, date(2026, 9, 15))
+    assert rows[0]["price"] == 11.0 and rows[0]["change_pct"] == 10.0
+    assert rows[0]["regular_pct"] == 25.0 and rows[0]["extended_at"].startswith("2026-09-15T07:30")
+
+
+def test_a_trade_inside_the_session_is_not_an_extended_print():
+    from datetime import date
+    from alphadesk.providers.alpaca import snapshot_dollar_rows
+    day = {"t": "2026-09-15T04:00:00Z", "c": 212.0, "v": 36_000_000, "vw": 211.0}
+    # One in the afternoon: the running day, measured from the previous close.
+    rows = snapshot_dollar_rows(
+        {"NVDA": {"latestTrade": {"p": 215.0, "t": "2026-09-15T17:00:00Z"}, "dailyBar": day,
+                  "prevDailyBar": {"c": 218.29}}}, date(2026, 9, 15))
+    assert rows[0]["price"] == 215.0 and "extended" not in rows[0]
+    assert rows[0]["change_pct"] == round(100 * (215.0 / 218.29 - 1), 2)
+    # A stock that last traded before the bell two sessions ago stands whole.
+    rows = snapshot_dollar_rows(
+        {"OLD": {"latestTrade": {"p": 11.0, "t": "2026-09-14T19:00:00Z"},
+                 "dailyBar": {"t": "2026-09-14T04:00:00Z", "c": 10.0, "v": 10_000_000, "vw": 10.0},
+                 "prevDailyBar": {"c": 8.0}}}, date(2026, 9, 15))
+    assert rows[0]["price"] == 10.0 and rows[0]["change_pct"] == 25.0 and "extended" not in rows[0]
+
+
+def test_the_session_a_price_belongs_to_has_a_name():
+    from datetime import datetime
+    from alphadesk.config import ET, session_label
+    def at(y, m, d, hh, mm=0):
+        return session_label(datetime(y, m, d, hh, mm, tzinfo=ET))
+    assert at(2026, 9, 15, 7, 30) == "Pre-market"      # Tuesday morning
+    assert at(2026, 9, 15, 11) == "Open"
+    assert at(2026, 9, 15, 18, 30) == "After hours"
+    assert at(2026, 9, 16, 2) == "Overnight"           # Wednesday, small hours
+    assert at(2026, 9, 18, 21) == "Weekend"            # Friday evening: shut
+    assert at(2026, 9, 19, 11) == "Weekend"            # Saturday
+    assert at(2026, 9, 20, 18) == "Weekend"            # Sunday, before the open
+    assert at(2026, 9, 20, 21) == "Overnight"          # Sunday evening: trading

@@ -211,6 +211,28 @@ def session(dt: datetime | None = None) -> str:
     return "CLOSED"
 
 
+def session_label(dt: datetime | None = None) -> str:
+    """What to call the moment, for a panel that has to say which session a
+    figure belongs to (2026-09-22). `session()` answers what the market is
+    doing and calls every quiet hour CLOSED alike; this one tells the
+    overnight session from the weekend, because a price struck at two in the
+    morning is a real print and a price struck on a Saturday is Friday's."""
+    dt = (dt or now_et()).astimezone(ET)
+    minutes = dt.hour * 60 + dt.minute
+    day = dt.weekday()
+    # The overnight venue runs Sunday evening to Friday evening.
+    if day == 5 or (day == 6 and minutes < 20 * 60) or (day == 4 and minutes >= 20 * 60):
+        return "Weekend"
+    if day <= 4:
+        if 4 * 60 <= minutes < 9 * 60 + 30:
+            return "Pre-market"
+        if 9 * 60 + 30 <= minutes < 16 * 60:
+            return "Open"
+        if 16 * 60 <= minutes < 20 * 60:
+            return "After hours"
+    return "Overnight"
+
+
 # ── Stripe (the hosted service's payment processor, alphadesk/billing.py) ────
 # All four empty by default: a self-hosted copy never needs them, and with no
 # secret key checkout answers "payments are not set up yet" and charges

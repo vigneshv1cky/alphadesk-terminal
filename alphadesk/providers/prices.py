@@ -523,12 +523,23 @@ class PolygonPrices:
         rows = []
         for t in (data or {}).get("tickers") or []:
             sym = str(t.get("ticker") or "").upper()
-            day = t.get("day") or {}
+            day, prev = t.get("day") or {}, t.get("prevDay") or {}
             price = day.get("c") or (t.get("lastTrade") or {}).get("p")
+            # Polygon empties the day block until the opening bell, so a row
+            # with a real extended-hours price used to be thrown away for
+            # having no volume and the whole list was empty before the open
+            # (2026-09-22). The volume beside it is then the last session's,
+            # which is what every other vendor's row carries out of hours.
             vol = day.get("v") or 0
+            late = vol <= 0 and bool(price)
+            if late:
+                vol = prev.get("v") or 0
             if not sym or not sym.isalnum() or not price or vol <= 0:
                 continue
-            rows.append(polygon_mover_row(sym, price, t.get("todaysChangePerc"), vol))
+            row = polygon_mover_row(sym, price, t.get("todaysChangePerc"), vol)
+            if late:
+                row["extended"] = True
+            rows.append(row)
         if not rows:
             return {"tabs": []}
         by_turnover = sorted(rows, key=lambda r: -(r["price"] or 0) * r["volume"])
