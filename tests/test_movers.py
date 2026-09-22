@@ -350,3 +350,37 @@ def test_fmp_currency_change_runs_from_each_pairs_rollover_close(monkeypatch):
     charts = asked.count("historical-chart/5min")
     f.category_movers("currencies")
     assert asked.count("historical-chart/5min") == charts * 2 - 1           # the kept EURUSD base is not asked again
+
+
+class _AfterHours:
+    """A vendor answering outside the regular session: the prices are
+    extended-hours prints, the volume beside them the closed session's."""
+    name = "alpaca"
+    def category_movers(self, category, top=20):
+        if category != "stocks":
+            return None
+        return {"tabs": [{"id": "most_active", "label": "Active", "rows": [
+            {"symbol": "KHC", "name": "Kraft Heinz", "price": 25.1, "change_pct": 2.03, "volume": 123_719_348,
+             "extended": True, "regular_pct": 0.86, "extended_at": "2026-09-15T18:31:00-04:00"},
+            {"symbol": "ACVA", "name": "ACV Auctions", "price": 10.41, "change_pct": 44.18, "volume": 115_460_361}]}]}
+    def daily_history(self, symbols, sessions=21):
+        return {"KHC": _bars(24.5, 30_000_000), "ACVA": _bars(10, 8_000_000)}
+
+
+def test_a_list_struck_outside_the_session_says_which_one(vendors, monkeypatch):
+    """The tile has to name the session: the change is measured from the last
+    close while the volume beside it is that closed session's (2026-09-22)."""
+    vendors(alpaca=_AfterHours())
+    monkeypatch.setattr(movers, "session_label", lambda: "After hours")
+    out = movers.category_movers("stocks")
+    assert out["extended"] is True and out["session_label"] == "After hours"
+    khc = next(r for r in out["tabs"][0]["rows"] if r["symbol"] == "KHC")
+    assert khc["extended"] is True and khc["regular_pct"] == 0.86
+    assert khc["change_pct"] == 2.03 and khc["volume"] == 123_719_348
+
+
+def test_inside_the_session_no_list_claims_one(vendors, monkeypatch):
+    vendors(alpaca=_AfterHours())
+    monkeypatch.setattr(movers, "session_label", lambda: "Open")
+    out = movers.category_movers("stocks")
+    assert out["extended"] is False and out["session_label"] is None

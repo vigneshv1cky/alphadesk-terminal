@@ -155,6 +155,13 @@ export interface Quote {
   change: number
   change_pct: number | null
   previous_close: number | null
+  /** What the change above is measured from: the previous close inside the
+   * regular session, the session's own close once it has ended and the
+   * price is an extended-hours print. */
+  change_from?: number | null
+  /** The extended-hours print, when one exists: its price, its move from the
+   * close it is measured against, and when it was struck. */
+  extended_hours?: { price: number; change_pct: number; from_close: number; as_of: string } | null
   open: number | null
   bid: number | null
   ask: number | null
@@ -968,6 +975,14 @@ export interface CategoryMoverRow {
   /** Dollars traded today: price × volume, or the vendor's own figure (an
    * option's premium; the dollar-volume tab's volume × volume-weighted price). */
   turnover?: number | null
+  /** The price was struck outside the regular session; the change is measured
+   * from the last close and the volume beside it is that closed session's. */
+  extended?: boolean
+  /** The closed session's own move, percent — what the row showed before the
+   * bell, kept beside the extended-hours figure. */
+  regular_pct?: number | null
+  /** When the extended-hours price was struck, New York time. */
+  extended_at?: string | null
   spark: number[]
 }
 /** One fund on the Sectors page (/api/sectors). Returns are percent. */
@@ -1032,6 +1047,13 @@ export interface CategoryMovers {
   /** "venue": liquidity counts only the vendor's own exchange (Alpaca's
    * crypto), not the whole market. */
   liquidity_scope?: "venue"
+  /** The prices were struck outside the regular session, so the change is
+   * measured from the last close while the volume beside it is that closed
+   * session's. */
+  extended?: boolean
+  /** Which session those prices belong to: "Pre-market", "After hours",
+   * "Overnight" or "Weekend"; null inside the regular session. */
+  session_label?: string | null
   tabs: { id: string; label: string; rows: CategoryMoverRow[] }[]
 }
 

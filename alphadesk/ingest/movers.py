@@ -43,6 +43,7 @@ import urllib.request
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
+from alphadesk.config import session_label
 from alphadesk.providers.base import NeedsKey
 
 log = logging.getLogger("alphadesk.movers")
@@ -271,7 +272,10 @@ def _normalize_tabs(got: dict, category: str) -> list[dict]:
                        turnover_is_volume=bool(r.get("volume_is_dollars")))
             # An option row keeps its underlying and expiry: a click opens the
             # chain there, and without them the row opened nothing.
-            for k in ("volatility", "liquidity", "open_interest", "underlying", "expiry", "volume_suspect"):
+            for k in ("volatility", "liquidity", "open_interest", "underlying", "expiry", "volume_suspect",
+                      # A price struck outside the regular session, and the
+                      # closed session's own move (2026-09-22).
+                      "extended", "regular_pct", "extended_at"):
                 if r.get(k) is not None:
                     row[k] = r[k]
             # A vendor's own figure wins: an option's premium, or the dollar
@@ -442,7 +446,14 @@ def _build(router, key: str, cat: str, top: int, mp: float, ml_floor: tuple[Opti
     apply_floors(tabs, 0.0, 0.0, ml, mv)
     for t in tabs:
         t["rows"] = t["rows"][:top]
+    # Which session the prices on this list were struck in (2026-09-22). The
+    # figures move outside the regular session now, so the tile has to say
+    # so: the change is measured from the last close, while the volume and
+    # dollars traded beside it are still that closed session's.
+    moment = session_label()
+    extended = moment != "Open" and any(r.get("extended") for t in tabs for r in t["rows"])
     result = {"category": cat, "label": CATEGORIES[cat], "change_label": CHANGE_LABEL.get(cat, "1D"),
+              "extended": extended, "session_label": moment if extended else None,
               "source": source, "filling": bool(isinstance(got, dict) and got.get("filling")), "note": got.get("note") if isinstance(got, dict) else None,
               "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
                          "default_min_price": d_price, "default_min_turnover": d_turn},
