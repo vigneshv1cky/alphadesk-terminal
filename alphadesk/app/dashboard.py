@@ -1060,6 +1060,17 @@ def api_movers(top: int = 20):
     return get_prices().ask("movers", top=max(1, min(top, 50)))
 
 
+@app.get("/api/catalysts")
+def api_catalysts(limit: int = 60, feeds: str = ""):
+    """THE CATALYST TAPE (2026-09-22): filings, halts, government action and
+    social posts in one time-ordered list. A feed that is switched off or
+    could not be read is named rather than left to look like a quiet
+    market."""
+    from alphadesk.ingest import catalysts
+    picked = [f.strip() for f in feeds.split(",") if f.strip()]
+    return catalysts.tape(limit=max(1, min(limit, 200)), feeds=picked or None)
+
+
 @app.get("/api/social/posts")
 def api_social_posts(limit: int = 20):
     """Recent social posts — 428 until the reader switches the social source

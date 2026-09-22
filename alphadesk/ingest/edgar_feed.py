@@ -36,6 +36,7 @@ import logging
 import re
 import threading
 import time
+from html import unescape
 from urllib.parse import quote
 
 from alphadesk.ingest import edgar
@@ -105,7 +106,9 @@ def parse_entries(xml: str) -> list[dict]:
         link = re.search(r'<link[^>]*href="(.*?)"', chunk)
         if not title or not updated:
             continue
-        text = re.sub(r"\s+", " ", title.group(1)).strip()
+        # Atom escapes the title, so a registrant reads "Helmerich &amp;
+        # Payne" until it is unescaped (2026-09-22).
+        text = re.sub(r"\s+", " ", unescape(title.group(1))).strip()
         head = re.match(r"^(.*?)\s+-\s+(.*)$", text)
         if not head:
             continue
