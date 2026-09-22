@@ -25,7 +25,7 @@ EXPECTED = {
     "earnings_history", "company_profile", "fund_profile", "financial_statements", "filing_text", "my_board", "news_story",
     "economic_calendar", "corporate_calendar", "sector_performance", "sector_breadth",
     "option_expirations", "option_chain", "options_flow", "peers", "compare_metrics",
-    "transcripts", "transcript_text", "baskets", "data_sources", "trading_halts",
+    "transcripts", "transcript_text", "baskets", "data_sources", "trading_halts", "filing_feed",
 }
 
 
