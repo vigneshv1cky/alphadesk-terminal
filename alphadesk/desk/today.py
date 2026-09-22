@@ -84,8 +84,10 @@ def _news(top: int, since_iso: str) -> dict:
             newest.setdefault(t, a)
 
     def brief(a: dict) -> dict:
+        # `source` is the publisher; `feeds` is which of the reader's feeds
+        # delivered the story, both named where two carried it (2026-09-22).
         return {"title": a["title"], "url": a.get("url") or "", "source": a.get("source") or "",
-                "published_at": a.get("published_at")}
+                "feeds": a.get("feeds") or [], "published_at": a.get("published_at")}
 
     # Most stories first; ties alphabetical, so the order is stable.
     busiest = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:top]
