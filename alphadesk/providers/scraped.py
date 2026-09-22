@@ -32,6 +32,7 @@ it is always asked last.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -81,6 +82,23 @@ def _get_json(url: str, timeout: float = 20.0) -> Any:
         # this source declining, and the router should move on.
         raise ProviderError(f"scraped source refused ({exc.code})") from exc
     except (URLError, ValueError, TimeoutError) as exc:
+        raise ProviderError(f"scraped source unreachable: {exc}") from exc
+
+
+def _get_text(url: str, timeout: float = 20.0) -> str:
+    """The same bounded, paced GET for a source that answers XML or CSV."""
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
+
+    _slot()
+    req = Request(url, headers={"User-Agent": "AlphaDesk/1.0 (market research terminal)",
+                                "Accept": "application/xml, text/xml, text/plain, */*"})
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8", "replace")
+    except HTTPError as exc:
+        raise ProviderError(f"scraped source refused ({exc.code})") from exc
+    except (URLError, TimeoutError) as exc:
         raise ProviderError(f"scraped source unreachable: {exc}") from exc
 
 
@@ -502,6 +520,83 @@ class NasdaqCalendars:
             out.append({"symbol": sym, "date": when, "to": parts[0], "from": parts[1],
                         "kind": None, "source": self.name})
         return out or None
+
+    #: Why a stock stopped trading, in the exchange's own vocabulary. Only
+    #: codes whose meaning is published are spelled out; anything else is
+    #: handed over as the bare code rather than guessed at.
+    _HALT_REASONS = {
+        "T1": "News pending",
+        "T2": "News released",
+        "T3": "News released — resumption times set",
+        "T6": "Extraordinary market activity",
+        "T8": "Exchange-traded fund halt",
+        "T12": "Additional information requested by the exchange",
+        "H4": "Non-compliance with exchange listing rules",
+        "H9": "Not current in its required filings",
+        "H10": "SEC trading suspension",
+        "H11": "Regulatory concern",
+        "O1": "Operational halt",
+        "LUDP": "Volatility pause (limit up–limit down)",
+        "LUDS": "Volatility pause — straddle condition",
+        "MWC1": "Market-wide circuit breaker, level 1",
+        "MWC2": "Market-wide circuit breaker, level 2",
+        "MWC3": "Market-wide circuit breaker, level 3",
+        "MWC0": "Market-wide circuit breaker — carried over from the prior day",
+        "IPO1": "New issue not yet trading",
+        "IPOQ": "New issue — quotation period",
+    }
+
+    def trading_halts(self, limit: int = 100) -> list[dict] | None:
+        """TODAY'S TRADING HALTS AND RESUMPTIONS, newest first.
+
+        A halt is a catalyst with its own clock: the exchange stopped the
+        stock at a stated time for a stated reason, and said when quoting and
+        trading would resume. Nothing else here carries it — it is not a
+        price, not a filing and not a story — and no keyed vendor in the
+        catalogue serves it either.
+
+        The record is handed over whole, reason CODE included, with the
+        exchange's own wording beside it only where that wording is
+        published. A code nobody publishes stays a code."""
+        from alphadesk.config import ET
+        try:
+            body = _get_text("https://www.nasdaqtrader.com/rss.aspx?feed=tradehalts")
+        except ProviderError as exc:
+            log.debug("nasdaq halts: %s", exc)
+            return None
+        out: list[dict] = []
+        for chunk in re.findall(r"<item>(.*?)</item>", body, re.S):
+            def field(tag: str) -> str:
+                m = re.search(rf"<ndaq:{tag}>(.*?)</ndaq:{tag}>", chunk, re.S)
+                return (m.group(1) or "").strip() if m else ""
+            sym = field("IssueSymbol").upper()
+            day, at = self._us_date(field("HaltDate")), field("HaltTime")
+            if not sym or not day or not at:
+                continue
+            code = field("ReasonCode").upper()
+            # The exchange states its times in New York, without saying so.
+            halted_at = f"{day}T{at[:8]}" if len(at) >= 8 else None
+            resumed_on = self._us_date(field("ResumptionDate"))
+            trade_at = field("ResumptionTradeTime")
+            out.append({
+                "symbol": sym, "name": field("IssueName") or None,
+                "market": field("Market") or None,
+                "reason_code": code or None,
+                "reason": self._HALT_REASONS.get(code) or None,
+                "halted_at": halted_at, "timezone": str(ET),
+                "resumption_quote_at": (f"{resumed_on}T{field('ResumptionQuoteTime')[:8]}"
+                                        if resumed_on and field("ResumptionQuoteTime") else None),
+                "resumption_trade_at": (f"{resumed_on}T{trade_at[:8]}"
+                                        if resumed_on and trade_at else None),
+                # Still halted when the exchange has named no resumption.
+                "resumed": bool(resumed_on and trade_at),
+                "pause_threshold_price": _f(field("PauseThresholdPrice")) or None,
+                "source": self.name,
+            })
+        # Newest first. The same stock can be halted several times in a day —
+        # each pause is its own event and none of them is a duplicate.
+        out.sort(key=lambda r: r["halted_at"] or "", reverse=True)
+        return out[:max(1, min(int(limit), 500))] or None
 
     def ipo_calendar(self, start: str, end: str) -> list[dict] | None:
         """New listings. This route is a MONTH at a time and answers four
