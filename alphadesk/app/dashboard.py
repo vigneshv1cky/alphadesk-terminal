@@ -1060,6 +1060,19 @@ def api_movers(top: int = 20):
     return get_prices().ask("movers", top=max(1, min(top, 50)))
 
 
+@app.get("/api/gov/feed")
+def api_gov_feed(sources: str = "", days: int = 7, limit: int = 50,
+                 agencies: str = "", types: str = ""):
+    """What the government just did: agency rules and proposed rules from the
+    Federal Register, the Fed's own announcements, and Treasury auction
+    results (2026-09-22). Keyless public government data."""
+    from alphadesk.ingest import gov_feed
+    pick = lambda text: [x.strip() for x in text.split(",") if x.strip()]   # noqa: E731
+    return gov_feed.recent(sources=pick(sources) or None, days=max(1, min(days, 90)),
+                           limit=max(1, min(limit, 200)),
+                           agencies=pick(agencies) or None, types=pick(types) or None)
+
+
 @app.get("/api/filings/feed")
 def api_filing_feed(groups: str = "", limit: int = 50, symbol: str = "",
                     listed_only: bool = True):
