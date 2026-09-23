@@ -1,10 +1,19 @@
 import { useState } from "react"
-import { Link } from "react-router-dom"
+import { useBoardSymbols } from "@/lib/boardSymbols"
 
 /** The ticker chips on a story. One article often names several companies —
  * /api/news serves it once with the full list — so the tickers render as
- * chips, first few + an overflow count, each linking to that company's
- * Analysis while the headline itself opens the article or the reader.
+ * chips, first few + an overflow count, while the headline itself opens the
+ * article or the reader.
+ *
+ * A CHIP SCOPES THE BOARD; IT DOES NOT NAVIGATE (2026-09-23, the reader:
+ * "why clicking at a ticker in news goes to analysis? it shouldnt"). Each
+ * chip was a link to that company's Analysis page, which is the one thing
+ * every other symbol on the terminal does NOT do: a mover, a fund and a
+ * holding all ADD the symbol and scope the board in place — the same reason
+ * the chart scroll was deleted in #279, that it jumped the reader away from
+ * the list they were working down. A news list is exactly that list, and
+ * leaving it also lost whatever article was open.
  *
  * THE COUNT EXPANDS (2026-09-17). It was a hover title, which says nothing
  * on a touch screen, cannot be clicked through to a company, and on a story
@@ -14,19 +23,32 @@ import { Link } from "react-router-dom"
  * story underneath. */
 export function HeadlineTickers({ symbols, max = 4 }: { symbols: string[]; max?: number }) {
   const [open, setOpen] = useState(false)
+  const { add } = useBoardSymbols()
   const shown = open ? symbols : symbols.slice(0, max)
   const more = symbols.length - shown.length
+  const pick = (s: string) => (e: React.SyntheticEvent) => {
+    // The press must not reach the row beneath, which would open the story.
+    e.stopPropagation()
+    e.preventDefault()
+    add(s)
+  }
   return (
     <>
       {shown.map(s => (
-        <Link
+        // A SPAN carrying the button role, for the same reason as the count
+        // below: every caller puts these chips inside the row's own button,
+        // and a button within a button is invalid nesting.
+        <span
           key={s}
-          to={`/analysis?symbol=${encodeURIComponent(s)}`}
-          onClick={e => e.stopPropagation()}
-          className="border border-border px-1 text-label font-semibold leading-[17px] tracking-ticker text-foreground hover:border-accent hover:text-accent-700"
+          role="button"
+          tabIndex={0}
+          title={`Put ${s} on the board and scope it`}
+          onClick={pick(s)}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") pick(s)(e) }}
+          className="cursor-pointer select-none border border-border px-1 text-label font-semibold leading-[17px] tracking-ticker text-foreground hover:border-accent hover:text-accent-700"
         >
           {s}
-        </Link>
+        </span>
       ))}
       {(more > 0 || open) && (
         // A SPAN carrying the button role, not a <button>: every caller puts
