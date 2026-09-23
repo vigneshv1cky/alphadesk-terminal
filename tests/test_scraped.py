@@ -380,3 +380,51 @@ def test_every_scraped_source_stays_off_every_catalogue_surface():
     for surface in catalogue.SURFACES.values():
         for name, _tier in surface.vendors:
             assert name not in SCRAPED_SOURCES, f"{name} is listed on {surface.id}"
+
+
+def test_a_switch_says_whether_it_would_ever_be_asked(client, store, monkeypatch):
+    """A keyed vendor is always asked first, so a scraped source whose every
+    surface the reader already pays for can never answer — and a button
+    reading "Switch on" implied otherwise (2026-09-23, the owner: the button
+    decides whether scraping happens, keyed takes precedence)."""
+    import uuid
+
+    from alphadesk.app import auth
+    monkeypatch.setenv("ALPHADESK_AUTH", "required")
+    uid = uuid.uuid4().hex
+    store.create_user(uid, "cover@example.com", auth.hash_password("a-long-password"))
+    assert client.post("/api/auth/login", json={"email": "cover@example.com",
+                                                "password": "a-long-password"}).status_code == 200
+
+    def coverage():
+        rows = {v["name"]: v for v in client.get("/api/data/vendors").json()["vendors"]}
+        return {n: rows[n].get("coverage") for n in ("yahoo", "nasdaq", "social")}
+
+    # With NOTHING keyed, every scraped source is reachable.
+    bare = coverage()
+    assert "Price chart" in bare["yahoo"]["only_source_for"]
+    assert bare["yahoo"]["already_covered"] == []
+    assert "Trading halts and resumptions" in bare["nasdaq"]["only_source_for"]
+
+    # With a price vendor keyed, Yahoo can never be asked — it says so, and
+    # names who took its place.
+    store.set_user_key(uid, "prices", "alpaca", "sealed", "…abcd")
+    keyed = coverage()
+    assert keyed["yahoo"]["only_source_for"] == []
+    assert any(t["surface"] == "Price chart" and "Alpaca" in t["vendors"]
+               for t in keyed["yahoo"]["already_covered"])
+    # Alpaca does not carry the calendars, so Nasdaq is still the only source
+    # for them AND for the halts.
+    assert "Trading halts and resumptions" in keyed["nasdaq"]["only_source_for"]
+    assert "Earnings calendar" in keyed["nasdaq"]["only_source_for"]
+
+    # Key the vendor that DOES sell the calendars and they drop away, leaving
+    # the one thing nobody sells. This is the rule in one assertion.
+    store.set_user_key(uid, "prices", "fmp", "sealed", "…efgh")
+    full = coverage()
+    assert full["nasdaq"]["only_source_for"] == ["Trading halts and resumptions"]
+    assert any(t["surface"] == "Earnings calendar" and "Financial Modeling Prep" in t["vendors"]
+               for t in full["nasdaq"]["already_covered"])
+    # And social is reachable whatever is keyed — no vendor carries either.
+    assert sorted(full["social"]["only_source_for"]) == ["Social posts", "Trending symbols"]
+    assert full["social"]["already_covered"] == []

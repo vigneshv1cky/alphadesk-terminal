@@ -382,13 +382,31 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
             <>
               {scrapedSources.map(v => {
                 const row = stored("prices", v.name)
+                // WHAT SWITCHING IT ON WOULD ACTUALLY DO (2026-09-23). A keyed
+                // vendor is always asked first, so a source whose every
+                // surface you already pay for can never answer — and a button
+                // reading "Switch on" implied otherwise.
+                const only = v.coverage?.only_source_for ?? []
+                const taken = v.coverage?.already_covered ?? []
+                const idle = !!v.coverage && only.length === 0
                 return (
                   <Row key={v.name} label={v.label} actions={row
                     ? <button type="button" onClick={() => void remove("prices", v.name)} className={BTN_DANGER}>Switch off</button>
                     : <button type="button" onClick={() => void enable(v.name)} className={BTN_PRIMARY}>Switch on</button>}>
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       {row ? <Pill tone="warn">Scraped</Pill> : <Pill tone="muted">Off</Pill>}
+                      {idle && <Pill tone="muted">Nothing to serve</Pill>}
                     </span>
+                    {v.coverage && (
+                      <span className="mt-1 block text-caption text-muted-foreground">
+                        {only.length > 0
+                          ? <>Only source for {only.join(", ").toLowerCase()}.</>
+                          : <>Everything it reads, a vendor you keyed already carries — so it would never be asked.</>}
+                        {taken.length > 0 && (
+                          <> {taken.map(t => `${t.surface} comes from ${t.vendors.join(" or ")}`).join("; ")}.</>
+                        )}
+                      </span>
+                    )}
                     <span className="mt-1 block text-caption text-muted-foreground">{v.note}</span>
                   </Row>
                 )

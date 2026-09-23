@@ -135,6 +135,12 @@ class YahooPrices:
 
     name = "yahoo"
     label = "Yahoo Finance"
+    #: Surfaces this source is the ONLY one for, in words — things no vendor
+    #: in the catalogue carries, so the Account page can say whether
+    #: switching it on would give the reader anything at all (2026-09-23).
+    #: Yahoo has none: charts, quotes and daily history are all catalogued,
+    #: so a reader with any price vendor keyed will never reach it.
+    EXCLUSIVE: tuple[str, ...] = ()
     #: Read off a public page, not delivered under a key. Provenance reads it.
     official = False
 
@@ -376,6 +382,10 @@ class NasdaqCalendars:
     name = "nasdaq"
     label = "Nasdaq calendars"
     official = False
+    #: The calendars are all catalogue surfaces FMP and Finnhub carry; the
+    #: halts are carried by nobody, which is the reason this source exists
+    #: for a reader who already pays for calendars.
+    EXCLUSIVE: tuple[str, ...] = ("Trading halts and resumptions",)
 
     _BASE = "https://api.nasdaq.com/api"
     #: Days a range request may span. Three weeks is the earnings window the
@@ -683,6 +693,9 @@ class SocialPulse:
     name = "social"
     label = "Social posts and attention"
     official = False
+    #: No vendor in the catalogue sells either of these, so this source is
+    #: reachable whatever the reader has keyed.
+    EXCLUSIVE: tuple[str, ...] = ("Social posts", "Trending symbols")
 
     def __init__(self, api_key: str | None = None, api_secret: str | None = None) -> None:
         self.reader_id: str | None = None

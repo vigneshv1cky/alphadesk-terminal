@@ -580,6 +580,14 @@ export interface DataVendors {
     /** False for a SCRAPED source: read off a public page, no key to paste,
      * switched on with a button, and asked only after every keyed vendor. */
     official?: boolean
+    /** Scraped sources only: what switching this on would actually give you,
+     * given the vendors you have keyed. A keyed vendor is always asked
+     * first, so a source whose every surface is already covered can never
+     * answer — and the switch should say so rather than imply otherwise. */
+    coverage?: {
+      only_source_for: string[]
+      already_covered: { surface: string; vendors: string[] }[]
+    }
     serves: { surface: string; label: string; tier: "free" | "paid" }[]
     /** What the connected key's plan delivers; Alpaca only. */
     plan?: { realtime: boolean; stocks: "sip" | "iex"; options: "opra" | "indicative" | null; chart_delay_minutes: number } | null

@@ -1678,8 +1678,36 @@ def api_data_vendors(request: Request):
             plans["alpaca"] = getattr(vendor, "_inner", vendor).plan()
         except Exception:                         # the list still renders without it
             pass
+    # WHAT A SCRAPED SOURCE WOULD ACTUALLY SERVE THIS READER (2026-09-23).
+    # The rule is that a keyed vendor is always asked first, so on a board
+    # with vendors connected most scraped sources can never answer — and the
+    # Account page's switch said "Switch on" as though something would
+    # happen. Each one now states which of its surfaces are already covered
+    # and by whom, and which it is the only source for.
+    covered: dict[str, dict] = {}
+    try:
+        from alphadesk.providers.scraped import SCRAPED_SOURCES
+        for name, cls in SCRAPED_SOURCES.items():
+            mine: list[str] = []
+            taken: list[dict] = []
+            for surface in catalogue.SURFACES.values():
+                methods = [m for m, sid in catalogue.METHOD_SURFACE.items() if sid == surface.id]
+                if not any(callable(getattr(cls, m, None)) for m in methods):
+                    continue
+                holders = [catalogue.VENDORS[n].label for n, _t in surface.vendors
+                           if n in connected and n in catalogue.VENDORS]
+                (taken.append({"surface": surface.label, "vendors": holders}) if holders
+                 else mine.append(surface.label))
+            # Plus what no CATALOGUE surface covers at all — halts, social —
+            # which the class declares, because a surface nobody carries
+            # cannot be discovered from a table of who carries what.
+            mine += list(getattr(cls, "EXCLUSIVE", ()))
+            covered[name] = {"only_source_for": sorted(mine), "already_covered": taken}
+    except Exception as exc:                      # the list still renders
+        log.debug("scraped coverage: %s", exc)
     return {"connected": connected,
-            "vendors": [{**asdict(v), "serves": serves.get(v.name, []), "plan": plans.get(v.name)}
+            "vendors": [{**asdict(v), "serves": serves.get(v.name, []), "plan": plans.get(v.name),
+                         **({"coverage": covered[v.name]} if v.name in covered else {})}
                         for v in catalogue.VENDORS.values()]}
 
 
