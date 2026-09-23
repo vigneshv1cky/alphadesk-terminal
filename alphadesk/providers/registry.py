@@ -301,13 +301,27 @@ class DataRouter:
         return self.uid or "anonymous"
 
     def _order(self, surface: str, method: str) -> list[str]:
-        from alphadesk.providers.catalogue import SURFACES
+        from alphadesk.providers.catalogue import SURFACES, VENDORS
         s = SURFACES.get(surface)
         listed = [n for n, _ in s.vendors] if s else []
         # Catalogue order first; a connected vendor the catalogue does not
         # list for the surface (a plugin) is asked after, if it has the method.
         rest = [n for n in sorted(self.vendors) if n not in listed]
-        return [n for n in listed + rest if n in self.vendors and callable(getattr(self.vendors[n], method, None))]
+        # A SCRAPED SOURCE IS ALWAYS LAST (2026-09-23, the owner's rule: never
+        # scrape what a keyed vendor carries; scrape only where none does).
+        # It held before this only because no scraped source is listed on a
+        # surface AND their names happened to sort after the vendors they
+        # compete with — luck, not a guarantee, and a plugin named after
+        # "nasdaq" would have taken a calendar from a paid vendor. Now the
+        # walk cannot reach one until every keyed vendor has declined.
+        def scraped(name: str) -> bool:
+            v = VENDORS.get(name)
+            return v is not None and not v.official
+        order = [n for n in listed + rest
+                 if n in self.vendors and callable(getattr(self.vendors[n], method, None))]
+        # Stable, so the catalogue's order survives among the keyed vendors
+        # and only the scraped ones move — to the end.
+        return sorted(order, key=scraped)
 
     def ask(self, method: str, *args: Any, surface: str | None = None, **kwargs: Any) -> Any:
         from alphadesk.providers.catalogue import METHOD_SURFACE
