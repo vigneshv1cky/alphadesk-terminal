@@ -3,6 +3,7 @@ import "@/widgets/chart"            // the price tile
 import "@/widgets/market"           // quote + movers
 import "@/widgets/external"
 import "@/widgets/more"
+import "@/widgets/catalysts"   // the catalyst tape
 import "@/widgets/desk"         // declarative tiles from widget backends
 import { BoardEditor } from "@/components/BoardEditor"
 import { TileSlot } from "@/components/terminal"

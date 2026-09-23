@@ -586,6 +586,37 @@ export interface DataVendors {
   }[]
 }
 
+/** A catalyst: something that happened, with its own clock (2026-09-22).
+ * Four feeds share this shape so one tape can show them together. */
+export interface CatalystRow {
+  /** Which feed it came from: filings, halts, government, social. */
+  feed: "filings" | "halts" | "government" | "social"
+  /** What kind of thing happened, in the source's own words ("8-K",
+   * "SCHEDULE 13D", "Volatility pause", "Proposed Rule", "Post"). */
+  kind: string
+  /** The one-line record. Never a summary written here. */
+  title: string
+  /** When, ISO. Read `precision` before comparing two of these. */
+  at: string
+  /** "second" is a real moment; "day" means the source publishes once a day
+   * and the event usually happened earlier. */
+  precision: "second" | "day"
+  /** Tickers the SOURCE tied to it — never read out of free text. */
+  symbols: string[]
+  url: string | null
+  /** Who published it, for the row's provenance line. */
+  via: string | null
+  /** Present when the row must not be acted on as stated (social). */
+  trust?: string | null
+}
+
+export interface CatalystFeed {
+  rows: CatalystRow[]
+  /** Feeds that could not be read, and why — never shown as "nothing
+   * happened". */
+  unavailable: Record<string, string>
+}
+
 export class NeedsKeyError extends ApiError {
   prompt: KeyPromptBody
   constructor(prompt: KeyPromptBody) {
@@ -1255,6 +1286,7 @@ export const api = {
     put<{ ok: boolean; id: string; symbols: string[] }>(`/api/baskets/${encodeURIComponent(id)}`, body),
   deleteBasket: (id: string) => del<{ ok: boolean }>(`/api/baskets/${encodeURIComponent(id)}`),
   dataVendors: () => get<DataVendors>("/api/data/vendors"),
+  catalysts: (limit = 60) => get<CatalystFeed>(`/api/catalysts?limit=${limit}`),
   /** Switch a scraped source on. There is no key, so this is the whole of
    * connecting one; switching off is the ordinary key removal. */
   enableSource: (name: string) =>

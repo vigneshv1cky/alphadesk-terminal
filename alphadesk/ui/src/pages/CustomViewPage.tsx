@@ -3,6 +3,7 @@ import "@/widgets/chart"
 import "@/widgets/market"
 import "@/widgets/external"
 import "@/widgets/more"
+import "@/widgets/catalysts"   // the catalyst tape
 import "@/widgets/desk"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom"
