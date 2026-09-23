@@ -63,6 +63,12 @@ export function NewsTape({ span = 12 }: {
   // searchable, and nobody is accountable for one. Every row says so and
   // opens the post itself rather than the reader, which is for text a feed
   // licensed to this reader.
+  // WHICH KIND OF ROW THE LIST SHOWS (2026-09-23, the reader: "cant filter
+  // official posts in Market news"). Posts were mixed into the stream with
+  // no way to take them out, so a tile called Market News could not be made
+  // to show only news. Three states, because both directions are wanted: the
+  // mixed stream, the stories alone, and the posts alone.
+  const [kind, setKind] = useState<"all" | "news" | "posts">("all")
   const posts = useQuery({
     queryKey: ["social-posts"],
     queryFn: () => api.socialPosts(20),
@@ -72,29 +78,46 @@ export function NewsTape({ span = 12 }: {
     refetchIntervalInBackground: true,
     retry: false,
   })
+  const hasPosts = (posts.data?.posts?.length ?? 0) > 0
   const feed = useMemo(() => {
     const rows: { at: number; story?: NewsArticle; post?: SocialPost }[] =
       headlines.map(h => ({ at: Date.parse(h.published_at ?? "") || 0, story: h }))
-    for (const post of (scoped ? [] : posts.data?.posts ?? [])) {
+    for (const post of (scoped || kind === "news" ? [] : posts.data?.posts ?? [])) {
       rows.push({ at: Date.parse(post.at) || 0, post })
     }
     // The oldest headline on screen is the floor: a post older than the list
     // reaches would appear to be news nobody had reported.
     const floor = rows.reduce((lo, r) => (r.story && r.at && r.at < lo ? r.at : lo), Number.POSITIVE_INFINITY)
-    return rows.filter(r => r.story || r.at >= floor).sort((a, b) => b.at - a.at)
-  }, [headlines, posts.data, scoped])
+    return rows
+      .filter(r => (kind === "posts" ? !!r.post : r.story || r.at >= floor))
+      .sort((a, b) => b.at - a.at)
+  }, [headlines, posts.data, scoped, kind])
   return (
   <Widget
     span={span}
     title={scoped ? `${active} News` : "Market News"}
     subtitle={`${headlines.length} headlines, newest first`}
     scroll={TILE_BODY_HEIGHT}
-    actions={active ? (
+    actions={
       <>
-        <Btn active={scoped} onClick={() => setShowAll(false)}>{active}</Btn>
-        <Btn active={!scoped} onClick={() => setShowAll(true)}>All</Btn>
+        {active && <Btn active={scoped} onClick={() => setShowAll(false)}>{active}</Btn>}
+        {active && <Btn active={!scoped} onClick={() => setShowAll(true)}>All</Btn>}
+        {/* Offered only where posts could actually arrive: scoped to a
+            symbol none can (a post carries no ticker), and with the social
+            source off there are none to filter. A control over an empty set
+            is a claim that something is there. */}
+        {!scoped && hasPosts && (
+          <>
+            <Btn active={kind === "all"} onClick={() => setKind("all")}
+                 title="Stories and posts together, newest first">Both</Btn>
+            <Btn active={kind === "news"} onClick={() => setKind("news")}
+                 title="Stories from the feeds you keyed — nothing unverified">News</Btn>
+            <Btn active={kind === "posts"} onClick={() => setKind("posts")}
+                 title="Social posts only. Nobody is accountable for one">Posts</Btn>
+          </>
+        )}
       </>
-    ) : undefined}
+    }
   >
     {open ? (
       <NewsReader article={open} onBack={() => setOpenId(null)} />
@@ -102,9 +125,12 @@ export function NewsTape({ span = 12 }: {
       <QueryFailure error={news.error}>the news window is unavailable right now</QueryFailure>
     ) : !news.data || (scoped && !symbolNews.data) ? (
       <Empty>loading…</Empty>
-    ) : headlines.length === 0 ? (
+    // THE LIST IS EMPTY WHEN THE LIST IS EMPTY, not when the stories are:
+    // on the Posts view there may be no stories at all and plenty to show.
+    ) : feed.length === 0 ? (
       <div>
-        <Empty>{scoped ? `no ${active} news in the window` : "no news in the window"}</Empty>
+        <Empty>{kind === "posts" ? "no posts — switch the social source on from the Account page if it is off"
+          : scoped ? `no ${active} news in the window` : "no news in the window"}</Empty>
         <OlderNews state={state} onLoad={() => void loadMore()} onReset={reset} loaded={older.length}
                    subject={scoped ? "stories about this company" : "stories"} />
       </div>
