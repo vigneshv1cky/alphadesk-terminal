@@ -58,6 +58,53 @@ function RangeBar({ s }: { s: KeyStats }) {
   )
 }
 
+/** WHY SOME FIGURES HERE CARRY A DASH, AND WHY OTHERS LOOK ENORMOUS
+ * (2026-09-23, #65). A company that has reverse-split repeatedly restates
+ * every historical per-share figure retroactively, so a 52-week high of
+ * $94,608 beside a $6.26 price is the vendor being FAITHFUL — Wheeler's own
+ * SEC filings carry a diluted loss of $346,484 a share for 2024. Those stay,
+ * and say what they are. What goes is the share count that contradicts the
+ * enterprise value, and every ratio that divides today's price by one of
+ * those restated per-share figures, which is two different share counts in
+ * one fraction rather than a cheap stock. */
+function BasisNote({ s }: { s: KeyStats }) {
+  const b = s.basis
+  if (!b || (!b.pre_split.length && !b.share_count.length)) return null
+  const split = b.split
+  return (
+    <div className="mt-3 border-t border-row-rule px-0 pt-2 text-caption leading-[1.5] text-muted-foreground">
+      <span className="font-semibold text-warn">Figures on this page do not share one basis.</span>{" "}
+      {split && (
+        <>
+          {/* The convention is new-for-old: a 1-for-9 reverse split is one
+              new share for every nine held. */}
+          A {split.to}-for-{split.from} {split.reverse ? "reverse split" : "split"}
+          {split.date ? ` took effect ${split.date}` : " took effect recently"}
+          {/* The vendors' proper names, as everywhere else on the page —
+              a bare "fmp and alpaca" is the wire name, not a label. */}
+          {split.sources.length > 1
+            ? `, listed by ${split.sources.map(vendorLabel).join(" and ")}`
+            : ""}.{" "}
+        </>
+      )}
+      {b.pre_split.length > 0 && (
+        <>
+          The 52-week range, the moving averages, earnings per share and book value are the
+          vendor&rsquo;s own figures restated to an older share count — they are not wrong, but they
+          cannot be compared with today&rsquo;s price. Measured here: {b.pre_split.join("; ")}. Every
+          ratio between a current price and one of them has been withheld rather than shown.{" "}
+        </>
+      )}
+      {b.share_count.length > 0 && (
+        <>
+          Market capitalisation, shares outstanding and float are withheld: the vendor reports{" "}
+          {b.share_count.join("; ")}.
+        </>
+      )}
+    </div>
+  )
+}
+
 export function KeyStatisticsPanel({ symbol, span = 12, scroll = 420 }: { symbol: string; span?: number; scroll?: number | string }) {
   const q = useKeyStats(symbol)
   const s = q.data
@@ -116,6 +163,7 @@ export function KeyStatisticsPanel({ symbol, span = 12, scroll = 420 }: { symbol
               ["Next earnings", s.earnings_date ?? dash],
             ]} />
           </div>
+          <BasisNote s={s} />
         </div>
       )}
     </Widget>

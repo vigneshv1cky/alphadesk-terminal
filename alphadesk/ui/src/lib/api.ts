@@ -1630,6 +1630,15 @@ export interface KeyStats {
   revenue: number | null; profit_margin: number | null; return_on_equity: number | null
   total_cash: number | null; total_debt: number | null; free_cash_flow: number | null
   ex_dividend_date: string | null; earnings_date: string | null; fiscal_year_end: string | null
+  /** Present only when this record's figures cannot all be read beside its
+   * price — see the note in ingest/keystats.py. `pre_split` figures are TRUE
+   * but restated to an older share count; `share_count` ones contradict each
+   * other and are withheld. */
+  basis?: {
+    pre_split: string[]; share_count: string[]
+    marked: string[]; withheld: string[]
+    split: { date: string | null; to: number; from: number; reverse: boolean; sources: string[] } | null
+  } | null
 }
 
 /** The sell side on one symbol: the target range, the rating distribution by
