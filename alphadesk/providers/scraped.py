@@ -748,9 +748,20 @@ class SocialPulse:
             text = re.sub(r"<[^>]+>", " ", field("description"))
             text = re.sub(r"\s+", " ", text).strip()
             at = _rfc822(when)
-            if not at or not text:
+            # A WORDLESS POST IS STILL A POST (2026-09-23, #66, the reader:
+            # "why the new post is not scraped yet?"). Two of the day's posts
+            # never appeared — 41853 at 15:50 ET and 41848 at 00:03 — and both
+            # were in the feed all along, titled "[No Title] - Post from
+            # September 23, 2026" with an empty body. They are media-only:
+            # a picture or a video, posted without a caption. Dropping them
+            # made the app decide a record did not exist, and left the reader
+            # unable to tell "he did not post" from "he posted a photo" while
+            # a count promised the newest fifty. The row is kept and says
+            # what it is; we do not fetch the media and do not pretend to.
+            if not at:
                 continue
-            out.append({"at": at, "text": text, "url": link or None,
+            out.append({"at": at, "text": text, "no_text": not text,
+                        "url": link or None,
                         "account": "realDonaldTrump", "platform": "Truth Social",
                         "via": "trumpstruth.org (mirror)",
                         # Said on every row, not only in the tool description:

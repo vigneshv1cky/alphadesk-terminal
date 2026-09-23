@@ -403,7 +403,12 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                 // reading "Switch on" implied otherwise.
                 const only = v.coverage?.only_source_for ?? []
                 const taken = v.coverage?.already_covered ?? []
-                const idle = !!v.coverage && only.length === 0
+                // Surfaces that ask every vendor and merge, where this
+                // source is NOT shut out by a keyed one (2026-09-23, #66).
+                // Counting these as covered told the reader a source was
+                // idle while it was filling in their earnings week.
+                const also = v.coverage?.contributes_alongside ?? []
+                const idle = !!v.coverage && only.length === 0 && also.length === 0
                 return (
                   <Row key={v.name} label={v.label} actions={row
                     ? <>
@@ -449,9 +454,22 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                         ? <>Only source for {only.join(", ").toLowerCase()}.</>
                         : idle
                           ? <>Nothing a vendor you keyed does not already carry.</>
-                          : v.note}
+                          : also.length > 0
+                            ? <>Contributes to {also.map(t => t.surface.toLowerCase()).join(" and ")}.</>
+                            : v.note}
                     </span>
                     {/* Once it is on, what it is actually answering with. */}
+                    {row && also.length > 0 && (
+                      // NAMED SEPARATELY FROM THE COVERED ONES, because the
+                      // reader's rule is not to scrape what they pay for and
+                      // this is the deliberate exception to it: these
+                      // surfaces ask every vendor and merge, and the split
+                      // calendar needs two vendors agreeing before it will
+                      // trust a split at all.
+                      <span className="mt-1 block text-caption text-muted-foreground">
+                        {also.map(t => `${t.surface} asks every vendor and merges, so this is read beside ${t.vendors.join(" and ")}`).join("; ")}.
+                      </span>
+                    )}
                     {row && taken.length > 0 && (
                       <span className="mt-1 block text-caption text-muted-foreground">
                         {taken.map(t => `${t.surface} comes from ${t.vendors.join(" or ")}`).join("; ")}.

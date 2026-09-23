@@ -587,6 +587,10 @@ export interface DataVendors {
     coverage?: {
       only_source_for: string[]
       already_covered: { surface: string; vendors: string[] }[]
+      /** Surfaces that ask EVERY connected vendor and merge the answers, so
+       * this source contributes beside the ones you pay for rather than
+       * being shut out by them. */
+      contributes_alongside?: { surface: string; vendors: string[] }[]
     }
     serves: { surface: string; label: string; tier: "free" | "paid" }[]
     /** What the connected key's plan delivers; Alpaca only. */
@@ -711,6 +715,10 @@ export interface SocialPost {
   via: string | null
   /** Why it must not be acted on as stated. */
   trust: string | null
+  /** A media-only post — a picture or video with no caption. The row says so
+   * rather than being dropped, so "he did not post" and "he posted a photo"
+   * stop looking alike. We do not fetch the media. */
+  no_text?: boolean
 }
 
 export class NeedsKeyError extends ApiError {

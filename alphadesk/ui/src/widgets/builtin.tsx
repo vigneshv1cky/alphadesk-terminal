@@ -186,7 +186,11 @@ export function NewsTape({ span = 12 }: {
                 <span className="normal-case tracking-normal text-warn">unverified</span>
                 <span className="normal-case tracking-normal text-muted-foreground">{newsTime(post.at)}</span>
               </span>
-              <span className="block text-body leading-[1.3] text-muted-foreground">{post.text}</span>
+              <span className="block text-body leading-[1.3] text-muted-foreground">
+                      {post.no_text
+                        ? <span className="italic">no text — a picture or video, posted without a caption. Open it to see.</span>
+                        : post.text}
+                    </span>
             </a>
           </li>
         ) : h ? (
