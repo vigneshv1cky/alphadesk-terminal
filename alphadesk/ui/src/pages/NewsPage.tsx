@@ -151,13 +151,21 @@ export default function NewsPage() {
   // posts, and the controls that cannot apply are disabled rather than left
   // looking as though they did.
   const [postsOnly, setPostsOnly] = useState(false)
+  // ASKED BEFORE THE TOGGLE IS PRESSED (2026-09-23, the reader: "I dont see
+  // any from trumpstruth.org"). This was gated on the toggle being ON, so
+  // the page could not say how many posts there were — or that there were
+  // any — until the reader pressed a control with nothing on it to suggest
+  // they should. The count is what makes a switched-on source visible.
   const posts = useQuery({
     queryKey: ["social-posts"],
     queryFn: () => api.socialPosts(50),
-    enabled: postsOnly,
     staleTime: 60_000,
     retry: false,
   })
+  // An errored query has no posts: a failed refetch keeps the last good
+  // answer beside the error, and a source switched off must take its past
+  // data with it.
+  const livePosts = posts.isError ? [] : posts.data?.posts ?? []
   const sources = useMemo(() => [...new Set(articles.map(a => a.source).filter((x): x is string => !!x))].sort(), [articles])
   const feeds = useMemo(
     () => [...new Set(articles.flatMap(a => a.feeds ?? []))].sort(),
@@ -258,7 +266,7 @@ export default function NewsPage() {
           </Btn>
           <Btn variant="ghost" active={postsOnly} onClick={() => setPostsOnly(v => !v)}
                title="Social posts only. A post has no publisher, no feed and no ticker, so the pickers beside this cannot apply to one">
-            Posts
+            Posts{livePosts.length ? ` · ${livePosts.length}` : ""}
           </Btn>
           <select value={source} onChange={e => setSource(e.target.value)} aria-label="Publisher"
                   disabled={postsOnly}
@@ -301,11 +309,11 @@ export default function NewsPage() {
               the social source is on, but could not be read —{" "}
               {Object.values(posts.data!.unavailable!).join("; ")}
             </Empty>
-          ) : (posts.data?.posts ?? []).length === 0 ? (
+          ) : livePosts.length === 0 ? (
             <Empty>the social source answered, but with no posts in it</Empty>
           ) : (
             <ul>
-              {posts.data!.posts.map((post, i) => (
+              {livePosts.map((post, i) => (
                 <li key={post.url ?? i} className="row-rule hover:bg-foreground/5">
                   <a href={post.url ?? undefined} target="_blank" rel="noopener noreferrer"
                      title={post.trust ?? undefined} className="block w-full px-3 py-3 text-left">
