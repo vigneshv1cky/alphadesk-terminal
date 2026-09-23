@@ -78,20 +78,31 @@ export function NewsTape({ span = 12 }: {
     refetchIntervalInBackground: true,
     retry: false,
   })
-  const hasPosts = (posts.data?.posts?.length ?? 0) > 0
+  // A SWITCHED-OFF SOURCE TAKES ITS PAST DATA WITH IT (2026-09-23, the
+  // reader: "even past data should not be shown when turned off"). Switching
+  // it off invalidates every query, but a refetch that FAILS keeps the last
+  // successful answer beside the error — so the posts already on screen
+  // stayed on screen, from a source that was no longer connected. An errored
+  // query has no posts, full stop.
+  const livePosts = posts.isError ? [] : posts.data?.posts ?? []
+  const hasPosts = livePosts.length > 0
   const feed = useMemo(() => {
     const rows: { at: number; story?: NewsArticle; post?: SocialPost }[] =
       headlines.map(h => ({ at: Date.parse(h.published_at ?? "") || 0, story: h }))
-    for (const post of (scoped || kind === "news" ? [] : posts.data?.posts ?? [])) {
+    for (const post of (scoped || kind === "news" ? [] : livePosts)) {
       rows.push({ at: Date.parse(post.at) || 0, post })
     }
-    // The oldest headline on screen is the floor: a post older than the list
-    // reaches would appear to be news nobody had reported.
-    const floor = rows.reduce((lo, r) => (r.story && r.at && r.at < lo ? r.at : lo), Number.POSITIVE_INFINITY)
+    // NO FLOOR (2026-09-23). A post older than the oldest story on screen
+    // used to be dropped, on the reasoning that it would look like news
+    // nobody reported. The effect was that posts appeared or vanished
+    // depending on how far back the story list happened to reach: with 60
+    // headlines from this morning, every post from earlier disappeared and
+    // the tile looked broken. Sorting by time is honest on its own — an
+    // older post simply sits below the stories it is older than.
     return rows
-      .filter(r => (kind === "posts" ? !!r.post : r.story || r.at >= floor))
+      .filter(r => (kind === "posts" ? !!r.post : true))
       .sort((a, b) => b.at - a.at)
-  }, [headlines, posts.data, scoped, kind])
+  }, [headlines, livePosts, scoped, kind])
   return (
   <Widget
     span={span}
