@@ -470,3 +470,112 @@ def test_a_standing_suspension_is_not_a_live_pause():
     # ONE of them is a stock stopped today.
     assert sum(1 for r in rows.values() if not r["resumed"]) == 2
     assert sum(1 for r in rows.values() if r["today"] and not r["resumed"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# CONNECTED IS NOT WORKING (2026-09-23)
+#
+# The reader had the social source switched ON and still saw no posts. Every
+# screen they could look at was silent about it, and the one that spoke
+# offered to connect a source they were already holding — because a read that
+# FAILED and a source that was never connected both arrived at the same 428.
+# These pin the difference at each place it is now told.
+# ---------------------------------------------------------------------------
+
+class _Broken:
+    """A connected source whose site refuses the server, which is what a
+    scrape looks like from a datacenter address."""
+    name = "social"
+    official = False
+
+    def social_posts(self, limit=20):
+        from alphadesk.providers.base import ProviderError
+        raise ProviderError("scraped source refused (403)")
+
+
+def test_a_source_that_was_asked_and_failed_is_not_a_source_to_connect():
+    """The router carries WHY each vendor declined, so the two states stop
+    being one. Without this the prompt tells a reader to switch on what they
+    already switched on."""
+    from alphadesk.providers.base import NeedsKey
+
+    router = DataRouter("u1", {"social": _Broken()})
+    with pytest.raises(NeedsKey) as caught:
+        router.ask("social_posts", surface="social")
+    assert caught.value.failed == {"social": "scraped source refused (403)"}
+    assert caught.value.prompt()["failed"] == {"social": "scraped source refused (403)"}
+
+    # A surface nobody carries still raises the plain prompt: there is
+    # nothing to report, because nothing was tried.
+    with pytest.raises(NeedsKey) as untried:
+        DataRouter("u1", {}).ask("social_posts", surface="social")
+    assert untried.value.failed == {}
+    assert "failed" not in untried.value.prompt()
+
+
+def test_the_panel_is_told_the_reason_rather_than_asked_for_a_key(client, monkeypatch):
+    """The route answers 200 with the reason beside an empty list. A 428
+    would render the key prompt, which is the wrong instruction: there is no
+    key, the source is on, and the site would not answer."""
+    from alphadesk.providers import registry
+
+    monkeypatch.setattr(registry, "get_prices", lambda: DataRouter("u1", {"social": _Broken()}))
+    monkeypatch.setattr("alphadesk.providers.get_prices",
+                        lambda: DataRouter("u1", {"social": _Broken()}))
+    res = client.get("/api/social/posts")
+    assert res.status_code == 200
+    assert res.json()["posts"] == []
+    assert res.json()["unavailable"] == {"social": "scraped source refused (403)"}
+
+
+def test_a_source_nobody_switched_on_still_asks_for_one(client, monkeypatch):
+    """The other half of the same rule — off must keep saying off, or this
+    change would hide the prompt the reader does need."""
+    from alphadesk.providers import registry
+
+    monkeypatch.setattr(registry, "get_prices", lambda: DataRouter("u1", {}))
+    monkeypatch.setattr("alphadesk.providers.get_prices", lambda: DataRouter("u1", {}))
+    assert client.get("/api/social/posts").status_code == 428
+
+
+def test_a_check_reads_the_site_now_and_says_what_happened(client, store, monkeypatch):
+    """"On" is not "working", and nothing in the app tried. A check does:
+    refused, unreachable, or answered-but-empty, each reported as itself."""
+    import uuid
+
+    from alphadesk.app import auth
+    from alphadesk.providers import registry
+    monkeypatch.setenv("ALPHADESK_AUTH", "required")
+    uid = uuid.uuid4().hex
+    store.create_user(uid, "check@example.com", auth.hash_password("a-long-password"))
+    assert client.post("/api/auth/login", json={"email": "check@example.com",
+                                                "password": "a-long-password"}).status_code == 200
+
+    # Off is a refusal to check, not a failing check: there is nothing to try.
+    assert client.post("/api/sources/social/check").status_code == 409
+    assert client.post("/api/sources/nonesuch/check").status_code == 404
+
+    store.set_user_key(uid, "prices", "social", "sealed", "")
+    registry.forget_user_keys(uid)
+
+    monkeypatch.setattr(registry, "build", lambda kind, name, **cfg: _Broken())
+    body = client.post("/api/sources/social/check").json()
+    assert body["ok"] is False and body["reason"] == "scraped source refused (403)"
+    assert isinstance(body["took_ms"], int)
+
+    # A site that answers with an empty page is NOT working — that is the
+    # failure hardest to see from a panel, so the check names it.
+    class _Empty(_Broken):
+        def social_posts(self, limit=20):
+            return []
+    monkeypatch.setattr(registry, "build", lambda kind, name, **cfg: _Empty())
+    empty = client.post("/api/sources/social/check").json()
+    assert empty["ok"] is False and empty["rows"] == 0
+    assert "nothing in it" in empty["reason"]
+
+    class _Works(_Broken):
+        def social_posts(self, limit=20):
+            return [{"at": "2026-09-23T13:26:43+00:00", "text": "a post"}]
+    monkeypatch.setattr(registry, "build", lambda kind, name, **cfg: _Works())
+    good = client.post("/api/sources/social/check").json()
+    assert good["ok"] is True and good["rows"] == 1 and good["reason"] is None

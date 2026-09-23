@@ -249,6 +249,13 @@ function HaltsTable() {
     )
   }
   if (q.isError) return <QueryFailure error={q.error}>the halt feed could not be read</QueryFailure>
+  // ON, AND UNREADABLE (2026-09-23) — a different thing to tell the reader
+  // than either "switch it on" or "no halts today", and until now it looked
+  // exactly like the latter.
+  const off = Object.values(q.data?.unavailable ?? {})
+  if (off.length > 0) {
+    return <Empty>the Nasdaq source is on, but could not be read — {off.join("; ")}</Empty>
+  }
   if (!rows || rows.length === 0) return <Empty>no halts listed right now</Empty>
   return (
     <Table>
