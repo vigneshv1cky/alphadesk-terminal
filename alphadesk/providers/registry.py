@@ -327,6 +327,16 @@ class DataRouter:
         from alphadesk.providers.catalogue import METHOD_SURFACE
         surf = surface or METHOD_SURFACE.get(method, method)
         refused: list[str] = []
+        # WHY EACH VENDOR DECLINED, carried on the NeedsKey (2026-09-23). A
+        # vendor that was ASKED and could not answer is not the same thing as
+        # one the reader never connected, and until now both ended in the same
+        # 428 — so a source that was switched ON but unreachable told the
+        # reader to switch it on. That is the "connect a key" prompt lying
+        # about the state of the world, and it is how the social source went
+        # unnoticed: it was on, the site refused the server, and the panel
+        # said nothing at all. Same lesson as the empty tabs in #57 — a failed
+        # read is not an absence.
+        failed: dict[str, str] = {}
         for name in self._order(surf, method):
             try:
                 value = getattr(self.vendors[name], method)(*args, **kwargs)
@@ -338,13 +348,15 @@ class DataRouter:
                 continue
             except ProviderError as exc:
                 log.warning("%s failed %s: %s", name, method, exc)
+                failed[name] = str(exc)
                 continue
             if value is None:
                 continue
             self.answered_by = name
             _stamp_used(self.uid, name)
             return value
-        raise NeedsKey(surf, refused, signed_in=self.uid is not None, connected=list(self.vendors))
+        raise NeedsKey(surf, refused, signed_in=self.uid is not None, connected=list(self.vendors),
+                       failed=failed)
 
     def ask_others(self, method: str, *args: Any, skip: str | None = None,
                    surface: str | None = None, **kwargs: Any):

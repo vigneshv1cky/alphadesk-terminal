@@ -293,8 +293,16 @@ export default function NewsPage() {
             <Empty>The social source is off — switch it on from the Account page.</Empty>
           ) : posts.isError ? (
             <QueryFailure error={posts.error}>the social source could not be read</QueryFailure>
+          ) : Object.keys(posts.data?.unavailable ?? {}).length > 0 ? (
+            // THE SOURCE IS ON AND THE SITE WOULD NOT ANSWER (2026-09-23).
+            // This used to fall through to "switch it on", which is the one
+            // instruction that cannot help a reader who already did.
+            <Empty>
+              the social source is on, but could not be read —{" "}
+              {Object.values(posts.data!.unavailable!).join("; ")}
+            </Empty>
           ) : (posts.data?.posts ?? []).length === 0 ? (
-            <Empty>no posts — switch the social source on from the Account page if it is off</Empty>
+            <Empty>the social source answered, but with no posts in it</Empty>
           ) : (
             <ul>
               {posts.data!.posts.map((post, i) => (

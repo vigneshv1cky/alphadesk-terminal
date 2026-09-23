@@ -1091,13 +1091,35 @@ def api_catalysts(limit: int = 60, feeds: str = ""):
     return catalysts.tape(limit=max(1, min(limit, 200)), feeds=picked or None)
 
 
+def _scraped_read(method: str, surface: str, field: str, **kwargs) -> dict:
+    """Ask the router for a surface only scraped sources carry, and tell the
+    two failures apart (2026-09-23).
+
+    The reader reported seeing nothing from the social source while it was
+    SWITCHED ON. Both states arrived here as one 428: the source was never
+    connected, and the source was connected but the site refused the server.
+    The first asks the reader to switch something on; the second is ours to
+    fix and theirs to know about, and showing them the first is simply false.
+
+    So: a genuine 428 still raises, and a source that was asked and failed
+    answers with an empty list and the reason beside it, which the panel
+    prints instead of a key prompt."""
+    from alphadesk.providers import get_prices
+    from alphadesk.providers.base import NeedsKey
+    try:
+        return {field: get_prices().ask(method, surface=surface, **kwargs) or []}
+    except NeedsKey as exc:
+        if not exc.failed:
+            raise
+        return {field: [], "unavailable": exc.failed}
+
+
 @app.get("/api/social/posts")
 def api_social_posts(limit: int = 20):
     """Recent social posts — 428 until the reader switches the social source
-    on. Unverified user-generated text (2026-09-22)."""
-    from alphadesk.providers import get_prices
-    return {"posts": get_prices().ask("social_posts", limit=max(1, min(limit, 100)),
-                                      surface="social") or []}
+    on, and the reason when a source that IS on could not be read.
+    Unverified user-generated text (2026-09-22)."""
+    return _scraped_read("social_posts", "social", "posts", limit=max(1, min(limit, 100)))
 
 
 @app.get("/api/gov/feed")
@@ -1120,10 +1142,9 @@ def api_trading_halts(limit: int = 100):
     A catalyst with its own clock: the exchange stopped the stock at a stated
     time for a stated reason and said when it would resume. No keyed vendor in
     the catalogue carries it, so this answers 428 until a source that does is
-    switched on."""
-    from alphadesk.providers import get_prices
-    return {"halts": get_prices().ask("trading_halts", limit=max(1, min(limit, 500)),
-                                      surface="trading_halts")}
+    switched on — and names the reason when one that IS on could not be
+    read."""
+    return _scraped_read("trading_halts", "trading_halts", "halts", limit=max(1, min(limit, 500)))
 
 
 @app.get("/api/sectors")
@@ -1731,6 +1752,53 @@ def api_source_enable(name: str, request: Request):
                        "")
     registry.forget_user_keys(user_id)
     return {"ok": True, "seam": "prices", "provider": name, "official": False}
+
+
+@app.post("/api/sources/{name}/check")
+def api_source_check(name: str, request: Request):
+    """READ THE SOURCE NOW AND SAY WHAT HAPPENED (2026-09-23).
+
+    A scraped source has no key to be wrong, so the Account page had nothing
+    to report but "on" — and "on" is not "working". The reader had the social
+    source switched on and saw no posts for it; every screen they could look
+    at either said nothing or, worse, offered to connect a source they were
+    already holding. Nothing in the app actually TRIED the site and said.
+
+    This does: one read of that source's own surface, with the reasons a
+    scrape fails reported as themselves — refused, unreachable, or answered
+    but empty. It is deliberately a POST: it reaches a third-party site, so
+    it happens when the reader asks and never on a page load."""
+    from alphadesk.providers import registry
+    from alphadesk.providers.base import ProviderError
+    from alphadesk.providers.scraped import SCRAPED_SOURCES
+    user_id = _key_user(request)
+    if name not in SCRAPED_SOURCES:
+        raise HTTPException(404, f"{name!r} is not a scraped source")
+    if not any(r["provider"] == name for r in store.get_user_keys(user_id, "prices")):
+        raise HTTPException(409, f"the {name} source is switched off")
+    # The source's OWN surface, not a shared one: what it is the only source
+    # for is exactly what a check should exercise.
+    probes = {"social": ("social_posts", {"limit": 5}),
+              "nasdaq": ("trading_halts", {"limit": 5}),
+              "yahoo": ("quotes", {"symbols": ["AAPL"]})}
+    method, kwargs = probes.get(name, ("quotes", {"symbols": ["AAPL"]}))
+    started = time.monotonic()
+    try:
+        rows = getattr(registry.build("prices", name), method)(**kwargs)
+    except ProviderError as exc:
+        return {"source": name, "ok": False, "reason": str(exc),
+                "took_ms": round((time.monotonic() - started) * 1000)}
+    except Exception as exc:                                 # never a 500 here
+        log.warning("source check %s: %s", name, exc)
+        return {"source": name, "ok": False, "reason": f"{type(exc).__name__}: {exc}",
+                "took_ms": round((time.monotonic() - started) * 1000)}
+    n = len(rows or [])
+    # ANSWERED BUT EMPTY IS NOT SUCCESS. A site that returns a page with no
+    # rows reads as working while delivering nothing, which is the failure
+    # that is hardest to notice from a panel.
+    return {"source": name, "ok": n > 0, "rows": n,
+            "reason": None if n else "the site answered, but with nothing in it",
+            "took_ms": round((time.monotonic() - started) * 1000)}
 
 
 @app.put("/api/keys/{seam}")

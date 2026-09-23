@@ -222,6 +222,21 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
   // under market data and counted three keyless sources among the vendors,
   // so "7 of 9 connected" was answering two questions at once.
   const keyedVendors = vendorList.filter(v => v.official !== false)
+  // A LIVE CHECK, on the reader's press only: it reaches a third-party site,
+  // so it must never run on a page load (2026-09-23).
+  const [checking, setChecking] = useState<string | null>(null)
+  const [checks, setChecks] = useState<Record<string, { ok: boolean; rows?: number; reason: string | null }>>({})
+  const runCheck = async (name: string) => {
+    setChecking(name)
+    try {
+      const res = await api.checkSource(name)
+      setChecks(c => ({ ...c, [name]: { ok: res.ok, rows: res.rows, reason: res.reason } }))
+    } catch (e) {
+      setChecks(c => ({ ...c, [name]: { ok: false, reason: e instanceof Error ? e.message : "could not be checked" } }))
+    } finally {
+      setChecking(null)
+    }
+  }
   const scrapedSources = vendorList.filter(v => v.official === false)
   const connectedCount = keyedVendors.filter(v => stored("prices", v.name)).length
   const scrapedOn = scrapedSources.filter(v => stored("prices", v.name)).length
@@ -391,12 +406,32 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                 const idle = !!v.coverage && only.length === 0
                 return (
                   <Row key={v.name} label={v.label} actions={row
-                    ? <button type="button" onClick={() => void remove("prices", v.name)} className={BTN_DANGER}>Switch off</button>
+                    ? <>
+                        <button type="button" onClick={() => void runCheck(v.name)}
+                                disabled={checking === v.name} className={BTN}
+                                title="Read the site now and report what came back">
+                          {checking === v.name ? "Checking…" : "Check"}
+                        </button>
+                        <button type="button" onClick={() => void remove("prices", v.name)} className={BTN_DANGER}>Switch off</button>
+                      </>
                     : <button type="button" onClick={() => void enable(v.name)} className={BTN_PRIMARY}>Switch on</button>}>
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       {row ? <Pill tone="warn">Scraped</Pill> : <Pill tone="muted">Off</Pill>}
                       {idle && <Pill tone="muted">Nothing to serve</Pill>}
+                      {/* ON IS NOT WORKING (2026-09-23, the reader saw no
+                          posts from a source they had switched on). The page
+                          could say a source was on and covering a panel
+                          while the site refused this server, and nothing
+                          here had ever tried it. */}
+                      {checks[v.name] && (
+                        <Pill tone={checks[v.name]!.ok ? "info" : "warn"}>
+                          {checks[v.name]!.ok ? `Answered · ${checks[v.name]!.rows} rows` : "Not answering"}
+                        </Pill>
+                      )}
                     </span>
+                    {checks[v.name]?.reason && (
+                      <span className="mt-1 block text-caption text-warn">{checks[v.name]!.reason}</span>
+                    )}
                     {/* A SOURCE THAT IS OFF SAYS LITTLE (2026-09-23, the
                         reader). Three switched-off rows each carried two
                         paragraphs — what it reads, what it would be the only

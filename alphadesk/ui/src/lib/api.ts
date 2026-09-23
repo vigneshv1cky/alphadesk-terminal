@@ -1392,8 +1392,18 @@ export const api = {
   deleteBasket: (id: string) => del<{ ok: boolean }>(`/api/baskets/${encodeURIComponent(id)}`),
   dataVendors: () => get<DataVendors>("/api/data/vendors"),
   catalysts: (limit = 60) => get<CatalystFeed>(`/api/catalysts?limit=${limit}`),
-  halts: (limit = 60) => get<{ halts: HaltRow[] | null }>(`/api/halts?limit=${limit}`),
-  socialPosts: (limit = 20) => get<{ posts: SocialPost[] }>(`/api/social/posts?limit=${limit}`),
+  // `unavailable` names a source that IS switched on and could not be read,
+  // per source (2026-09-23). It is not a 428: there is no key to connect, so
+  // the panel must print what happened instead of a key prompt.
+  halts: (limit = 60) =>
+    get<{ halts: HaltRow[] | null; unavailable?: Record<string, string> }>(`/api/halts?limit=${limit}`),
+  socialPosts: (limit = 20) =>
+    get<{ posts: SocialPost[]; unavailable?: Record<string, string> }>(`/api/social/posts?limit=${limit}`),
+  /** Read a scraped source NOW and report what happened — the reader's ask,
+   * never a page load, because it reaches a third-party site. */
+  checkSource: (name: string) =>
+    post<{ source: string; ok: boolean; rows?: number; reason: string | null; took_ms: number }>(
+      `/api/sources/${encodeURIComponent(name)}/check`, {}),
   filingFeed: (limit = 40) => get<FilingFeed>(`/api/filings/feed?limit=${limit}`),
   govFeed: (limit = 40, days = 7) => get<GovFeed>(`/api/gov/feed?limit=${limit}&days=${days}`),
   /** Switch a scraped source on. There is no key, so this is the whole of

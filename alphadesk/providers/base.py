@@ -36,10 +36,14 @@ class NeedsKey(ProviderError):
     HTTP 428 with `{"detail": {"needs_key": prompt}}`."""
 
     def __init__(self, surface: str, refused: list[str] | None = None, signed_in: bool = True,
-                 connected: list[str] | None = None) -> None:
+                 connected: list[str] | None = None, failed: dict[str, str] | None = None) -> None:
         self.surface = surface
         self.refused = list(refused or [])
         self.signed_in = signed_in
+        # Vendors that WERE asked and could not answer, with the reason
+        # (2026-09-23). A connected source that is unreachable must never be
+        # reported as one the reader has yet to connect.
+        self.failed = dict(failed or {})
         # The reader's OWN vendors, so the prompt can leave out a key they
         # already hold (2026-09-20). None when the raiser does not know.
         self.connected = list(connected) if connected is not None else None
@@ -52,8 +56,13 @@ class NeedsKey(ProviderError):
 
     def prompt(self) -> dict:
         from alphadesk.providers.catalogue import prompt
-        return prompt(self.surface, refused=self.refused, signed_in=self.signed_in,
-                      connected=self.connected)
+        out = prompt(self.surface, refused=self.refused, signed_in=self.signed_in,
+                     connected=self.connected)
+        # The panel says what happened where something did: "could not be
+        # read" is a different instruction to the reader than "connect a key".
+        if self.failed:
+            out["failed"] = dict(self.failed)
+        return out
 
 
 class EntitlementError(ProviderError):
