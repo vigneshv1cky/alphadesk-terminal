@@ -5,7 +5,7 @@ import { X } from "lucide-react"
 import { ComposedBoard } from "@/components/ComposedBoard"
 import { HeadlineTickers } from "@/components/HeadlineTickers"
 import { NewsReader } from "@/components/NewsReader"
-import { api, type NewsArticle } from "@/lib/api"
+import { api, isNeedsKey, type NewsArticle } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { boardStories, markSeen, readSeen } from "@/lib/newsSeen"
 import { useNews } from "@/lib/queries"
@@ -289,10 +289,10 @@ export default function NewsPage() {
             never given. Each row opens the post itself. */}
         {postsOnly ? (
           posts.isPending ? <Empty>loading…</Empty>
-          : posts.isError ? (
-            <QueryFailure error={posts.error}>
-              the social source could not be read — switch it on from the Account page if it is off
-            </QueryFailure>
+          : isNeedsKey(posts.error) ? (
+            <Empty>The social source is off — switch it on from the Account page.</Empty>
+          ) : posts.isError ? (
+            <QueryFailure error={posts.error}>the social source could not be read</QueryFailure>
           ) : (posts.data?.posts ?? []).length === 0 ? (
             <Empty>no posts — switch the social source on from the Account page if it is off</Empty>
           ) : (
