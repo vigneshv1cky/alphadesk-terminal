@@ -1707,19 +1707,31 @@ def api_data_vendors(request: Request):
         for name, cls in SCRAPED_SOURCES.items():
             mine: list[str] = []
             taken: list[dict] = []
+            alongside: list[dict] = []
             for surface in catalogue.SURFACES.values():
                 methods = [m for m, sid in catalogue.METHOD_SURFACE.items() if sid == surface.id]
                 if not any(callable(getattr(cls, m, None)) for m in methods):
                     continue
                 holders = [catalogue.VENDORS[n].label for n, _t in surface.vendors
                            if n in connected and n in catalogue.VENDORS]
-                (taken.append({"surface": surface.label, "vendors": holders}) if holders
-                 else mine.append(surface.label))
+                # ALREADY COVERED IS NOT TRUE OF EVERY SURFACE (2026-09-23,
+                # #66). This assumed first-answer-wins throughout, so it told
+                # the reader the scrape was idle for earnings and splits —
+                # and those two ask EVERY connected vendor and merge the
+                # answers, so it was contributing to 96 of 232 earnings rows
+                # on the board that said it was covered.
+                if holders and surface.id in catalogue.UNIONED_SURFACES:
+                    alongside.append({"surface": surface.label, "vendors": holders})
+                elif holders:
+                    taken.append({"surface": surface.label, "vendors": holders})
+                else:
+                    mine.append(surface.label)
             # Plus what no CATALOGUE surface covers at all — halts, social —
             # which the class declares, because a surface nobody carries
             # cannot be discovered from a table of who carries what.
             mine += list(getattr(cls, "EXCLUSIVE", ()))
-            covered[name] = {"only_source_for": sorted(mine), "already_covered": taken}
+            covered[name] = {"only_source_for": sorted(mine), "already_covered": taken,
+                             "contributes_alongside": alongside}
     except Exception as exc:                      # the list still renders
         log.debug("scraped coverage: %s", exc)
     return {"connected": connected,

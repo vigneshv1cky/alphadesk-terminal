@@ -423,7 +423,15 @@ def test_a_switch_says_whether_it_would_ever_be_asked(client, store, monkeypatch
     store.set_user_key(uid, "prices", "fmp", "sealed", "…efgh")
     full = coverage()
     assert full["nasdaq"]["only_source_for"] == ["Trading halts and resumptions"]
+    # CORRECTED 2026-09-23 (#66): this used to assert the earnings calendar
+    # was "already covered" once FMP was keyed, which is what the page told
+    # the reader — and it was false. The earnings calendar asks EVERY
+    # connected vendor and merges, so the scraped source is read beside FMP
+    # rather than shut out by it. The dividend calendar, which is
+    # first-answer-wins, is the control: it IS covered.
     assert any(t["surface"] == "Earnings calendar" and "Financial Modeling Prep" in t["vendors"]
+               for t in full["nasdaq"]["contributes_alongside"])
+    assert any(t["surface"] == "Dividend calendar" and "Financial Modeling Prep" in t["vendors"]
                for t in full["nasdaq"]["already_covered"])
     # And social is reachable whatever is keyed — no vendor carries either.
     assert full["social"]["only_source_for"] == ["Social posts"]
@@ -579,3 +587,103 @@ def test_a_check_reads_the_site_now_and_says_what_happened(client, store, monkey
     monkeypatch.setattr(registry, "build", lambda kind, name, **cfg: _Works())
     good = client.post("/api/sources/social/check").json()
     assert good["ok"] is True and good["rows"] == 1 and good["reason"] is None
+
+
+# ---------------------------------------------------------------------------
+# A WORDLESS POST IS STILL A POST (2026-09-23, #66)
+#
+# Two of the day's posts never reached the reader — 41853 at 15:50 ET and
+# 41848 at 00:03 — and both were in the feed the whole time, titled
+# "[No Title] - Post from September 23, 2026" with an empty body. They are
+# media-only: a picture or a video posted without a caption.
+# ---------------------------------------------------------------------------
+
+_FEED = """<rss><channel>
+  <item>
+    <title><![CDATA[[No Title] - Post from September 23, 2026]]></title>
+    <link>https://www.trumpstruth.org/statuses/41853</link>
+    <description><![CDATA[<p></p>]]></description>
+    <pubDate>Wed, 23 Sep 2026 19:50:55 +0000</pubDate>
+  </item>
+  <item>
+    <title><![CDATA[On Marine One!]]></title>
+    <link>https://www.trumpstruth.org/statuses/41852</link>
+    <description><![CDATA[<p>On Marine One!</p>]]></description>
+    <pubDate>Wed, 23 Sep 2026 19:44:04 +0000</pubDate>
+  </item>
+  <item>
+    <title><![CDATA[no clock]]></title>
+    <link>https://www.trumpstruth.org/statuses/1</link>
+    <description><![CDATA[<p>no clock</p>]]></description>
+    <pubDate></pubDate>
+  </item>
+</channel></rss>"""
+
+
+def test_a_post_with_no_words_is_kept_and_says_so(monkeypatch):
+    from alphadesk.providers import scraped
+
+    monkeypatch.setattr(scraped, "_get_text", lambda *a, **k: _FEED)
+    rows = scraped.SocialPulse().social_posts(limit=10)
+
+    # The wordless post is FIRST, because it is the newest — dropping it let
+    # the reader believe nothing had been posted since 15:44.
+    assert [r["url"].rsplit("/", 1)[-1] for r in rows] == ["41853", "41852"]
+    assert rows[0]["no_text"] is True and rows[0]["text"] == ""
+    assert rows[1]["no_text"] is False and rows[1]["text"] == "On Marine One!"
+    # Every row still carries the warning: a kept post is no more verified
+    # than a dropped one was.
+    assert all("unverified" in r["trust"] for r in rows)
+
+
+def test_a_post_with_no_clock_is_still_dropped():
+    """The time is what orders the list and what a reader reasons from. A
+    post with no stamp cannot be placed, which is a different thing from one
+    with nothing written on it."""
+    from alphadesk.providers import scraped
+    import pytest as _pytest
+
+    _ = _pytest
+    rows = None
+    class _P(scraped.SocialPulse):
+        pass
+    import alphadesk.providers.scraped as mod
+    real = mod._get_text
+    mod._get_text = lambda *a, **k: _FEED
+    try:
+        rows = _P().social_posts(limit=10)
+    finally:
+        mod._get_text = real
+    assert all(r["at"] for r in rows)
+    assert "1" not in [r["url"].rsplit("/", 1)[-1] for r in rows]
+
+
+def test_a_unioned_surface_is_not_reported_as_covered(client, store, monkeypatch):
+    """The Account page told the reader the scraped source was idle for
+    earnings and splits. Those two ask EVERY connected vendor and merge, so
+    it was contributing to 96 of 232 earnings rows on the board that called
+    it covered (measured 2026-09-23). Dividends and IPOs are first-answer-
+    wins and stay covered, which is what keeps this honest rather than
+    merely louder."""
+    import uuid
+
+    from alphadesk.app import auth
+    monkeypatch.setenv("ALPHADESK_AUTH", "required")
+    uid = uuid.uuid4().hex
+    store.create_user(uid, "union@example.com", auth.hash_password("a-long-password"))
+    assert client.post("/api/auth/login", json={"email": "union@example.com",
+                                                "password": "a-long-password"}).status_code == 200
+    # Key the vendors that carry every calendar the scrape could serve.
+    for vendor in ("fmp", "alpaca", "finnhub", "alphavantage"):
+        store.set_user_key(uid, "prices", vendor, "sealed", "…abcd")
+
+    rows = {v["name"]: v for v in client.get("/api/data/vendors").json()["vendors"]}
+    cover = rows["nasdaq"]["coverage"]
+    alongside = {t["surface"] for t in cover.get("contributes_alongside", [])}
+    covered = {t["surface"] for t in cover["already_covered"]}
+
+    assert alongside == {"Earnings calendar", "Stock split calendar"}
+    assert "Dividend calendar" in covered and "IPO calendar" in covered
+    assert not (alongside & covered), "a surface is one or the other, never both"
+    # And the one thing nobody sells stays its own.
+    assert "Trading halts and resumptions" in cover["only_source_for"]

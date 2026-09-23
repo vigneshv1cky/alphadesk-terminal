@@ -175,6 +175,31 @@ SURFACES: dict[str, Surface] = {
 
 # The contract method each router call maps to its surface. Methods absent
 # here are not routed (a vendor's own attribute like `name`).
+# SURFACES WHERE EVERY CONNECTED VENDOR IS ASKED, NOT JUST THE FIRST
+# (2026-09-23, #66). Most surfaces are first-answer-wins, so a keyed vendor
+# shuts a scraped source out completely — which is what the Account page's
+# coverage note assumed of all of them. These two do not work that way:
+#
+#   * the EARNINGS CALENDAR unions its vendors, because no single one lists
+#     every reporter (ingest/earnings_calendar.py);
+#   * the SPLIT CALENDAR corroborates, and REQUIRES two vendors agreeing
+#     before it trusts a split — FMP listed six that never took effect
+#     (ingest/corporate_calendars.py).
+#
+# So on these a scraped source CONTRIBUTES ALONGSIDE the vendors a reader
+# pays for rather than being idle, and the page must say so. Measured on the
+# owner's six-vendor board that day, over a two-day window: the scraped
+# Nasdaq source appeared in 96 of 232 earnings rows and was the ONLY source
+# for 21 of them.
+#
+# THIS IS A DELIBERATE EXEMPTION to "never scrape what a paid vendor carries"
+# (the owner's rule, 2026-09-23), taken the same day with the numbers above
+# in hand. A second opinion is the mechanism here, not a duplicate: dropping
+# the scrape wherever a paid vendor also lists a split would leave the
+# corroboration rule with one vendor and nothing to check against, and it is
+# that check which catches a split that never happens.
+UNIONED_SURFACES = frozenset({"earnings_calendar", "split_calendar"})
+
 METHOD_SURFACE: dict[str, str] = {
     "chart_series": "chart", "chart_intervals": "chart", "daily_history": "chart",
     "quote": "quote", "quotes": "quote", "context": "quote",

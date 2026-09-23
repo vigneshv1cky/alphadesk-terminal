@@ -329,7 +329,11 @@ export default function NewsPage() {
                         </span>
                       )}
                     </span>
-                    <span className="block text-body leading-[1.3] text-muted-foreground">{post.text}</span>
+                    <span className="block text-body leading-[1.3] text-muted-foreground">
+                      {post.no_text
+                        ? <span className="italic">no text — a picture or video, posted without a caption. Open it to see.</span>
+                        : post.text}
+                    </span>
                   </a>
                 </li>
               ))}
