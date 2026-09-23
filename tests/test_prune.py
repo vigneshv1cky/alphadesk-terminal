@@ -83,3 +83,54 @@ def test_the_key_route_purges(client, store, monkeypatch):
     assert client.delete("/api/keys/news/polygon").status_code == 200
     with store._connect() as conn:
         assert conn.execute("SELECT COUNT(*) AS n FROM news_articles WHERE owner=?", (uid,)).fetchone()["n"] == 0
+
+
+def test_stories_from_a_feed_you_no_longer_hold_are_named(client, store, monkeypatch):
+    """A feed removed BEFORE the purge landed (2026-09-18) left its stories
+    behind, and they showed up in the news list under publishers the reader
+    could not account for — an aggregating feed carries dozens of them, so
+    "why do I see thirty sources on one feed?" had no answer on the page.
+    They are named on the Account page instead, with what becomes of them."""
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    from alphadesk.app import auth
+    monkeypatch.setenv("ALPHADESK_AUTH", "required")
+    uid = uuid.uuid4().hex
+    store.create_user(uid, "orphan@example.com", auth.hash_password("a-long-password"))
+    assert client.post("/api/auth/login", json={"email": "orphan@example.com",
+                                                "password": "a-long-password"}).status_code == 200
+    store.set_user_key(uid, "news", "alpaca", "sealed", "…abcd")
+    fresh = datetime.now(timezone.utc).isoformat()
+    old = (datetime.now(timezone.utc) - timedelta(days=4)).isoformat()
+    with store._lock, store._connect() as conn:
+        # One story from the feed they still hold, two from one they do not.
+        conn.execute("INSERT INTO news_articles (owner, article_id, title, feeds, ingested_at)"
+                     " VALUES (?, 'a', 't', 'alpaca', ?)", (uid, fresh))
+        conn.execute("INSERT INTO news_articles (owner, article_id, title, feeds, ingested_at)"
+                     " VALUES (?, 'b', 't', 'alphavantage', ?)", (uid, old))
+        conn.execute("INSERT INTO news_articles (owner, article_id, title, feeds, ingested_at)"
+                     " VALUES (?, 'c', 't', 'alphavantage', ?)", (uid, old))
+    body = client.get("/api/keys").json()
+    assert body["orphan_feeds"] == [{"provider": "alphavantage", "stories": 2}]
+    # The feed they DO hold is never called an orphan of itself.
+    assert all(o["provider"] != "alpaca" for o in body["orphan_feeds"])
+    # And the page can say when they go, rather than leaving it a mystery.
+    assert body["news_keep_days"] > 0
+
+
+def test_a_reader_with_only_feeds_they_hold_has_no_orphans(client, store, monkeypatch):
+    import uuid
+    from datetime import datetime, timezone
+
+    from alphadesk.app import auth
+    monkeypatch.setenv("ALPHADESK_AUTH", "required")
+    uid = uuid.uuid4().hex
+    store.create_user(uid, "clean@example.com", auth.hash_password("a-long-password"))
+    assert client.post("/api/auth/login", json={"email": "clean@example.com",
+                                                "password": "a-long-password"}).status_code == 200
+    store.set_user_key(uid, "news", "alpaca", "sealed", "…abcd")
+    with store._lock, store._connect() as conn:
+        conn.execute("INSERT INTO news_articles (owner, article_id, title, feeds, ingested_at)"
+                     " VALUES (?, 'a', 't', 'alpaca', ?)", (uid, datetime.now(timezone.utc).isoformat()))
+    assert client.get("/api/keys").json()["orphan_feeds"] == []

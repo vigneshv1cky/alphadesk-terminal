@@ -1632,8 +1632,27 @@ def api_keys_list(request: Request):
                 # How its stories arrive: over a held socket in seconds, or on
                 # the poll. The page says so per feed (2026-09-18).
                 k["delivery"] = "stream" if k["provider"] in STREAMING_NEWS else "poll"
-    from alphadesk.config import NEWS_REFRESH_MINUTES
-    return {"vault": vault.enabled(), "keys": keys, "news_poll_minutes": NEWS_REFRESH_MINUTES}
+    # STORIES FROM A FEED THE READER NO LONGER HAS (2026-09-22). Removing a
+    # key purges what it delivered, but that purge only landed on 2026-09-18,
+    # so a feed removed before it left its stories behind — and they show up
+    # in the window under publishers the reader cannot account for. They are
+    # named here rather than left to be discovered in a dropdown; they age
+    # out on their own at the story retention.
+    from alphadesk.config import NEWS_KEEP_DAYS, NEWS_REFRESH_MINUTES
+    orphans: list[dict] = []
+    try:
+        from datetime import datetime, timedelta, timezone
+
+        from alphadesk.ingest.news import news_owner
+        held = {k["provider"] for k in keys if k["seam"] == "news"}
+        since = (datetime.now(timezone.utc) - timedelta(days=NEWS_KEEP_DAYS)).isoformat()
+        for provider, n in sorted(store.feed_counts(news_owner(user_id), since).items()):
+            if provider not in held and n:
+                orphans.append({"provider": provider, "stories": n})
+    except Exception as exc:                      # the page stands without it
+        log.debug("orphan feed count: %s", exc)
+    return {"vault": vault.enabled(), "keys": keys, "orphan_feeds": orphans,
+            "news_keep_days": NEWS_KEEP_DAYS, "news_poll_minutes": NEWS_REFRESH_MINUTES}
 
 
 @app.get("/api/data/vendors")
