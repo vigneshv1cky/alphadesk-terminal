@@ -10,7 +10,9 @@ import { InsiderTradesPanel, InstitutionalOwnershipPanel, StockOwnershipPanel } 
 import { EarningsHistoryPanel } from "@/components/EarningsPanels"
 import { EarningsTranscriptPanel } from "@/components/EarningsTranscript"
 import { compact } from "@/components/Treemap"
+import { QueryFailure } from "@/components/KeyPrompt"
 import { Empty, Widget, btnCls } from "@/components/terminal"
+import { TabStrip } from "@/widgets/market"
 import { registerWidget } from "@/widgets/registry"
 import { TILE_BODY_HEIGHT } from "@/widgets/tile"
 
@@ -278,18 +280,108 @@ function WindowTile() {
 
 /* ── Recent filings ───────────────────────────────────────────────────── */
 
+/** THE COMPANY'S FILINGS, AND THE MARKET'S (2026-09-23).
+ *
+ * This tile answered "what has this company filed", which is indexed by
+ * ticker. "What did the market just file" is a different question and had no
+ * home — the second tab is it, with EDGAR's own acceptance time on each row,
+ * to the second. Both are keyless: EDGAR is public government data.
+ *
+ * The market tab keeps registrants the SEC lists a ticker for and counts
+ * what that drops, because securitisation trusts and Federal Home Loan Banks
+ * file constantly and trade nowhere — a list without that reads as noise.
+ */
+function MarketFilings() {
+  const { add } = useBoardSymbols()
+  const q = useQuery({
+    queryKey: ["filing-feed"],
+    queryFn: () => api.filingFeed(40),
+    staleTime: 60_000,
+    refetchInterval: 3 * 60_000,
+    refetchIntervalInBackground: true,
+  })
+  const rows = q.data?.filings ?? []
+  const off = Object.entries(q.data?.unavailable ?? {})
+  if (q.isPending) return <Empty>loading…</Empty>
+  if (q.isError) return <QueryFailure error={q.error}>the market's filings are unavailable right now</QueryFailure>
+  return (
+    <>
+      {off.length > 0 && (
+        <p className="px-3 py-2 text-caption text-muted-foreground">
+          {off.map(([g, why]) => `${q.data?.groups[g] ?? g}: ${why}`).join(" · ")}
+        </p>
+      )}
+      {rows.length === 0 && off.length === 0 ? <Empty>nothing filed in this window</Empty> : (
+        <ul>
+          {rows.map((f, i) => {
+            // Defensive: a row without the field is a shape this tile did
+            // not expect, and it should lose a ticker rather than the page
+            // (2026-09-23 — a route collision served the wrong shape here
+            // and `symbols[0]` blanked the whole board).
+            const symbol = (f.symbols ?? [])[0]
+            const at = new Date(f.filed_at)
+            return (
+              <li key={f.accession ?? `${f.form}-${i}`} className="row-rule">
+                <a href={f.url ?? undefined} target="_blank" rel="noopener noreferrer"
+                   title={`${f.form} — ${f.company}${f.role ? ` (${f.role})` : ""}`}
+                   className="flex items-center gap-2 px-3 py-2.5 hover:bg-foreground/5">
+                  <span className="num w-[52px] shrink-0 text-caption text-muted-foreground">
+                    {Number.isNaN(at.getTime()) ? "—"
+                      : at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <span className="w-[56px] shrink-0 truncate text-body font-extrabold"
+                        title={symbol ? undefined : "the SEC lists no ticker for this registrant"}>
+                    {symbol
+                      ? <button type="button" className="hover:text-accent-700"
+                                onClick={e => { e.preventDefault(); add(symbol) }}>{symbol}</button>
+                      : "—"}
+                  </span>
+                  <span className="w-[76px] shrink-0 truncate text-caption text-muted-foreground">{f.form}</span>
+                  <span className="min-w-0 flex-1 truncate text-caption">{f.company}</span>
+                  <span className="shrink-0 text-label uppercase tracking-caps text-muted-foreground">edgar →</span>
+                </a>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {(q.data?.unlisted_hidden ?? 0) > 0 && (
+        <p className="px-3 py-2 text-caption text-muted-foreground">
+          {q.data!.unlisted_hidden} more from registrants the SEC lists no ticker for — trusts and
+          agency banks, which file constantly and trade nowhere.
+        </p>
+      )}
+    </>
+  )
+}
+
 function FilingsTile() {
   const { active } = useBoardSymbols()
+  const [scope, setScope] = useState<"symbol" | "market">("symbol")
   const filings = useQuery({
     queryKey: ["filings", active],
     queryFn: () => api.filings(active),
-    enabled: !!active,
+    enabled: !!active && scope === "symbol",
     staleTime: 10 * 60_000,
   })
+  const tabs = (
+    <TabStrip tabs={[{ id: "symbol" as const, label: active || "Symbol" },
+                     { id: "market" as const, label: "Market" }]}
+              value={scope} onChange={setScope} />
+  )
+  if (scope === "market") {
+    return (
+      <Widget span={4} title="Recent filings" subtitle="what the market just filed · SEC EDGAR"
+              scroll={TILE_BODY_HEIGHT} toolbar={tabs}>
+        <MarketFilings />
+      </Widget>
+    )
+  }
   if (!active) return <NeedsSymbol title="Recent filings" />
   const rows = (filings.data?.filings ?? []).slice(0, 12)
   return (
-    <Widget span={4} symbol={active} title="Recent filings" subtitle="SEC EDGAR" scroll={TILE_BODY_HEIGHT}>
+    <Widget span={4} symbol={active} title="Recent filings" subtitle="SEC EDGAR"
+            scroll={TILE_BODY_HEIGHT} toolbar={tabs}>
       {filings.isPending ? <Empty>loading…</Empty>
         : rows.length === 0 ? <Empty>no filings found</Empty> : (
         <ul>

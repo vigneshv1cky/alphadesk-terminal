@@ -210,6 +210,73 @@ export function TabStrip<T extends string>({ tabs, value, onChange }: {
  * A row SCOPES THE BOARD, the way the watchlist's rows do: the symbol
  * joins the strip and becomes the active chip, and every tile follows. An
  * option contract is not a board symbol, so its row is inert. */
+/** TRADING HALTS, beside the movers (2026-09-23). A halt IS market activity
+ * on a symbol, which is what this tile is for — and unlike everything else
+ * on it, no vendor in the catalogue sells it, so this tab is the scraped
+ * Nasdaq source or nothing.
+ *
+ * The columns are the exchange's own record: its reason CODE with the
+ * published wording beside it, the time it stopped the stock, and when it
+ * said quoting and trading would resume. Nothing here is computed. */
+function HaltsTable() {
+  const { add } = useBoardSymbols()
+  const q = useQuery({
+    queryKey: ["halts"],
+    queryFn: () => api.halts(60),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true,
+  })
+  const rows = q.data?.halts ?? null
+  const clock = (iso: string | null) => {
+    if (!iso) return "—"
+    const at = new Date(iso)
+    return Number.isNaN(at.getTime()) ? "—"
+      : at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  }
+  if (q.isPending) return <Empty>loading…</Empty>
+  // The source answers nothing when it is not switched on, and raises when
+  // it is on and unreachable — the second is an error, so the two read
+  // differently here rather than both as a quiet day (2026-09-23).
+  if (q.isError) return <QueryFailure error={q.error}>the halt feed could not be read</QueryFailure>
+  if (!rows || rows.length === 0) {
+    return (
+      <Empty>
+        No halts today — or the Nasdaq source is off. No vendor sells halts, so
+        it is the one thing that source is for: switch it on from the Account page.
+      </Empty>
+    )
+  }
+  return (
+    <Table>
+      <THead>
+        <TH className="w-[80px]" title="The halted stock. Click to put it on your board">Symbol</TH>
+        <TH className="w-[76px]" title="When the exchange stopped it, New York time">Halted</TH>
+        <TH className="w-[68px]" title="The exchange's own code. Read the code, not the prose: LUDP says only that the price moved fast, T1 is news pending, H10 an SEC suspension">Code</TH>
+        <TH title="The exchange's published wording for that code, where it publishes one">Reason</TH>
+        <TH align="right" className="w-[92px]" title="When trading was set to resume. Empty means the exchange has named no resumption — it is still stopped">Resumes</TH>
+      </THead>
+      <tbody>
+        {rows.map((h, i) => (
+          <TR key={`${h.symbol}-${h.halted_at}-${i}`} onClick={() => add(h.symbol)}>
+            <TD mono className="truncate font-semibold" title={h.name ?? undefined}>{h.symbol}</TD>
+            <TD mono className="text-muted-foreground" title={`${h.halted_at} (${h.timezone})`}>
+              {clock(h.halted_at)}
+            </TD>
+            <TD mono className="text-muted-foreground">{h.reason_code ?? "—"}</TD>
+            <TD className="truncate" title={h.reason ?? "the exchange publishes no wording for this code"}>
+              {h.reason ?? <span className="text-muted-foreground">code only</span>}
+            </TD>
+            <TD align="right" mono className={h.resumed ? "text-muted-foreground" : "font-semibold text-warn"}>
+              {h.resumed ? clock(h.resumption_trade_at) : "still halted"}
+            </TD>
+          </TR>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
 function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = true, options = false, rank = null, nameHead = "Name",
   volTip = "Annualised volatility of daily returns over the last twenty sessions",
   liqTip = "Average dollar volume a day over the last twenty sessions", liquidity = true, session = null }: {
@@ -481,9 +548,17 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
       : category === "stocks" || category === "crypto" || category === "indices" ? 30_000 : 120_000,
     refetchIntervalInBackground: true,
   })
-  const tabs = q.data?.tabs ?? []
+  // HALTS SIT BESIDE THE MOVERS FOR STOCKS (2026-09-23). A halt is market
+  // activity on a symbol, which is this tile's subject — and it is the one
+  // thing here no vendor sells, so the tab is always offered and says how to
+  // switch the source on rather than hiding when it is off.
+  const vendorTabs = q.data?.tabs ?? []
+  const tabs = category === "stocks"
+    ? [...vendorTabs, { id: "halts", label: "Halts", rows: [] as CategoryMoverRow[] }]
+    : vendorTabs
+  const halted = tab === "halts" && category === "stocks"
   const active = tabs.find(t => t.id === tab) ?? tabs[0]
-  const rows = useMemo(() => active?.rows ?? [], [active])
+  const rows = useMemo(() => (halted ? [] : active?.rows ?? []), [active, halted])
   // Live prices where a stream exists: the equity stream for stocks and
   // ETFs, the crypto stream for coins. A tick moves the price AND the
   // day's change: the snapshot's price and change fix the previous close,
@@ -537,7 +612,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         // A currency pair or a Treasury tenor is not a symbol the board can
         // chart, so those rows do not open anything.
         : <>
-        <MoversTable rows={priced} changeHead={q.data?.change_label ?? "1D"} session={q.data?.session_label ?? null}
+        {halted ? <HaltsTable /> : <MoversTable rows={priced} changeHead={q.data?.change_label ?? "1D"} session={q.data?.session_label ?? null}
                        changeTip={category === "currencies" ? "Change since the 5pm New York rollover, where the currency trading day begins" : undefined}
                        {...(category === "crypto" ? {
                          volTip: "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",
@@ -558,7 +633,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
                            // A coin list's volume is dollars (CoinGecko) or one venue's coins (Alpaca, no Active tab).
                            ? (category === "options" ? "contracts" : category === "crypto" ? "dollars" : "shares")
                            : null}
-                       empty={active?.id === "losers" ? "nothing is down" : active?.id === "gainers" ? "nothing is up" : `no ${CATEGORY_LABELS[category].toLowerCase()} quotes right now`} />
+                       empty={active?.id === "losers" ? "nothing is down" : active?.id === "gainers" ? "nothing is up" : `no ${CATEGORY_LABELS[category].toLowerCase()} quotes right now`} />}
         {/* CoinGecko's paid plans require the credit wherever their data
             shows (2026-09-19); the coin list is theirs when they answered. */}
         {q.data?.source === "coingecko" && (
