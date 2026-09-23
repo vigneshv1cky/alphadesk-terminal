@@ -90,7 +90,7 @@ def test_a_social_row_carries_its_warning_and_no_symbol(monkeypatch):
     one, and the row says it is unverified."""
     class Router:
         connected = ["social"]
-        def get(self, method, **kw):
+        def ask(self, method, surface=None, **kw):
             if method != "social_posts":
                 return None
             return [{"at": "2026-09-22T11:14:40+00:00",
@@ -101,3 +101,52 @@ def test_a_social_row_carries_its_warning_and_no_symbol(monkeypatch):
     assert rows[0]["symbols"] == []
     assert "unverified" in rows[0]["trust"]
     assert "NASDAQ: FAKE" in rows[0]["title"]
+
+
+def test_a_source_switched_on_but_unreachable_is_not_a_quiet_day(monkeypatch):
+    """THE READER'S REPORT (2026-09-23): the halts and social tabs "was
+    empty" with the source switched on.
+
+    Nobody sells halts or social posts, so when the scraped source could not
+    be read there was no second vendor to try — and a failed read returned
+    None, which the router reads as "this source does not carry that". The
+    panel then showed an empty list whether the world was quiet or the feed
+    was down. The failure is named now."""
+    from alphadesk.providers.base import NeedsKey
+
+    class Unreachable:
+        connected = ["nasdaq", "social"]
+        def ask(self, method, surface=None, **kw):
+            raise NeedsKey(surface or method, [], signed_in=True)
+        def get(self, *a, **k):
+            return None
+
+    monkeypatch.setattr(catalysts, "_filings", lambda limit: [])
+    monkeypatch.setattr(catalysts, "_government", lambda limit: [])
+    import alphadesk.providers as providers
+    monkeypatch.setattr(providers, "get_prices", lambda: Unreachable())
+    catalysts._inflight.clear()
+    out = catalysts.tape()
+    assert "could not be read" in out["unavailable"]["halts"]
+    assert "could not be read" in out["unavailable"]["social"]
+    # And it is NOT confused with being switched off, which says something else.
+    assert "not switched on" not in out["unavailable"]["halts"]
+
+
+def test_a_quiet_source_is_still_quiet(monkeypatch):
+    """The other half: a source that answers with nothing is not a failure."""
+    class Quiet:
+        connected = ["nasdaq", "social"]
+        def ask(self, method, surface=None, **kw):
+            return []
+        def get(self, *a, **k):
+            return []
+
+    monkeypatch.setattr(catalysts, "_filings", lambda limit: [])
+    monkeypatch.setattr(catalysts, "_government", lambda limit: [])
+    import alphadesk.providers as providers
+    monkeypatch.setattr(providers, "get_prices", lambda: Quiet())
+    catalysts._inflight.clear()
+    out = catalysts.tape()
+    assert out["unavailable"] == {}
+    assert out["rows"] == []

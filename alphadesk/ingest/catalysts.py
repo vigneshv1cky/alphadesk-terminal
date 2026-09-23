@@ -100,8 +100,24 @@ def _government(limit: int) -> list[dict]:
     return [r for r in out if r["at"] and r["title"]]
 
 
+def _asked(router: Any, method: str, surface: str, **kw) -> list[dict]:
+    """A switched-on source's answer, or a failure that says so.
+
+    `router.get` turns "nobody answered" into None, which is right when
+    another vendor might carry the surface. NOBODY ELSE CARRIES THESE — the
+    source is on or there is nothing — so None here meant the panel showed an
+    empty list whether the source was quiet or unreachable (2026-09-23, the
+    reader: the halts and social tabs "was empty"). Asking outright lets the
+    caller name the failure instead."""
+    from alphadesk.providers.base import NeedsKey
+    try:
+        return router.ask(method, surface=surface, **kw) or []
+    except NeedsKey as exc:
+        raise RuntimeError("switched on, but could not be read just now") from exc
+
+
 def _halts(router: Any, limit: int) -> list[dict]:
-    rows = router.get("trading_halts", limit=limit, surface="trading_halts") or []
+    rows = _asked(router, "trading_halts", "trading_halts", limit=limit)
     out = []
     for h in rows:
         at = _et_instant(h.get("halted_at"))
@@ -119,7 +135,7 @@ def _halts(router: Any, limit: int) -> list[dict]:
 
 
 def _social(router: Any, limit: int) -> list[dict]:
-    rows = router.get("social_posts", limit=limit, surface="social") or []
+    rows = _asked(router, "social_posts", "social", limit=limit)
     out = []
     for p in rows:
         text = (p.get("text") or "").strip()
