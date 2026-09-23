@@ -571,13 +571,24 @@ class NasdaqCalendars:
     }
 
     def trading_halts(self, limit: int = 100) -> list[dict] | None:
-        """TODAY'S TRADING HALTS AND RESUMPTIONS, newest first.
+        """TRADING HALTS AND RESUMPTIONS the exchange currently lists, newest
+        first — which is NOT the same as today's.
 
         A halt is a catalyst with its own clock: the exchange stopped the
         stock at a stated time for a stated reason, and said when quoting and
         trading would resume. Nothing else here carries it — it is not a
         price, not a filing and not a story — and no keyed vendor in the
         catalogue serves it either.
+
+        MOST OF WHAT HAS NOT RESUMED IS NOT A LIVE PAUSE (measured
+        2026-09-23: of 14 unresumed rows, 2 were from today and the rest were
+        standing suspensions going back to 2019 — mostly T12, additional
+        information requested). The feed keeps an open halt listed until it
+        clears, so a count of "still halted" read as stocks stopped right now
+        is wrong by an order of magnitude. Each row therefore says which it
+        is: `standing` is a halt from an earlier day that has not resumed —
+        a suspension, not a pause — and `today` is what stopped during this
+        session.
 
         The record is handed over whole, reason CODE included, with the
         exchange's own wording beside it only where that wording is
@@ -603,7 +614,13 @@ class NasdaqCalendars:
             halted_at = f"{day}T{at[:8]}" if len(at) >= 8 else None
             resumed_on = self._us_date(field("ResumptionDate"))
             trade_at = field("ResumptionTradeTime")
+            # A pause that began today, against one carried over from an
+            # earlier session. The exchange states neither; both are read
+            # from the halt's own date.
+            today = datetime.now(ET).date().isoformat()
+            is_today = day == today
             out.append({
+                "today": is_today,
                 "symbol": sym, "name": field("IssueName") or None,
                 "market": field("Market") or None,
                 "reason_code": code or None,
@@ -615,6 +632,9 @@ class NasdaqCalendars:
                                         if resumed_on and trade_at else None),
                 # Still halted when the exchange has named no resumption.
                 "resumed": bool(resumed_on and trade_at),
+                # …and if it did not start today, it is a SUSPENSION rather
+                # than a pause: the stock has been stopped for days or years.
+                "standing": not is_today and not bool(resumed_on and trade_at),
                 "pause_threshold_price": _f(field("PauseThresholdPrice")) or None,
                 "source": self.name,
             })

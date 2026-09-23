@@ -643,6 +643,13 @@ export interface HaltRow {
   resumption_trade_at: string | null
   /** False while the exchange has named no resumption — still stopped. */
   resumed: boolean
+  /** Whether the halt began in this session. */
+  today: boolean
+  /** A halt from an earlier day that has not resumed: a SUSPENSION, not a
+   * pause. Most unresumed rows are these — measured, 12 of 14, going back to
+   * 2019 — so counting them as stocks stopped right now is wrong by an order
+   * of magnitude. */
+  standing: boolean
 }
 
 /** /api/filings/feed — what the market just filed, newest first, with

@@ -1273,13 +1273,21 @@ def filing_feed(groups: str = "", limit: int = 30, symbol: str = "",
 
 @mcp.tool()
 def trading_halts(limit: int = 50) -> dict:
-    """TODAY'S TRADING HALTS AND RESUMPTIONS on the US exchanges, newest
+    """TRADING HALTS AND RESUMPTIONS the exchange currently lists, newest
     first — a catalyst with its own clock, which no other tool here carries.
+    NOT the same as today's: the feed keeps an open halt listed until it
+    clears.
 
     Each row: the symbol, the exchange, WHEN it was halted, the exchange's
     reason CODE and its published wording, and when quoting and trading were
-    set to resume. `resumed` is false while no resumption has been named,
-    which is the state that matters most — the stock is still stopped.
+    set to resume.
+
+    DO NOT COUNT `resumed: false` AS STOCKS STOPPED RIGHT NOW. Measured
+    2026-09-23: of 14 unresumed rows, TWO were from today and the rest were
+    standing suspensions going back to 2019. Read `today` and `standing`
+    instead — `standing` is a halt from an earlier day that never resumed, a
+    suspension rather than a pause, and a stock stopped during this session
+    is `today` and not `resumed`.
 
     Read the codes rather than the prose: "LUDP" is a volatility pause, which
     says only that the price moved fast, while "T1" or "T3" is news pending

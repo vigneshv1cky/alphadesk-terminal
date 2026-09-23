@@ -143,6 +143,21 @@ export default function NewsPage() {
   // delivers 24/7 Wall St., CNBC, Yahoo Finance and the rest — so a list of
   // thirty publishers on one feed is correct and looked alarming.
   const [feed, setFeed] = useState("")
+  // POSTS ARE NOT STORIES, AND THIS PAGE COULD NOT SHOW THEM (2026-09-23,
+  // the reader: "not able to filter and see only this in news"). They ride
+  // the news TILE mixed into the stream, but every filter lives here — and a
+  // post has no publisher, no feed and no ticker to filter BY, so it cannot
+  // join the pickers above. It gets a view of its own: the list becomes the
+  // posts, and the controls that cannot apply are disabled rather than left
+  // looking as though they did.
+  const [postsOnly, setPostsOnly] = useState(false)
+  const posts = useQuery({
+    queryKey: ["social-posts"],
+    queryFn: () => api.socialPosts(50),
+    enabled: postsOnly,
+    staleTime: 60_000,
+    retry: false,
+  })
   const sources = useMemo(() => [...new Set(articles.map(a => a.source).filter((x): x is string => !!x))].sort(), [articles])
   const feeds = useMemo(
     () => [...new Set(articles.flatMap(a => a.feeds ?? []))].sort(),
@@ -241,7 +256,12 @@ export default function NewsPage() {
                title={boardSymbols.length ? `Only stories naming ${boardSymbols.join(", ")}` : "Add chips to the board to use this"}>
             On my board{board.onBoard.size ? ` · ${board.onBoard.size}` : ""}{board.fresh.size ? ` (${board.fresh.size} new)` : ""}
           </Btn>
+          <Btn variant="ghost" active={postsOnly} onClick={() => setPostsOnly(v => !v)}
+               title="Social posts only. A post has no publisher, no feed and no ticker, so the pickers beside this cannot apply to one">
+            Posts
+          </Btn>
           <select value={source} onChange={e => setSource(e.target.value)} aria-label="Publisher"
+                  disabled={postsOnly}
                   title="Who wrote the story. One feed can carry many publishers — an aggregating feed delivers dozens"
                   className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
             <option value="">All publishers</option>
@@ -252,6 +272,7 @@ export default function NewsPage() {
               choice. */}
           {feeds.length > 1 && (
             <select value={feed} onChange={e => setFeed(e.target.value)} aria-label="Feed"
+                    disabled={postsOnly}
                     title="Which of your feeds delivered the story — the connection it came down, not who wrote it"
                     className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
               <option value="">All feeds</option>
@@ -262,6 +283,43 @@ export default function NewsPage() {
             {shown.length} / {articles.length}
           </span>
         </div>
+        {/* THE POSTS VIEW REPLACES THE LIST rather than joining it: nothing
+            here is a story, so the reader, the board's "new" marks and the
+            word search would all be answering about something they were
+            never given. Each row opens the post itself. */}
+        {postsOnly ? (
+          posts.isPending ? <Empty>loading…</Empty>
+          : posts.isError ? (
+            <QueryFailure error={posts.error}>
+              the social source could not be read — switch it on from the Account page if it is off
+            </QueryFailure>
+          ) : (posts.data?.posts ?? []).length === 0 ? (
+            <Empty>no posts — switch the social source on from the Account page if it is off</Empty>
+          ) : (
+            <ul>
+              {posts.data!.posts.map((post, i) => (
+                <li key={post.url ?? i} className="row-rule hover:bg-foreground/5">
+                  <a href={post.url ?? undefined} target="_blank" rel="noopener noreferrer"
+                     title={post.trust ?? undefined} className="block w-full px-3 py-3 text-left">
+                    <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
+                      <span className="border border-border px-1 text-label font-semibold leading-[17px] tracking-ticker text-muted-foreground">post</span>
+                      <span className="text-muted-foreground">{post.platform ?? "social"}</span>
+                      <span className="normal-case tracking-normal text-warn">unverified</span>
+                      <span className="normal-case tracking-normal text-muted-foreground">{newsTime(post.at)}</span>
+                      {post.via && (
+                        <span className="normal-case tracking-normal text-muted-foreground"
+                              title="Read from a third party's copy of the account, not the platform itself">
+                          via {post.via}
+                        </span>
+                      )}
+                    </span>
+                    <span className="block text-body leading-[1.3] text-muted-foreground">{post.text}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : (<>
         {err && <QueryFailure error={error}>{err}</QueryFailure>}
         {!err && !data && <Empty>loading…</Empty>}
         {!err && data && shown.length === 0 && !(search && !search.rows) && (
@@ -331,6 +389,7 @@ export default function NewsPage() {
             )}
           </div>
         )}
+        </>)}
         </>)}
       </Widget>
   )
