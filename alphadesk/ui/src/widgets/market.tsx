@@ -254,21 +254,30 @@ function HaltsTable() {
         <TH className="w-[76px]" title="When the exchange stopped it, New York time">Halted</TH>
         <TH className="w-[68px]" title="The exchange's own code. Read the code, not the prose: LUDP says only that the price moved fast, T1 is news pending, H10 an SEC suspension">Code</TH>
         <TH title="The exchange's published wording for that code, where it publishes one">Reason</TH>
-        <TH align="right" className="w-[92px]" title="When trading was set to resume. Empty means the exchange has named no resumption — it is still stopped">Resumes</TH>
+        <TH align="right" className="w-[104px]" title="When trading was set to resume. A halt that began on an earlier day and has not resumed is a SUSPENSION, not a pause — most unresumed rows are those, some for years">Resumes</TH>
       </THead>
       <tbody>
         {rows.map((h, i) => (
           <TR key={`${h.symbol}-${h.halted_at}-${i}`} onClick={() => add(h.symbol)}>
             <TD mono className="truncate font-semibold" title={h.name ?? undefined}>{h.symbol}</TD>
             <TD mono className="text-muted-foreground" title={`${h.halted_at} (${h.timezone})`}>
-              {clock(h.halted_at)}
+              {/* A halt from an earlier day shows its DATE: a time alone
+                  would read as this morning, and some of these are years
+                  old (2026-09-23). */}
+              {h.today ? clock(h.halted_at)
+                : new Date(h.halted_at).toLocaleDateString([], { year: "2-digit", month: "short", day: "numeric" })}
             </TD>
             <TD mono className="text-muted-foreground">{h.reason_code ?? "—"}</TD>
             <TD className="truncate" title={h.reason ?? "the exchange publishes no wording for this code"}>
               {h.reason ?? <span className="text-muted-foreground">code only</span>}
             </TD>
-            <TD align="right" mono className={h.resumed ? "text-muted-foreground" : "font-semibold text-warn"}>
-              {h.resumed ? clock(h.resumption_trade_at) : "still halted"}
+            <TD align="right" mono
+                className={h.resumed ? "text-muted-foreground"
+                  : h.standing ? "text-muted-foreground" : "font-semibold text-warn"}
+                title={h.standing
+                  ? "Stopped on an earlier day and never resumed — a suspension, not a pause in today's trading"
+                  : undefined}>
+              {h.resumed ? clock(h.resumption_trade_at) : h.standing ? "suspended" : "still halted"}
             </TD>
           </TR>
         ))}

@@ -428,3 +428,45 @@ def test_a_switch_says_whether_it_would_ever_be_asked(client, store, monkeypatch
     # And social is reachable whatever is keyed — no vendor carries either.
     assert full["social"]["only_source_for"] == ["Social posts"]
     assert full["social"]["already_covered"] == []
+
+
+def test_a_standing_suspension_is_not_a_live_pause():
+    """MEASURED 2026-09-23: of 14 unresumed halts, TWO were from today and
+    the rest were suspensions going back to 2019 — mostly T12, additional
+    information requested. The feed keeps an open halt listed until it
+    clears, so "still halted" counted as stocks stopped right now was wrong
+    by an order of magnitude. Each row says which it is."""
+    from datetime import datetime
+
+    from alphadesk.config import ET
+    today = datetime.now(ET).strftime("%m/%d/%Y")
+    feed = f"""<rss><channel>
+      <item><ndaq:IssueSymbol>NOWW</ndaq:IssueSymbol><ndaq:ReasonCode>LUDP</ndaq:ReasonCode>
+        <ndaq:HaltDate>{today}</ndaq:HaltDate><ndaq:HaltTime>14:54:49.693</ndaq:HaltTime>
+        <ndaq:ResumptionDate /><ndaq:ResumptionTradeTime /></item>
+      <item><ndaq:IssueSymbol>BACK</ndaq:IssueSymbol><ndaq:ReasonCode>LUDP</ndaq:ReasonCode>
+        <ndaq:HaltDate>{today}</ndaq:HaltDate><ndaq:HaltTime>13:00:00.000</ndaq:HaltTime>
+        <ndaq:ResumptionDate>{today}</ndaq:ResumptionDate>
+        <ndaq:ResumptionTradeTime>13:05:00</ndaq:ResumptionTradeTime></item>
+      <item><ndaq:IssueSymbol>OLDD</ndaq:IssueSymbol><ndaq:ReasonCode>T12</ndaq:ReasonCode>
+        <ndaq:HaltDate>02/22/2019</ndaq:HaltDate><ndaq:HaltTime>10:00:00.000</ndaq:HaltTime>
+        <ndaq:ResumptionDate /><ndaq:ResumptionTradeTime /></item>
+    </channel></rss>"""
+    import alphadesk.providers.scraped as sc
+    original, sc._get_text = sc._get_text, lambda url, timeout=20.0: feed
+    try:
+        rows = {r["symbol"]: r for r in NasdaqCalendars().trading_halts()}
+    finally:
+        sc._get_text = original
+
+    # Stopped during this session and not resumed: the state that matters.
+    assert rows["NOWW"]["today"] and not rows["NOWW"]["resumed"]
+    assert rows["NOWW"]["standing"] is False
+    # Resumed today: neither.
+    assert rows["BACK"]["resumed"] and rows["BACK"]["standing"] is False
+    # Stopped in 2019 and never resumed: a suspension, not a pause.
+    assert rows["OLDD"]["standing"] is True and rows["OLDD"]["today"] is False
+    # The naive count is what was wrong: two rows are unresumed, but only
+    # ONE of them is a stock stopped today.
+    assert sum(1 for r in rows.values() if not r["resumed"]) == 2
+    assert sum(1 for r in rows.values() if r["today"] and not r["resumed"]) == 1
