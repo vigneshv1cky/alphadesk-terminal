@@ -299,28 +299,6 @@ def test_no_ticker_is_read_out_of_a_post(monkeypatch):
     assert "mirror" in row["via"]
 
 
-def test_trending_passes_the_vendors_own_rank_and_never_a_score(monkeypatch):
-    """Invariant 3: AlphaDesk ranks nothing. The order and the figures are
-    StockTwits' own, and the row says what they measure."""
-    import json
-    payload = json.dumps({"symbols": [
-        {"symbol": "vktx", "title": "Viking Therapeutics Inc", "rank": 1, "watchlist_count": 39113,
-         "sector": "Healthcare", "industry": "Biotechnology"},
-        {"symbol": "GME", "title": "GameStop Corp", "rank": 2, "watchlist_count": 307932},
-        {"symbol": "", "title": "no symbol"},
-    ]})
-    import alphadesk.providers.scraped as sc
-    original, sc._get_text = sc._get_text, lambda url, timeout=20.0: payload
-    try:
-        rows = SocialPulse().social_trending()
-    finally:
-        sc._get_text = original
-    assert [r["symbol"] for r in rows] == ["VKTX", "GME"]
-    assert rows[0]["rank"] == 1.0 and rows[0]["watchers"] == 39113.0
-    assert "attention" in rows[0]["measures"]
-    assert not any("score" in k for r in rows for k in r)
-
-
 def test_a_source_that_cannot_be_read_raises_rather_than_answering_nothing(monkeypatch):
     """CORRECTED 2026-09-23, and the correction is the point.
 
@@ -338,8 +316,7 @@ def test_a_source_that_cannot_be_read_raises_rather_than_answering_nothing(monke
         raise ProviderError("scraped source refused (403)")
     original, sc._get_text = sc._get_text, refuse
     try:
-        for call in (SocialPulse().social_posts, SocialPulse().social_trending,
-                     NasdaqCalendars().trading_halts):
+        for call in (SocialPulse().social_posts, NasdaqCalendars().trading_halts):
             with pytest.raises(ProviderError):
                 call()
     finally:
@@ -449,5 +426,5 @@ def test_a_switch_says_whether_it_would_ever_be_asked(client, store, monkeypatch
     assert any(t["surface"] == "Earnings calendar" and "Financial Modeling Prep" in t["vendors"]
                for t in full["nasdaq"]["already_covered"])
     # And social is reachable whatever is keyed — no vendor carries either.
-    assert sorted(full["social"]["only_source_for"]) == ["Social posts", "Trending symbols"]
+    assert full["social"]["only_source_for"] == ["Social posts"]
     assert full["social"]["already_covered"] == []

@@ -94,3 +94,23 @@ def test_a_malformed_entry_is_skipped_not_fatal():
                                     "<updated>2026-09-22T10:00:00-04:00</updated></entry>"
                                     "<entry><title>8-K - A CO (0000000123) (Filer)</title></entry></feed>")
     assert rows == []
+
+
+def test_the_market_feed_route_is_not_eaten_by_the_symbol_route(client):
+    """ROUTE ORDER (2026-09-23). "/api/filings/{symbol}" was declared first,
+    so "/api/filings/feed" matched it and "feed" was read as a ticker: the
+    market feed answered with one company's filings for a company called
+    FEED, and the tile that read it crashed on the shape it got back. The
+    feed route is declared first now."""
+    body = client.get("/api/filings/feed?limit=3").json()
+    # The feed's own shape, not the per-symbol one.
+    assert "filings" in body and "unlisted_hidden" in body and "groups" in body
+    assert "symbol" not in body, "this is the per-symbol route's shape"
+    for row in body["filings"]:
+        assert "symbols" in row, "every row carries the tickers, as a list"
+        assert "filed_at" in row
+
+
+def test_one_companys_filings_still_answer(client):
+    body = client.get("/api/filings/NVDA").json()
+    assert body.get("symbol") == "NVDA"

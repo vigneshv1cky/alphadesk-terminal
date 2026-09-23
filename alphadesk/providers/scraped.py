@@ -685,18 +685,20 @@ class SocialPulse:
       tagging it would route an unverified assertion into that symbol's
       context. The text is handed over whole and the reader's agent decides.
 
-      ATTENTION IS NOT NEWS. The trending list below is StockTwits' own
-      ranking of what is being watched and posted about. Manufactured
-      attention is precisely what a pump is, so a symbol trending is
-      evidence that people are talking, and evidence of nothing else.
+    ATTENTION WAS TRIED AND REMOVED (2026-09-23, the owner's call). A
+    trending list — StockTwits' ranking of what is being watched and posted
+    about — was read here and surfaced as a movers tab. It measured only
+    that people were talking, which manufactured attention produces exactly
+    as well as news does, so a trending symbol was evidence of nothing a
+    reader could act on. Do not reintroduce it.
     """
 
     name = "social"
-    label = "Social posts and attention"
+    label = "Social posts"
     official = False
     #: No vendor in the catalogue sells either of these, so this source is
     #: reachable whatever the reader has keyed.
-    EXCLUSIVE: tuple[str, ...] = ("Social posts", "Trending symbols")
+    EXCLUSIVE: tuple[str, ...] = ("Social posts",)
 
     def __init__(self, api_key: str | None = None, api_secret: str | None = None) -> None:
         self.reader_id: str | None = None
@@ -738,37 +740,6 @@ class SocialPulse:
                         "source": self.name})
         out.sort(key=lambda r: r["at"], reverse=True)
         return out[:max(1, min(int(limit), 100))] or None
-
-    def social_trending(self, limit: int = 30) -> list[dict] | None:
-        """The symbols StockTwits says are being talked about, in ITS rank
-        order with ITS figures — never a score of ours (invariant 3)."""
-        import json as _json
-        try:
-            body = _get_text("https://api.stocktwits.com/api/2/trending/symbols.json")
-            data = _json.loads(body)
-        # A FAILED READ IS NOT "I DO NOT CARRY THIS" (2026-09-23). Returning
-        # None here told the router this source has no such surface, so it
-        # moved on, found nobody else — nobody sells this — and the panel
-        # showed nothing. A source switched ON but unreachable then looked
-        # exactly like a quiet day. The error travels instead.
-        except ValueError as exc:                 # a body that is not JSON
-            raise ProviderError(f"scraped source answered unreadably: {exc}") from exc
-        out = []
-        for row in (data or {}).get("symbols") or []:
-            sym = str(row.get("symbol") or "").upper()
-            if not sym:
-                continue
-            out.append({"symbol": sym, "name": row.get("title") or None,
-                        # The vendor's own numbers, passed through.
-                        "rank": _f(row.get("rank")),
-                        "watchers": _f(row.get("watchlist_count")),
-                        "sector": row.get("sector") or None,
-                        "industry": row.get("industry") or None,
-                        "measures": "attention, not news — how many are watching "
-                                    "and posting, which can be manufactured",
-                        "source": self.name})
-        return out[:max(1, min(int(limit), 100))] or None
-
 
 register("prices", YahooPrices.name, YahooPrices)
 register("prices", NasdaqCalendars.name, NasdaqCalendars)

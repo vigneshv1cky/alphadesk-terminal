@@ -625,6 +625,87 @@ export interface CatalystFeed {
   unavailable: Record<string, string>
 }
 
+/** /api/halts — the exchange stopped a stock, at the time it states. No
+ * vendor in the catalogue sells this, so it is the scraped Nasdaq source or
+ * nothing. */
+export interface HaltRow {
+  symbol: string
+  name: string | null
+  market: string | null
+  /** The exchange's code, and its published wording where one exists. A code
+   * nobody publishes stays a code and `reason` is null. */
+  reason_code: string | null
+  reason: string | null
+  /** New York wall clock, with the zone stated separately. */
+  halted_at: string
+  timezone: string
+  resumption_quote_at: string | null
+  resumption_trade_at: string | null
+  /** False while the exchange has named no resumption — still stopped. */
+  resumed: boolean
+}
+
+/** /api/filings/feed — what the market just filed, newest first, with
+ * EDGAR's own acceptance time. Keyless. */
+export interface FilingFeedRow {
+  form: string
+  company: string
+  cik: string | null
+  /** "filer" or "subject": a stake is listed under both, and the subject is
+   * the company whose stock moves. */
+  role: string | null
+  filed_at: string
+  accession: string | null
+  url: string | null
+  symbols: string[]
+  group: string
+}
+export interface FilingFeed {
+  filings: FilingFeedRow[]
+  groups: Record<string, string>
+  /** Registrants the SEC lists no ticker for, counted rather than hidden. */
+  unlisted_hidden: number
+  unavailable: Record<string, string>
+  count: number
+}
+
+/** /api/gov/feed — agency rulemaking, the Fed's own announcements, Treasury
+ * auctions. Keyless public government data, not scraped. */
+export interface GovEvent {
+  source: "agencies" | "fed" | "treasury"
+  kind: string
+  title: string
+  at: string
+  /** "day" means the source publishes once a day and the event happened at
+   * or before the stamp — never treat it as a moment. */
+  at_precision: "day" | "second"
+  url: string | null
+  agencies?: string[]
+  abstract?: string | null
+  rate?: number | null
+}
+export interface GovFeed {
+  events: GovEvent[]
+  sources: Record<string, string>
+  unavailable: Record<string, string>
+  count: number
+}
+
+/** /api/social/posts — a post from the social source, which is the one feed
+ * anyone can write into. It carries NO ticker on purpose: a ticker inside a
+ * post is the author's claim about which company it concerns. */
+export interface SocialPost {
+  at: string
+  text: string
+  url: string | null
+  account: string | null
+  platform: string | null
+  /** Where it was read from — a third-party mirror, not the platform. */
+  via: string | null
+  /** Why it must not be acted on as stated. */
+  trust: string | null
+}
+
 export class NeedsKeyError extends ApiError {
   prompt: KeyPromptBody
   constructor(prompt: KeyPromptBody) {
@@ -1304,6 +1385,10 @@ export const api = {
   deleteBasket: (id: string) => del<{ ok: boolean }>(`/api/baskets/${encodeURIComponent(id)}`),
   dataVendors: () => get<DataVendors>("/api/data/vendors"),
   catalysts: (limit = 60) => get<CatalystFeed>(`/api/catalysts?limit=${limit}`),
+  halts: (limit = 60) => get<{ halts: HaltRow[] | null }>(`/api/halts?limit=${limit}`),
+  socialPosts: (limit = 20) => get<{ posts: SocialPost[] }>(`/api/social/posts?limit=${limit}`),
+  filingFeed: (limit = 40) => get<FilingFeed>(`/api/filings/feed?limit=${limit}`),
+  govFeed: (limit = 40, days = 7) => get<GovFeed>(`/api/gov/feed?limit=${limit}&days=${days}`),
   /** Switch a scraped source on. There is no key, so this is the whole of
    * connecting one; switching off is the ordinary key removal. */
   enableSource: (name: string) =>

@@ -222,6 +222,26 @@ def _process_age_s() -> float:
 # JSON API
 # ---------------------------------------------------------------------------
 
+# ORDER MATTERS HERE (2026-09-23). "/api/filings/feed" must be declared
+# before "/api/filings/{symbol}", or the path parameter matches first and
+# "feed" is read as a ticker — which is exactly what happened: the market
+# feed answered with one company's filings for a company called FEED, and
+# the tile that read it crashed on the shape it got back.
+@app.get("/api/filings/feed")
+def api_filing_feed(groups: str = "", limit: int = 50, symbol: str = "",
+                    listed_only: bool = True):
+    """WHAT HAS JUST BEEN FILED, market-wide, newest first (2026-09-22).
+
+    Keyless — EDGAR is public government data. Every other filings surface
+    here reads ONE company; this one answers "what was just filed", with the
+    SEC's own acceptance time on each row."""
+    from alphadesk.ingest import edgar_feed
+    picked = [g.strip() for g in groups.split(",") if g.strip()]
+    return edgar_feed.recent(groups=picked or None, limit=max(1, min(limit, 200)),
+                             symbol=symbol.strip().upper() or None,
+                             listed_only=listed_only)
+
+
 @app.get("/api/filings/{symbol}")
 def api_filings_list(symbol: str):
     """A symbol's recent 10-K/10-Q/8-K filings, straight from EDGAR (cheap —
@@ -1080,15 +1100,6 @@ def api_social_posts(limit: int = 20):
                                       surface="social") or []}
 
 
-@app.get("/api/social/trending")
-def api_social_trending(limit: int = 30):
-    """The symbols being talked about, in the vendor's own rank order.
-    Attention, not news."""
-    from alphadesk.providers import get_prices
-    return {"symbols": get_prices().ask("social_trending", limit=max(1, min(limit, 100)),
-                                        surface="social") or []}
-
-
 @app.get("/api/gov/feed")
 def api_gov_feed(sources: str = "", days: int = 7, limit: int = 50,
                  agencies: str = "", types: str = ""):
@@ -1100,21 +1111,6 @@ def api_gov_feed(sources: str = "", days: int = 7, limit: int = 50,
     return gov_feed.recent(sources=pick(sources) or None, days=max(1, min(days, 90)),
                            limit=max(1, min(limit, 200)),
                            agencies=pick(agencies) or None, types=pick(types) or None)
-
-
-@app.get("/api/filings/feed")
-def api_filing_feed(groups: str = "", limit: int = 50, symbol: str = "",
-                    listed_only: bool = True):
-    """WHAT HAS JUST BEEN FILED, market-wide, newest first (2026-09-22).
-
-    Keyless — EDGAR is public government data. Every other filings surface
-    here reads ONE company; this one answers "what was just filed", with the
-    SEC's own acceptance time on each row."""
-    from alphadesk.ingest import edgar_feed
-    picked = [g.strip() for g in groups.split(",") if g.strip()]
-    return edgar_feed.recent(groups=picked or None, limit=max(1, min(limit, 200)),
-                             symbol=symbol.strip().upper() or None,
-                             listed_only=listed_only)
 
 
 @app.get("/api/halts")

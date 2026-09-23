@@ -1,9 +1,10 @@
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { HeadlineTickers } from "@/components/HeadlineTickers"
 import { NewsReader } from "@/components/NewsReader"
 import { OlderNews } from "@/components/OlderNews"
-import type { NewsArticle } from "@/lib/api"
+import { api, type NewsArticle, type SocialPost } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { useNews, useSymbolNews } from "@/lib/queries"
 import { useOlderNews } from "@/lib/olderNews"
@@ -53,6 +54,35 @@ export function NewsTape({ span = 12 }: {
   // the back row swaps it back. No navigation — the board stays where it is.
   const [openId, setOpenId] = useState<string | null>(null)
   const open = headlines.find(h => h.article_id === openId) ?? null
+  // SOCIAL POSTS RIDE IN THE NEWS LIST (2026-09-23), newest first among the
+  // stories, and only on the whole window: a post carries no ticker — the
+  // source deliberately reads none out of its text — so it can never belong
+  // to a scoped symbol without asserting something nobody verified.
+  //
+  // They are NOT stories. They are not in the window, not deduplicated, not
+  // searchable, and nobody is accountable for one. Every row says so and
+  // opens the post itself rather than the reader, which is for text a feed
+  // licensed to this reader.
+  const posts = useQuery({
+    queryKey: ["social-posts"],
+    queryFn: () => api.socialPosts(20),
+    enabled: !scoped,
+    staleTime: 60_000,
+    refetchInterval: 2 * 60_000,
+    refetchIntervalInBackground: true,
+    retry: false,
+  })
+  const feed = useMemo(() => {
+    const rows: { at: number; story?: NewsArticle; post?: SocialPost }[] =
+      headlines.map(h => ({ at: Date.parse(h.published_at ?? "") || 0, story: h }))
+    for (const post of (scoped ? [] : posts.data?.posts ?? [])) {
+      rows.push({ at: Date.parse(post.at) || 0, post })
+    }
+    // The oldest headline on screen is the floor: a post older than the list
+    // reaches would appear to be news nobody had reported.
+    const floor = rows.reduce((lo, r) => (r.story && r.at && r.at < lo ? r.at : lo), Number.POSITIVE_INFINITY)
+    return rows.filter(r => r.story || r.at >= floor).sort((a, b) => b.at - a.at)
+  }, [headlines, posts.data, scoped])
   return (
   <Widget
     span={span}
@@ -83,7 +113,25 @@ export function NewsTape({ span = 12 }: {
         {/* The source/age line runs in the DEEP accent step, not the accent
             itself: accent-to-ground is tuned to 3:1, which is chrome-grade,
             and a body-size label needs the 700 step to clear the floor. */}
-        {headlines.map(h => (
+        {feed.map(({ story: h, post }, i) => (post ? (
+          <li key={`post-${post.url ?? i}`} className="row-rule hover:bg-foreground/5">
+            <a href={post.url ?? undefined} target="_blank" rel="noopener noreferrer"
+               title={post.trust ?? undefined}
+               className="block w-full px-3 py-3 text-left">
+              <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
+                {/* Where a story shows its tickers, a post shows that it is
+                    one — and that nobody stands behind it. */}
+                <span className="border border-border px-1 text-label font-semibold leading-[17px] tracking-ticker text-muted-foreground">
+                  post
+                </span>
+                <span className="text-muted-foreground">{post.platform ?? "social"}</span>
+                <span className="normal-case tracking-normal text-warn">unverified</span>
+                <span className="normal-case tracking-normal text-muted-foreground">{newsTime(post.at)}</span>
+              </span>
+              <span className="block text-body leading-[1.3] text-muted-foreground">{post.text}</span>
+            </a>
+          </li>
+        ) : h ? (
           <li key={h.article_id} className="row-rule hover:bg-foreground/5">
             <button type="button" onClick={() => setOpenId(h.article_id)} className="block w-full px-3 py-3 text-left">
               <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
@@ -98,7 +146,7 @@ export function NewsTape({ span = 12 }: {
               <span className="block text-body font-semibold leading-[1.3]">{h.title}</span>
             </button>
           </li>
-        ))}
+        ) : null))}
         <li>
           <OlderNews state={state} onLoad={() => void loadMore()} onReset={reset} loaded={older.length}
                      subject={scoped ? "stories about this company" : "stories"} />
