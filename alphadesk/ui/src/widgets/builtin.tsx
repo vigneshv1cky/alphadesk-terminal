@@ -74,10 +74,17 @@ export function NewsTape({ span = 12 }: {
   // to show only news. Three states, because both directions are wanted: the
   // mixed stream, the stories alone, and the posts alone.
   const [kind, setKind] = useState<"all" | "news" | "posts">("all")
+  // ASKED WHETHER OR NOT THE TILE IS SCOPED (2026-09-23, the reader: "I
+  // dont see any from trumpstruth.org"). This was gated on the tile being
+  // UNSCOPED, and the tile is scoped whenever a chip is marked on the board
+  // — which is the normal state — so on a working, switched-on source the
+  // tile never learned a single post existed, and the control that would
+  // have shown them was hidden by the same condition. A post still never
+  // RIDES IN a scoped list (see the merge below); knowing they are there is
+  // a different thing from showing them under a ticker they do not carry.
   const posts = useQuery({
     queryKey: ["social-posts"],
     queryFn: () => api.socialPosts(20),
-    enabled: !scoped,
     staleTime: 60_000,
     refetchInterval: 2 * 60_000,
     refetchIntervalInBackground: true,
@@ -112,24 +119,33 @@ export function NewsTape({ span = 12 }: {
   <Widget
     span={span}
     title={scoped ? `${active} News` : "Market News"}
-    subtitle={`${headlines.length} headlines, newest first`}
+    subtitle={kind === "posts" && !scoped
+      ? `${livePosts.length} posts, newest first`
+      : `${headlines.length} headlines, newest first`}
     scroll={TILE_BODY_HEIGHT}
     actions={
       <>
         {active && <Btn active={scoped} onClick={() => setShowAll(false)}>{active}</Btn>}
         {active && <Btn active={!scoped} onClick={() => setShowAll(true)}>All</Btn>}
-        {/* Offered only where posts could actually arrive: scoped to a
-            symbol none can (a post carries no ticker), and with the social
-            source off there are none to filter. A control over an empty set
-            is a claim that something is there. */}
-        {!scoped && hasPosts && (
+        {/* Offered wherever posts EXIST, not only where they would already
+            show: with the social source off there are none to filter, and a
+            control over an empty set is a claim that something is there.
+            Both and Posts carry posts, which a scoped list cannot hold, so
+            pressing either leaves the scope — the control does what its
+            label says instead of quietly showing nothing. News is stories
+            alone, which a scoped list can hold, so it keeps the symbol. */}
+        {hasPosts && (
           <>
-            <Btn active={kind === "all"} onClick={() => setKind("all")}
-                 title="Stories and posts together, newest first">Both</Btn>
-            <Btn active={kind === "news"} onClick={() => setKind("news")}
+            <Btn active={!scoped && kind === "all"}
+                 onClick={() => { setShowAll(true); setKind("all") }}
+                 title="Stories and posts together, newest first. A post carries no ticker, so this shows the whole window">Both</Btn>
+            <Btn active={scoped || kind === "news"} onClick={() => setKind("news")}
                  title="Stories from the feeds you keyed — nothing unverified">News</Btn>
-            <Btn active={kind === "posts"} onClick={() => setKind("posts")}
-                 title="Social posts only. Nobody is accountable for one">Posts</Btn>
+            <Btn active={!scoped && kind === "posts"}
+                 onClick={() => { setShowAll(true); setKind("posts") }}
+                 title="Social posts only. Nobody is accountable for one. A post carries no ticker, so this shows the whole window">
+              Posts · {livePosts.length}
+            </Btn>
           </>
         )}
       </>
