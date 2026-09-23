@@ -334,3 +334,49 @@ def test_a_social_source_that_cannot_be_read_answers_none_not_empty(monkeypatch)
         assert SocialPulse().social_trending() is None
     finally:
         sc._get_text = original
+
+
+def test_a_scraped_source_is_asked_last_whatever_it_is_called():
+    """THE RULE (2026-09-23, the owner): never scrape what a keyed vendor
+    carries — scrape only where none does.
+
+    It held before only because no scraped source is listed on a surface AND
+    their names sorted after the vendors they compete with. That is luck: a
+    vendor or plugin named after "nasdaq" would have taken a calendar from a
+    paid vendor. The walk now cannot reach a scraped source until every keyed
+    one has declined, whatever either is called."""
+    from alphadesk.providers import catalogue as cat
+
+    class Any_:
+        def __init__(self, name): self.name = name
+        def dividend_calendar(self, start, end): return [{"from": self.name}]
+
+    # A keyed vendor whose name sorts AFTER every scraped source, which is
+    # the case the alphabet used to get wrong.
+    keyed = cat.Vendor("zzz-paid", "Paid, late in the alphabet", "")
+    scraped = cat.Vendor("aaa-scraped", "Scraped, early in the alphabet", "", official=False)
+    added = {}
+    for v in (keyed, scraped):
+        if v.name not in cat.VENDORS:
+            cat.VENDORS[v.name] = v
+            added[v.name] = v
+    try:
+        router = DataRouter("u1", {"aaa-scraped": Any_("aaa-scraped"), "zzz-paid": Any_("zzz-paid")})
+        got = router.ask("dividend_calendar", "2026-09-01", "2026-09-07")
+        assert got == [{"from": "zzz-paid"}], "the paid vendor must be asked first"
+        # With nothing keyed, the scraped source is what is left — the second
+        # half of the rule: scrape WHERE NO PAID SOURCE IS AVAILABLE.
+        alone = DataRouter("u1", {"aaa-scraped": Any_("aaa-scraped")})
+        assert alone.ask("dividend_calendar", "2026-09-01", "2026-09-07") == [{"from": "aaa-scraped"}]
+    finally:
+        for name in added:
+            cat.VENDORS.pop(name, None)
+
+
+def test_every_scraped_source_stays_off_every_catalogue_surface():
+    """The ordering above is belt; this is braces. Listing a scraped source
+    on a surface would put it in the catalogue's own order, ahead of a keyed
+    vendor further down that list."""
+    for surface in catalogue.SURFACES.values():
+        for name, _tier in surface.vendors:
+            assert name not in SCRAPED_SOURCES, f"{name} is listed on {surface.id}"
