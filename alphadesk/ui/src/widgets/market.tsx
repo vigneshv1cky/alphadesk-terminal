@@ -235,18 +235,21 @@ function HaltsTable() {
       : at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
   }
   if (q.isPending) return <Empty>loading…</Empty>
-  // The source answers nothing when it is not switched on, and raises when
-  // it is on and unreachable — the second is an error, so the two read
-  // differently here rather than both as a quiet day (2026-09-23).
-  if (q.isError) return <QueryFailure error={q.error}>the halt feed could not be read</QueryFailure>
-  if (!rows || rows.length === 0) {
+  // OFF AND BROKEN READ DIFFERENTLY (2026-09-23). No vendor carries halts, so
+  // with the source switched off the walk finds nobody and the endpoint
+  // answers 428 — which is not a failure, it is an answer. Reported as one
+  // it said "the halt feed could not be read" about a source the reader had
+  // simply never turned on.
+  if (isNeedsKey(q.error)) {
     return (
       <Empty>
-        No halts today — or the Nasdaq source is off. No vendor sells halts, so
-        it is the one thing that source is for: switch it on from the Account page.
+        The Nasdaq source is off. No vendor sells halts, so it is the one thing
+        that source is for — switch it on from the Account page.
       </Empty>
     )
   }
+  if (q.isError) return <QueryFailure error={q.error}>the halt feed could not be read</QueryFailure>
+  if (!rows || rows.length === 0) return <Empty>no halts listed right now</Empty>
   return (
     <Table>
       <THead>

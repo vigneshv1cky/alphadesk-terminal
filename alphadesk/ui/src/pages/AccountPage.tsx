@@ -397,17 +397,31 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                       {row ? <Pill tone="warn">Scraped</Pill> : <Pill tone="muted">Off</Pill>}
                       {idle && <Pill tone="muted">Nothing to serve</Pill>}
                     </span>
-                    {v.coverage && (
+                    {/* A SOURCE THAT IS OFF SAYS LITTLE (2026-09-23, the
+                        reader). Three switched-off rows each carried two
+                        paragraphs — what it reads, what it would be the only
+                        source for, and which vendor covers every surface it
+                        has — which is a wall of text about things that are
+                        not happening. What survives is the ONE line that
+                        decides whether to switch it on; the rest is the
+                        row's hover, and the detail returns once it is on and
+                        actually answering. */}
+                    <span className="mt-1 block text-caption text-muted-foreground"
+                          title={[v.note, taken.length
+                            ? taken.map(t => `${t.surface} comes from ${t.vendors.join(" or ")}`).join("; ") + "."
+                            : ""].filter(Boolean).join(" ")}>
+                      {only.length > 0
+                        ? <>Only source for {only.join(", ").toLowerCase()}.</>
+                        : idle
+                          ? <>Nothing a vendor you keyed does not already carry.</>
+                          : v.note}
+                    </span>
+                    {/* Once it is on, what it is actually answering with. */}
+                    {row && taken.length > 0 && (
                       <span className="mt-1 block text-caption text-muted-foreground">
-                        {only.length > 0
-                          ? <>Only source for {only.join(", ").toLowerCase()}.</>
-                          : <>Everything it reads, a vendor you keyed already carries — so it would never be asked.</>}
-                        {taken.length > 0 && (
-                          <> {taken.map(t => `${t.surface} comes from ${t.vendors.join(" or ")}`).join("; ")}.</>
-                        )}
+                        {taken.map(t => `${t.surface} comes from ${t.vendors.join(" or ")}`).join("; ")}.
                       </span>
                     )}
-                    <span className="mt-1 block text-caption text-muted-foreground">{v.note}</span>
                   </Row>
                 )
               })}
