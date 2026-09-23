@@ -52,8 +52,13 @@ export function NewsTape({ span = 12 }: {
   const headlines = shown.slice(0, 60 + older.length)
   // Reading happens IN the tile: a click swaps the list for the reader, and
   // the back row swaps it back. No navigation — the board stays where it is.
-  const [openId, setOpenId] = useState<string | null>(null)
-  const open = headlines.find(h => h.article_id === openId) ?? null
+  // THE OPEN ARTICLE IS HELD, NOT LOOKED UP (2026-09-23, the reader:
+  // "articles not staying in the board"). It was found by id in the list on
+  // screen, so anything that changed the list closed the reader — and since
+  // a ticker chip now scopes the board, opening a story and then picking one
+  // of its symbols would have shut the story in the act of following it.
+  const [open, setOpen] = useState<NewsArticle | null>(null)
+  const setOpenId = (h: NewsArticle | null) => setOpen(h)
   // SOCIAL POSTS RIDE IN THE NEWS LIST (2026-09-23), newest first among the
   // stories, and only on the whole window: a post carries no ticker — the
   // source deliberately reads none out of its text — so it can never belong
@@ -170,7 +175,7 @@ export function NewsTape({ span = 12 }: {
           </li>
         ) : h ? (
           <li key={h.article_id} className="row-rule hover:bg-foreground/5">
-            <button type="button" onClick={() => setOpenId(h.article_id)} className="block w-full px-3 py-3 text-left">
+            <button type="button" onClick={() => setOpenId(h)} className="block w-full px-3 py-3 text-left">
               <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
                 <HeadlineTickers symbols={h.tickers} />
                 <span className="text-accent-700">{h.source}</span>
