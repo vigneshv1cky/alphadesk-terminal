@@ -214,8 +214,17 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
   }
 
   const pollMinutes = data?.news_poll_minutes
+  const orphanFeeds = data?.orphan_feeds ?? []
+  const keepDays = data?.news_keep_days
   const transcript = stored("transcripts")
-  const connectedCount = vendorList.filter(v => stored("prices", v.name)).length
+  // A VENDOR YOU KEYED AND A SOURCE YOU SWITCHED ON ARE DIFFERENT THINGS
+  // (2026-09-22). They shared the Market data table, which put social posts
+  // under market data and counted three keyless sources among the vendors,
+  // so "7 of 9 connected" was answering two questions at once.
+  const keyedVendors = vendorList.filter(v => v.official !== false)
+  const scrapedSources = vendorList.filter(v => v.official === false)
+  const connectedCount = keyedVendors.filter(v => stored("prices", v.name)).length
+  const scrapedOn = scrapedSources.filter(v => stored("prices", v.name)).length
   const stories = newsRows.reduce((n, r) => n + (r.stories_24h ?? 0), 0)
 
   // The vault's absence and an insecure origin are the page's whole message
@@ -238,7 +247,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
           that does not exist. */}
       <Widget span={12} title={<Heading>Market data</Heading>} expandable={false} bodyClassName="@container"
               subtitle="each panel uses the first connected vendor that carries it"
-              actions={vendorList.length ? <Pill tone={connectedCount ? "gain" : "muted"}>{connectedCount} of {vendorList.length} connected</Pill> : undefined}>
+              actions={keyedVendors.length ? <Pill tone={connectedCount ? "gain" : "muted"}>{connectedCount} of {keyedVendors.length} connected</Pill> : undefined}>
         {blocked ?? (
           <>
             {/* THE TABLE NEEDS 820px; below that the panel falls back to one
@@ -260,7 +269,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                   <TH align="right" className="w-[172px]"><span className="sr-only">Actions</span></TH>
                 </THead>
                 <tbody>
-                  {vendorList.map(v => {
+                  {keyedVendors.map(v => {
                     const row = stored("prices", v.name)
                     // Read off a public page rather than delivered under a key.
                     const scraped = v.official === false
@@ -319,7 +328,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
               </Table>
             </div></div>
             <div className="@[820px]:hidden">
-              {vendorList.map(v => {
+              {keyedVendors.map(v => {
                 const row = stored("prices", v.name)
                 const scraped = v.official === false
                 const free = v.serves.filter(x => x.tier === "free").length
@@ -357,6 +366,41 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
           </>
         )}
       </Widget>
+
+      {/* SOURCES WITHOUT A KEY, in their own section (2026-09-22). They sat
+          in the Market data table, which was wrong twice over: social posts
+          are not market data, and counting three keyless sources among the
+          vendors made "connected" mean two different things in one number.
+          They are not vendors you hold an account with — they are public
+          pages this server reads, and the section says so once rather than
+          on every row. */}
+      {scrapedSources.length > 0 && (
+        <Widget span={12} title={<Heading>Sources without a key</Heading>} expandable={false} bodyClassName="@container"
+                subtitle="public pages this server reads — asked only where no vendor you keyed answered"
+                actions={<Pill tone={scrapedOn ? "warn" : "muted"}>{scrapedOn} of {scrapedSources.length} on</Pill>}>
+          {blocked ?? (
+            <>
+              {scrapedSources.map(v => {
+                const row = stored("prices", v.name)
+                return (
+                  <Row key={v.name} label={v.label} actions={row
+                    ? <button type="button" onClick={() => void remove("prices", v.name)} className={BTN_DANGER}>Switch off</button>
+                    : <button type="button" onClick={() => void enable(v.name)} className={BTN_PRIMARY}>Switch on</button>}>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {row ? <Pill tone="warn">Scraped</Pill> : <Pill tone="muted">Off</Pill>}
+                    </span>
+                    <span className="mt-1 block text-caption text-muted-foreground">{v.note}</span>
+                  </Row>
+                )
+              })}
+              <Caption>
+                Read rather than licensed. Every figure one of these answers is marked as
+                scraped wherever it appears, and a vendor you keyed is always asked first.
+              </Caption>
+            </>
+          )}
+        </Widget>
+      )}
 
       <Widget span={12} title={<Heading>News & transcripts</Heading>} expandable={false} bodyClassName="@container"
               subtitle="your window merges every feed you key, deduplicated by link"
@@ -396,7 +440,24 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                     </TD>
                   </TR>
                 ))}
-                {!newsRows.length && (
+                {/* A feed you no longer hold, whose stories are still in the
+                    window. Named rather than left as an unaccountable
+                    publisher in the news list (2026-09-22). */}
+                {orphanFeeds.map(o => (
+                  <TR key={`orphan-${o.provider}`}>
+                    <TD className="font-extrabold text-muted-foreground">{vendorLabel(o.provider)}</TD>
+                    <TD mono className="text-muted-foreground">no key</TD>
+                    <TD align="right" mono className="text-muted-foreground">{o.stories.toLocaleString()}</TD>
+                    <TD className="text-caption text-muted-foreground">
+                      <Pill tone="muted">Removed</Pill>
+                      <span className="ml-2">
+                        stories it delivered are still stored{keepDays ? ` — they age out ${keepDays} days after publication` : ""}
+                      </span>
+                    </TD>
+                    <TD align="right"><span className="sr-only">no actions</span></TD>
+                  </TR>
+                ))}
+                {!newsRows.length && !orphanFeeds.length && (
                   <TR>
                     <TD className="font-extrabold">News</TD>
                     <TD className="text-muted-foreground" colSpan={3}>none — news needs your feed key</TD>
@@ -681,7 +742,13 @@ function StatStrip({ open }: { open: boolean }) {
   const connections = useQuery({ queryKey: ["agent-connections"], queryFn: api.agentConnections })
   const vendorList = vendors.data?.vendors ?? []
   const rows = keys?.keys ?? []
-  const connected = vendorList.filter(v => rows.some(k => k.seam === "prices" && k.provider === v.name)).length
+  // Vendors you KEYED, counted against vendors you could key. A keyless
+  // scraped source is not one of them and used to be counted as both
+  // (2026-09-22), which is why this read "7 of 9" with six keys.
+  const keyed = vendorList.filter(v => v.official !== false)
+  const connected = keyed.filter(v => rows.some(k => k.seam === "prices" && k.provider === v.name)).length
+  const scraped = vendorList.filter(v => v.official === false)
+    .filter(v => rows.some(k => k.seam === "prices" && k.provider === v.name)).length
   const feeds = rows.filter(k => k.seam === "news")
   const stories = feeds.reduce((n, k) => n + (k.stories_24h ?? 0), 0)
   const apps = connectionGroups(connections.data?.connections ?? []).length
@@ -691,7 +758,10 @@ function StatStrip({ open }: { open: boolean }) {
     <section className="@container overflow-hidden rounded-lg border border-card-border bg-card shadow-card"
              style={{ gridColumn: "span 12 / span 12" }} aria-label="Account totals">
       <div className="grid grid-cols-1 @[640px]:grid-cols-4">
-        <StatCell label="Market data" value={vendorList.length ? `${connected} of ${vendorList.length} vendors` : "—"} />
+        <StatCell label="Market data"
+                  value={keyed.length
+                    ? `${connected} of ${keyed.length} vendors${scraped ? ` · ${scraped} scraped` : ""}`
+                    : "—"} />
         <StatCell label="News" value={feeds.length ? `${stories.toLocaleString()} stories · 24h` : "no feed"} />
         <StatCell label="Agent access" value={`${plural(apps, "app")} · ${plural(live, "token")}`} />
         <StatCell label="Session" value={open ? "Open instance" : "14 days · HMAC"} />

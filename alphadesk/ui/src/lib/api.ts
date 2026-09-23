@@ -1277,7 +1277,16 @@ export const api = {
     del<{ ok: boolean }>(`/api/agent/connections/${encodeURIComponent(id)}`),
   revokeAgentAccessToken: (id: string) =>
     del<{ ok: boolean }>(`/api/agent/access-tokens/${encodeURIComponent(id)}`),
-  keys: () => get<{ vault: boolean; keys: UserKeyRow[]; news_poll_minutes?: number }>("/api/keys"),
+  keys: () => get<{
+    vault: boolean
+    keys: UserKeyRow[]
+    /** Feeds with stories still in the store that you no longer have a key
+     * for — they age out at `news_keep_days`. Named so a publisher in the
+     * news list is never unaccountable. */
+    orphan_feeds?: { provider: string; stories: number }[]
+    news_keep_days?: number
+    news_poll_minutes?: number
+  }>("/api/keys"),
   views: () => get<{ views: ServerView[] }>("/api/views"),
   setView: (id: string, body: { name: string; layout: string; position?: number }) =>
     put<{ ok: boolean }>(`/api/views/${id}`, body),

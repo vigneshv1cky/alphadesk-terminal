@@ -136,7 +136,18 @@ export default function NewsPage() {
   const { symbols: boardSymbols } = useBoardSymbols()
   const [onBoard, setOnBoard] = useState(false)
   const [source, setSource] = useState("")
+  // WHO WROTE IT and WHICH FEED BROUGHT IT are different questions, and one
+  // picker answering the first was read as answering the second (2026-09-22,
+  // the reader: "why does it show more data sources if only alpaca is
+  // used?"). A feed like Alpha Vantage's is an AGGREGATOR — one connection
+  // delivers 24/7 Wall St., CNBC, Yahoo Finance and the rest — so a list of
+  // thirty publishers on one feed is correct and looked alarming.
+  const [feed, setFeed] = useState("")
   const sources = useMemo(() => [...new Set(articles.map(a => a.source).filter((x): x is string => !!x))].sort(), [articles])
+  const feeds = useMemo(
+    () => [...new Set(articles.flatMap(a => a.feeds ?? []))].sort(),
+    [articles],
+  )
   // As typed: a ticker in capitals is matched exactly (lib/newsMatch).
   const needle = search ? "" : query.trim()
   // The companies the words name, resolved off the SEC list by the server,
@@ -166,6 +177,7 @@ export default function NewsPage() {
     const keep = (a: NewsArticle) =>
       (!onBoard || a.tickers.some(t => board.has(t.toUpperCase())))
       && (!source || a.source === source)
+      && (!feed || (a.feeds ?? []).includes(feed))
     // Whole words, their forms, and the companies the words name.
     const words = articles.filter(a => keep(a) && (!needle || matchesStory(needle, a, companies)))
     if (!needle || meant !== needle || !related?.length) return words
@@ -229,11 +241,23 @@ export default function NewsPage() {
                title={boardSymbols.length ? `Only stories naming ${boardSymbols.join(", ")}` : "Add chips to the board to use this"}>
             On my board{board.onBoard.size ? ` · ${board.onBoard.size}` : ""}{board.fresh.size ? ` (${board.fresh.size} new)` : ""}
           </Btn>
-          <select value={source} onChange={e => setSource(e.target.value)} aria-label="Source"
+          <select value={source} onChange={e => setSource(e.target.value)} aria-label="Publisher"
+                  title="Who wrote the story. One feed can carry many publishers — an aggregating feed delivers dozens"
                   className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
-            <option value="">All sources</option>
+            <option value="">All publishers</option>
             {sources.map(src => <option key={src} value={src}>{src}</option>)}
           </select>
+          {/* Only worth a control when more than one feed actually delivered
+              into the window; on a single feed it would be a picker with one
+              choice. */}
+          {feeds.length > 1 && (
+            <select value={feed} onChange={e => setFeed(e.target.value)} aria-label="Feed"
+                    title="Which of your feeds delivered the story — the connection it came down, not who wrote it"
+                    className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
+              <option value="">All feeds</option>
+              {feeds.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+          )}
           <span className="tnum ml-auto text-caption text-muted-foreground">
             {shown.length} / {articles.length}
           </span>
@@ -242,7 +266,7 @@ export default function NewsPage() {
         {!err && !data && <Empty>loading…</Empty>}
         {!err && data && shown.length === 0 && !(search && !search.rows) && (
           <Empty>{search ? `no stored story matches “${search.q}”`
-            : needle || onBoard || source ? "nothing matches these filters" : "no news in the window"}</Empty>
+            : needle || onBoard || source || feed ? "nothing matches these filters" : "no news in the window"}</Empty>
         )}
         {!err && shown.length > 0 && (
           <ul>
@@ -265,7 +289,13 @@ export default function NewsPage() {
                               title="New since your last visit, about a stock on your board">New</span>
                       )}
                       <HeadlineTickers symbols={a.tickers} />
-                      <span className="text-accent-700">{a.source}</span>
+                      {/* The publisher, with the feed that delivered it on
+                          hover — the two are different and the name alone
+                          cannot say which it is (2026-09-22). */}
+                      <span className="text-accent-700"
+                            title={a.feeds?.length
+                              ? `Published by ${a.source} · delivered by ${a.feeds.join(" and ")}`
+                              : `Published by ${a.source}`}>{a.source}</span>
                       {a.why === "related" && (
                         <span className="text-muted-foreground" title="Found by meaning, not by the words you typed">related</span>
                       )}
