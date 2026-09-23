@@ -1186,30 +1186,6 @@ def social_posts(limit: int = 20) -> dict:
 
 
 @mcp.tool()
-def social_trending(limit: int = 30) -> dict:
-    """THE SYMBOLS PEOPLE ARE TALKING ABOUT, in StockTwits' own rank order
-    with its own figures — off unless the reader switched the social source
-    on.
-
-    THIS MEASURES ATTENTION, NOT NEWS. A symbol is here because people are
-    watching and posting about it, which may be a real event, a rumour, or
-    an attempt to create exactly this appearance — manufactured attention is
-    what a pump IS, so trending is evidence that people are talking and
-    evidence of nothing else.
-
-    Use it to decide WHAT TO LOOK INTO, never as a reason itself. Pair a
-    trending symbol with `filing_feed`, `symbol_news` or `trading_halts` to
-    find out whether anything actually happened; where nothing did, say so
-    rather than treating the attention as the story. The rank and watcher
-    counts are the vendor's, passed through — AlphaDesk scores nothing."""
-    from alphadesk.providers import get_prices
-    rows = get_prices().ask("social_trending", limit=max(1, min(int(limit), 100)),
-                            surface="social")
-    return {"symbols": rows or [], "count": len(rows or []),
-            "measures": "attention, which can be manufactured — not a claim that news exists"}
-
-
-@mcp.tool()
 def government_actions(sources: str = "", days: int = 7, limit: int = 30,
                        agencies: str = "", types: str = "") -> dict:
     """WHAT THE GOVERNMENT JUST DID — agency rulemaking, the Federal

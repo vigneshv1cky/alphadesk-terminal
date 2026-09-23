@@ -1080,15 +1080,6 @@ def api_social_posts(limit: int = 20):
                                       surface="social") or []}
 
 
-@app.get("/api/social/trending")
-def api_social_trending(limit: int = 30):
-    """The symbols being talked about, in the vendor's own rank order.
-    Attention, not news."""
-    from alphadesk.providers import get_prices
-    return {"symbols": get_prices().ask("social_trending", limit=max(1, min(limit, 100)),
-                                        surface="social") or []}
-
-
 @app.get("/api/gov/feed")
 def api_gov_feed(sources: str = "", days: int = 7, limit: int = 50,
                  agencies: str = "", types: str = ""):
