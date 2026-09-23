@@ -583,11 +583,12 @@ class NasdaqCalendars:
         exchange's own wording beside it only where that wording is
         published. A code nobody publishes stays a code."""
         from alphadesk.config import ET
-        try:
-            body = _get_text("https://www.nasdaqtrader.com/rss.aspx?feed=tradehalts")
-        except ProviderError as exc:
-            log.debug("nasdaq halts: %s", exc)
-            return None
+        # A FAILED READ IS NOT "I DO NOT CARRY THIS" (2026-09-23). Returning
+        # None here told the router this source has no such surface, so it
+        # moved on, found nobody else — nobody sells this — and the panel
+        # showed nothing. A source switched ON but unreachable then looked
+        # exactly like a quiet day. The error travels instead.
+        body = _get_text("https://www.nasdaqtrader.com/rss.aspx?feed=tradehalts")
         out: list[dict] = []
         for chunk in re.findall(r"<item>(.*?)</item>", body, re.S):
             def field(tag: str) -> str:
@@ -708,11 +709,12 @@ class SocialPulse:
         measured 2026-09-22), so this is a third party's copy: it can lag,
         it can miss posts, and it is not the account itself. The row says so
         rather than presenting the mirror as the platform."""
-        try:
-            body = _get_text("https://trumpstruth.org/feed")
-        except ProviderError as exc:
-            log.debug("social posts: %s", exc)
-            return None
+        # A FAILED READ IS NOT "I DO NOT CARRY THIS" (2026-09-23). Returning
+        # None here told the router this source has no such surface, so it
+        # moved on, found nobody else — nobody sells this — and the panel
+        # showed nothing. A source switched ON but unreachable then looked
+        # exactly like a quiet day. The error travels instead.
+        body = _get_text("https://trumpstruth.org/feed")
         out: list[dict] = []
         for chunk in re.findall(r"<item>(.*?)</item>", body, re.S):
             def field(tag: str) -> str:
@@ -744,9 +746,13 @@ class SocialPulse:
         try:
             body = _get_text("https://api.stocktwits.com/api/2/trending/symbols.json")
             data = _json.loads(body)
-        except (ProviderError, ValueError) as exc:
-            log.debug("social trending: %s", exc)
-            return None
+        # A FAILED READ IS NOT "I DO NOT CARRY THIS" (2026-09-23). Returning
+        # None here told the router this source has no such surface, so it
+        # moved on, found nobody else — nobody sells this — and the panel
+        # showed nothing. A source switched ON but unreachable then looked
+        # exactly like a quiet day. The error travels instead.
+        except ValueError as exc:                 # a body that is not JSON
+            raise ProviderError(f"scraped source answered unreadably: {exc}") from exc
         out = []
         for row in (data or {}).get("symbols") or []:
             sym = str(row.get("symbol") or "").upper()

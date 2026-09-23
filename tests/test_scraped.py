@@ -321,17 +321,40 @@ def test_trending_passes_the_vendors_own_rank_and_never_a_score(monkeypatch):
     assert not any("score" in k for r in rows for k in r)
 
 
-def test_a_social_source_that_cannot_be_read_answers_none_not_empty(monkeypatch):
-    """None means "this source did not answer" and lets the router move on;
-    an empty list would claim nobody posted anything."""
+def test_a_source_that_cannot_be_read_raises_rather_than_answering_nothing(monkeypatch):
+    """CORRECTED 2026-09-23, and the correction is the point.
+
+    This test used to assert that a failed read returns None. That was the
+    bug the reader hit: None means "I do not carry this surface", so the
+    router moved on — and since NOBODY sells halts or social posts, there was
+    no second vendor and the panel simply showed nothing. A source switched
+    ON but unreachable was indistinguishable from a quiet day.
+
+    A failed read is an error now. The router still skips the source, but the
+    caller can tell the two apart and say which it was."""
     import alphadesk.providers.scraped as sc
     from alphadesk.providers.base import ProviderError
     def refuse(url, timeout=20.0):
         raise ProviderError("scraped source refused (403)")
     original, sc._get_text = sc._get_text, refuse
     try:
-        assert SocialPulse().social_posts() is None
-        assert SocialPulse().social_trending() is None
+        for call in (SocialPulse().social_posts, SocialPulse().social_trending,
+                     NasdaqCalendars().trading_halts):
+            with pytest.raises(ProviderError):
+                call()
+    finally:
+        sc._get_text = original
+
+
+def test_a_source_that_is_read_but_says_nothing_is_still_empty():
+    """The other half: an answer with no rows is not a failure. Only the
+    calendars can be legitimately empty on a quiet day — they are the ones
+    with a real second vendor behind them."""
+    import alphadesk.providers.scraped as sc
+    original, sc._get_text = sc._get_text, lambda url, timeout=20.0: "<rss><channel></channel></rss>"
+    try:
+        assert SocialPulse().social_posts() is None      # nothing in the feed
+        assert NasdaqCalendars().trading_halts() is None
     finally:
         sc._get_text = original
 

@@ -209,7 +209,15 @@ export function usePageLayout<T extends PanelDef>(
    * it (null = the component's own). */
   const items: { def: T; span: number | null; align: TileAlign | null }[] = useMemo(
     () => (isCustom
-      ? custom.map(e => ({ def: all.find(w => w.id === e.id)!, span: e.span, align: e.align ?? null }))
+      // A TILE A SAVED LAYOUT NAMES BUT NOTHING REGISTERS is dropped, not
+      // rendered (2026-09-23). It resolved to undefined and the page read
+      // `.component` off it, so a board naming a tile that had been removed
+      // — or a plugin tile on a build without that plugin — blanked the
+      // whole page rather than losing one panel.
+      ? custom.flatMap(e => {
+        const def = all.find(w => w.id === e.id)
+        return def ? [{ def, span: e.span, align: e.align ?? null }] : []
+      })
       : all.filter(w => !w.optIn).map(w => ({ def: w, span: null, align: null }))),
     [isCustom, custom, all],
   )
