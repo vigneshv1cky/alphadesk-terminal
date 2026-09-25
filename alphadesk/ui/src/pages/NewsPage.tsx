@@ -9,7 +9,9 @@ import { api, isNeedsKey, type NewsArticle } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { boardStories, markSeen, readSeen } from "@/lib/newsSeen"
 import { useNews } from "@/lib/queries"
-import { Btn, Empty, fieldCls, Widget, btnCls } from "@/components/terminal"
+import { Btn, Empty, fieldCls, Widget, btnCls, menuItemCls } from "@/components/terminal"
+import { Menu } from "@/components/ChartToolbar"
+import { cn } from "@/lib/utils"
 import { newsTime } from "@/lib/newsClock"
 import { matchesStory } from "@/lib/newsMatch"
 import { useQuery } from "@tanstack/react-query"
@@ -216,6 +218,31 @@ export default function NewsPage() {
   // to now whenever the list changes, so the rail's count clears here.
   const [seenAtOpen] = useState(readSeen)
   const board = useMemo(() => boardStories(articles, boardSymbols, seenAtOpen), [articles, boardSymbols, seenAtOpen])
+
+  // The states this list can be in, narrowest last. Picking one clears the
+  // other, because they exclude each other — a post carries no ticker, so
+  // it can never be "on my board".
+  const views = [
+    {
+      id: "all", label: "All news", on: !postsOnly && !onBoard, off: false,
+      why: "Every story in your window",
+      pick: () => { setPostsOnly(false); setOnBoard(false) },
+    },
+    {
+      id: "board",
+      label: `On my board${board.onBoard.size ? ` · ${board.onBoard.size}` : ""}${board.fresh.size ? ` (${board.fresh.size} new)` : ""}`,
+      on: !postsOnly && onBoard, off: boardSymbols.length === 0,
+      why: boardSymbols.length ? `Only stories naming ${boardSymbols.join(", ")}` : "Add chips to the board to use this",
+      pick: () => { setPostsOnly(false); setOnBoard(true) },
+    },
+    {
+      id: "posts", label: `Posts${livePosts.length ? ` · ${livePosts.length}` : ""}`,
+      on: postsOnly, off: livePosts.length === 0,
+      why: "Social posts only. A post has no publisher, no feed and no ticker, so the pickers beside this cannot apply to one",
+      pick: () => { setPostsOnly(true); setOnBoard(false) },
+    },
+  ]
+
   useEffect(() => { if (data) markSeen() }, [data])
   const closeStory = () => {
     const next = new URLSearchParams(params)
@@ -260,14 +287,35 @@ export default function NewsPage() {
             </Btn>
           )}
           {(query || search) && <Btn variant="ghost" onClick={() => { setQuery(""); setSearch(null) }}>Clear</Btn>}
-          <Btn variant="ghost" active={onBoard} onClick={() => setOnBoard(v => !v)}
-               title={boardSymbols.length ? `Only stories naming ${boardSymbols.join(", ")}` : "Add chips to the board to use this"}>
-            On my board{board.onBoard.size ? ` · ${board.onBoard.size}` : ""}{board.fresh.size ? ` (${board.fresh.size} new)` : ""}
-          </Btn>
-          <Btn variant="ghost" active={postsOnly} onClick={() => setPostsOnly(v => !v)}
-               title="Social posts only. A post has no publisher, no feed and no ticker, so the pickers beside this cannot apply to one">
-            Posts{livePosts.length ? ` · ${livePosts.length}` : ""}
-          </Btn>
+          {/* ONE PICKER, NOT TWO TOGGLES (2026-09-25, #73, the reader: "this
+              also has similiar problem to news dropdown we had before").
+              The tile's header had the same fault and was fixed in #68: two
+              buttons that are really ONE choice, sitting in a row of five
+              controls with no separation, so the row wrapped to two lines
+              and neither axis was legible.
+              They are one choice because they exclude each other — a post
+              carries no ticker, so "posts" and "only stories naming my
+              board" can never both be on. Three reachable views, which is a
+              list. The publisher and feed pickers beside this are a
+              different axis and stay: they REFINE a view rather than
+              replacing it, and they keep being disabled rather than hidden
+              on posts, which was a deliberate call. */}
+          <Menu label={views.find(v => v.on)?.label ?? "All news"} title="What this list shows">
+            {close => (
+              <>
+                {views.map(v => (
+                  <button key={v.id} type="button" role="menuitemradio" aria-checked={v.on}
+                          title={v.why} disabled={v.off}
+                          onClick={() => { v.pick(); close() }}
+                          className={cn(menuItemCls, "justify-between gap-3",
+                                        v.off && "pointer-events-none opacity-45")}>
+                    <span>{v.label}</span>
+                    <span className="text-muted-foreground">{v.on ? "✓" : ""}</span>
+                  </button>
+                ))}
+              </>
+            )}
+          </Menu>
           <select value={source} onChange={e => setSource(e.target.value)} aria-label="Publisher"
                   disabled={postsOnly}
                   title="Who wrote the story. One feed can carry many publishers — an aggregating feed delivers dozens"
