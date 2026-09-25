@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { Menu, Monitor, Moon, Sun } from "lucide-react"
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
 import { noteRouteChange, watchNavPresses } from "@/lib/navTiming"
 import { api } from "@/lib/api"
 import { useTheme } from "@/lib/theme"
@@ -79,7 +80,15 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
   // TEMPORARY (2026-09-25, #78): how long a page press takes, measured on
   // the machine that feels it. Remove with lib/navTiming.ts once the lag
   // the reader reported is understood.
-  useEffect(() => { watchNavPresses() }, [])
+  const qc = useQueryClient()
+  useEffect(() => {
+    // The instrument is told how to ask "is anything still loading" rather
+    // than being given an opinion of its own about how data is fetched.
+    watchNavPresses({
+      isFetching: () => qc.isFetching(),
+      subscribe: cb => qc.getQueryCache().subscribe(cb),
+    })
+  }, [qc])
   useEffect(() => { noteRouteChange(pathname) }, [pathname])
 
   return (
