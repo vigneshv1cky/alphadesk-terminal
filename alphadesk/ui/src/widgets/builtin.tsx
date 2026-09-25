@@ -151,6 +151,9 @@ export function NewsTape({ span = 12 }: {
       ? `${livePosts.length} posts, newest first`
       : `${headlines.length} headlines, newest first`}
     scroll={TILE_BODY_HEIGHT}
+    // The list fills its cap, so reserve it while loading rather than
+    // growing into it and shoving the board down (2026-09-25, #72).
+    minBody={news.isPending ? TILE_BODY_HEIGHT : undefined}
     actions={views.length > 1 ? (
       // ONE PICKER, NOT TWO ROWS OF TOGGLES (2026-09-25, the reader:
       // "multiple boxes to choose is confusing, make dropdowns or reduce

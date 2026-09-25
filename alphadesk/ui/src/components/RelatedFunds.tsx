@@ -99,7 +99,8 @@ export function RelatedFundsPanel({ symbol, span = 6, scroll }: {
     ? `${funds.length} built on ${symbol}${geared ? ` · ${geared} leveraged or inverse` : ""}${q.data?.source ? ` · ${vendorLabel(q.data.source) ?? q.data.source}` : ""}`
     : undefined
   return (
-    <Widget span={span} symbol={symbol} title="Funds on this stock" subtitle={subtitle} scroll={scroll}>
+    <Widget span={span} symbol={symbol} title="Funds on this stock" subtitle={subtitle} scroll={scroll}
+            minBody={q.isPending && typeof scroll === "number" ? scroll : undefined}>
       {q.isPending ? <Empty>loading…</Empty>
         : q.isError ? <QueryFailure error={q.error}>the fund listing is unavailable right now</QueryFailure>
         // A fund is a wrapper, not a company: nothing is built on it, and
