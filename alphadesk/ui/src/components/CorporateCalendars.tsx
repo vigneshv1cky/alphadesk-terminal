@@ -28,16 +28,23 @@ function useWeek() {
   const nav = (
     <div className="flex items-center gap-1">
       <Btn onClick={() => setStart(s => shift(s, -7))} title="Previous week">‹</Btn>
-      {/* "THIS WEEK", NOT "TODAY" (2026-09-25, #75, the reader: "this button
-          is misleading, making all feel like today"). It sits between two
-          week arrows and jumps back to the CURRENT week — its own tooltip
-          already said "This week" while the label said "Today", so the
-          control disagreed with itself. A calendar showing five days should
-          never label anything "Today" unless that is the day it is
-          showing. */}
-      <Btn onClick={() => setStart(weekStart(isoDate(new Date())))}
-           title="Jump back to the current week">This week</Btn>
+      {/* THE WEEK ON SCREEN, NOT A BUTTON PRETENDING TO BE ONE (2026-09-25,
+          #77). It was labelled "Today" (#75 made it "This week"), and the
+          reader's second look found the real fault: "as i go left and right,
+          it just shows this weak thats why". A fixed label between two
+          arrows reads as a STATEMENT about what is displayed — so paging to
+          October still said "This week", and every row felt like today's.
+          The dates shown are the honest label, and the way back only exists
+          when there is somewhere to come back FROM: its presence is itself
+          the sign that this is not the current week. */}
+      <span className="px-1 text-caption tabular-nums text-muted-foreground">
+        {shortDay(start)} – {shortDay(shift(start, 6))}
+      </span>
       <Btn onClick={() => setStart(s => shift(s, 7))} title="Next week">›</Btn>
+      {start !== weekStart(isoDate(new Date())) && (
+        <Btn onClick={() => setStart(weekStart(isoDate(new Date())))}
+             title="Jump back to the week containing today">This week</Btn>
+      )}
     </div>
   )
   return { start, end, nav }

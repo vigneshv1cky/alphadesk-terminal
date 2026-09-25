@@ -440,7 +440,7 @@ function Flow({ symbols, onPick }: { symbols: string[]; onPick: (t: OptionFlowTr
   const hasLive = shown.some(t => t.side != null)
   const hasShare = shown.some(t => t.ask_share != null)
   return (
-    <Widget span={12} title="Options flow" toolbar={toolbar} scroll={440}
+    <Widget span={12} title="Options flow" toolbar={toolbar} toolbarWraps scroll={440}
             subtitle={q.data ? `big orders on the most active contracts of ${symbols.join(", ")}${q.data.feed === "opra" ? " · OPRA" : ""}` : undefined}
             bodyClassName="overflow-x-auto">
       {errors.length > 0 && (

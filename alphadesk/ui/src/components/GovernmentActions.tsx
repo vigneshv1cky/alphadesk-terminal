@@ -71,7 +71,13 @@ export function GovernmentActionsPanel({ span = 12 }: { span?: number }) {
           ) : (
             <Table>
               <THead>
-                <TH className="w-[96px]" title="When, at the precision the source actually states">When</TH>
+                {/* 118px, not 96 (2026-09-25, #77, the reader: "there is
+                    still some additiona words after"). A dated row fits in
+                    96, but one with a real clock — "22 Sept 16:30" — was cut
+                    to "22 Sept 16:…", which reads as a truncation fault
+                    rather than a time. The column has to fit its WIDEST
+                    value, and the widest one here carries a clock. */}
+                <TH className="w-[118px]" title="When, at the precision the source actually states">When</TH>
                 <TH className="w-[132px]" title="A rule changes what a company may do; a proposed rule is the consultation before it">Kind</TH>
                 <TH title="The record's own title, never a summary written here">What</TH>
                 {/* 300px, not 196 (2026-09-25, #75, the reader: "reduce what
