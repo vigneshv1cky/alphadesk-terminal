@@ -153,7 +153,15 @@ export function EconomicCalendarPanel({ span = 12 }: { span?: number }) {
                   </Menu>
                 )}
                 <Btn onClick={() => setStart(s => shift(s, -7))} title="Previous week">‹</Btn>
-                <Btn onClick={() => setStart(weekStart(isoDate(new Date())))} title="This week">Today</Btn>
+                {/* "THIS WEEK", NOT "TODAY" (2026-09-25, #75, the reader: "this button
+          is misleading, making all feel like today"). It sits between two
+          week arrows and jumps back to the CURRENT week — its own tooltip
+          already said "This week" while the label said "Today", so the
+          control disagreed with itself. A calendar showing five days should
+          never label anything "Today" unless that is the day it is
+          showing. */}
+      <Btn onClick={() => setStart(weekStart(isoDate(new Date())))}
+           title="Jump back to the current week">This week</Btn>
                 <Btn onClick={() => setStart(s => shift(s, 7))} title="Next week">›</Btn>
               </div>
             }>
