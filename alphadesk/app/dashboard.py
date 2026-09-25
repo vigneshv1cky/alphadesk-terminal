@@ -480,7 +480,24 @@ def api_news(limit: int = 300, before: str | None = None, q: str | None = None, 
         # the reader's feed when the store runs short (ingest/news.py).
         from alphadesk.ingest.news import older_articles
         edge = before or "9999-12-31T00:00:00+00:00"
-        size = min(limit, 100)
+        # A BACKFILL PAGE IS NOT A SEARCH PAGE (2026-09-25, #74, the reader
+        # watching the story count climb: "why cant i have it all at once").
+        # Both arrived here and both were capped at a hundred, but they cost
+        # very different things.
+        #
+        # A backfill (`before`, no query) is a plain database read, and the
+        # page filling the window needed about thirty-six of them — each one
+        # paying the reader's distance to the server whatever it carries.
+        # Measured: 100 stories is 15KB gzipped in 16ms, 500 is 76KB in 31ms.
+        # Where the store runs short `older_articles` asks the reader's own
+        # feed, and a larger page makes that ONE call instead of five, which
+        # is fewer vendor requests rather than more.
+        #
+        # A SEARCH (`q`) stays at a hundred: it merges stories related in
+        # MEANING below, which is the embedding model doing real work per
+        # call, and that is not a cost to multiply by five for a list nobody
+        # reads to the end.
+        size = min(limit, 100 if q else 500)
         articles = older_articles(uid, edge, limit=size, query=(q or "")[:80])
         if q:
             # And the stories related in MEANING, marked "related", merged

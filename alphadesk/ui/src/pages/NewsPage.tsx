@@ -56,6 +56,25 @@ function useOneColumn(): boolean {
  * rows rather than under them. Past it, Load older stories takes over. */
 const FILL_HOURS = 72
 const FILL_MAX_ROWS = 8000
+// THE BACKFILL PAGE IS THE ROUTE'S CAP, NOT A FIFTH OF IT (2026-09-25, #74,
+// the reader watching the count climb: "I see that its increasing as i
+// reload, why cant i have it all at once").
+//
+// This page has its OWN pager, separate from lib/olderNews — so both had to
+// be raised, and changing only the shared one left this unchanged and the
+// count still climbing. At a hundred a page, covering a busy 72 hours is
+// about thirty-six round trips, each paying the reader's own distance to
+// the server (~110-250ms) whatever it carries.
+//
+// MEASURED on one page: 100 stories is 15KB gzipped in 16ms, 500 is 76KB in
+// 31ms — five times the rows for 1.9 times the server time, because the
+// trip dominates and the rows are cheap. `api_news` caps a page at 500, so
+// asking for less than that just buys more trips.
+//
+// The LIVE query stays at 300: that one is refetched every sixty seconds by
+// every open tab, and it is the payload the note below is about. These
+// pages are read once.
+const FILL_PAGE = 500
 
 export default function NewsPage() {
   const { data, error } = useNews()
@@ -99,7 +118,7 @@ export default function NewsPage() {
     if (!last || olderState === "loading") return
     setOlderState("loading")
     try {
-      const page = await api.newsPage({ before: last, limit: 100 })
+      const page = await api.newsPage({ before: last, limit: FILL_PAGE })
       setOlder(o => [...o, ...page.articles])
       setOlderState(page.articles.length ? "idle" : "end")
     } catch {
