@@ -175,7 +175,7 @@ export const BODY_VIEWPORT_CAP = "calc(100vh - 190px)"
 
 export function Widget({
   title, symbol, subtitle, actions, toolbar, toolbarWraps, span = 12, className, bodyClassName,
-  scroll, minBody, fitViewport = true, children,
+  scroll, scrollRef, minBody, fitViewport = true, children,
 }: {
   title?: React.ReactNode
   /** Rendered in accent blue before the title, the way AlphaSpace prefixes a
@@ -201,6 +201,9 @@ export function Widget({
    * (2026-09-02). A STRING is exact — viewport-fit bodies like the earnings
    * calendar reserve their height up front. */
   scroll?: number | string
+  /** The element a string `scroll` makes scrollable. A list that renders only
+   * the rows on screen has to listen to it, and it is created in here (#81). */
+  scrollRef?: React.Ref<HTMLDivElement>
   /** A toolbar holding a DROP-DOWN wraps instead of scrolling: a scrolling
    * row is a clipping box and the menu opens inside it, invisible. */
   toolbarWraps?: boolean
@@ -404,7 +407,7 @@ export function Widget({
           // content contributes no height at all: the section rests on its own
           // minimum, and a taller neighbour still stretches it and gets filled
           // rather than leaving a gap.
-          <div className="absolute inset-0 overflow-y-auto">{children}</div>
+          <div ref={scrollRef} className="absolute inset-0 overflow-y-auto">{children}</div>
         ) : children}
       </div>
     </section>
