@@ -13,6 +13,7 @@ import { Btn, Empty, fieldCls, Widget, btnCls, menuItemCls } from "@/components/
 import { Menu } from "@/components/ChartToolbar"
 import { cn } from "@/lib/utils"
 import { newsTime } from "@/lib/newsClock"
+import { useWindowedRows } from "@/lib/windowedRows"
 import { matchesStory } from "@/lib/newsMatch"
 import { useQuery } from "@tanstack/react-query"
 
@@ -94,13 +95,7 @@ export default function NewsPage() {
 
   // Arriving from another screen's headline: bring the selected row into
   // view once the list has rendered it.
-  const openRef = useRef<HTMLLIElement>(null)
   const arrived = useRef(false)
-  useEffect(() => {
-    if (arrived.current || !openId || !openRef.current) return
-    arrived.current = true
-    openRef.current.scrollIntoView({ block: "center" })
-  })
 
   // Older pages the reader loaded below the window, and a search of all
   // stored news that replaces the list while it is open (2026-09-15).
@@ -231,6 +226,29 @@ export default function NewsPage() {
   }, [articles, needle, companies, onBoard, source, boardSymbols, meant, related])
   const open = articles.find(a => a.article_id === openId) ?? window_.find(a => a.article_id === openId) ?? null
 
+  // The list renders only what is on screen (#81). 104px is what a row
+  // measured on the owner's board — an estimate only, corrected per row as
+  // each one is seen. A change of filter is a different list, so the
+  // measurements are thrown away with it.
+  const win = useWindowedRows({
+    count: shown.length,
+    estimate: 104,
+    resetKey: `${needle}|${onBoard}|${source}|${feed}|${search?.q ?? ""}`,
+  })
+
+  // ARRIVING WITH A STORY IN THE URL scrolls to it once. It is placed by
+  // arithmetic rather than by calling scrollIntoView on its element,
+  // because the row of a story further down the list has no element until
+  // the list has been scrolled near it — which is the whole point of
+  // rendering only a window.
+  useEffect(() => {
+    if (arrived.current || !openId || !shown.length) return
+    const i = shown.findIndex(a => a.article_id === openId)
+    if (i < 0) return
+    arrived.current = true
+    win.scrollToIndex(i)
+  }, [openId, shown, win])
+
   // Stories about the board's stocks stand out, and those published since the
   // last visit are marked new (2026-09-15). The mark is read once when the
   // page opens, so this visit's highlights hold while it is open, and moved
@@ -282,6 +300,7 @@ export default function NewsPage() {
           : search ? `search of all stored news for “${search.q}”${search.rows ? ` · ${search.rows.length} stories` : " · searching…"}`
           : data ? `${articles.length} stories, newest first · new stories arrive as they publish` : "loading…"}
         scroll="calc(100vh - 212px)"
+        scrollRef={win.attach}
         // Not expandable, same as the Reader beside it: the list and the
         // reader ARE this page's layout, and full-width for either one just
         // hides the other.
@@ -414,11 +433,23 @@ export default function NewsPage() {
             : needle || onBoard || source || feed ? "nothing matches these filters" : "no news in the window"}</Empty>
         )}
         {!err && shown.length > 0 && (
-          <ul>
-            {shown.map(a => {
+          // ONLY THE ROWS ON SCREEN (#81). Every story used to be a real row:
+          // at 800 stories that was 7,394 nodes and 676ms of blocked main
+          // thread on arrival, and the reader's window runs to thousands
+          // while the backfill keeps re-rendering the lot. The blank bands
+          // above and below stand in for the rest, so the scrollbar still
+          // measures the whole list.
+          // overflow-anchor OFF: the browser tries to hold your visual place
+          // when content above the viewport changes size, and the spacer
+          // above IS content above the viewport changing size. Scrolling
+          // back to the top was silently undone by it — measured going to 0
+          // and coming back to 59,355px.
+          <ul style={{ paddingTop: win.padTop, paddingBottom: win.padBottom, overflowAnchor: "none" }}>
+            {shown.slice(win.start, win.end).map((a, i) => {
+              const index = win.start + i
               const on = a.article_id === openId
               return (
-                <li key={a.article_id} ref={on ? openRef : undefined}
+                <li key={a.article_id} ref={win.measure(index)}
                     className={`row-rule ${on ? "bg-row-selected" : "hover:bg-foreground/5"} ${
                       board.onBoard.has(a.article_id) ? "shadow-[inset_3px_0_0_var(--accent)]" : ""}`}>
                   <button
