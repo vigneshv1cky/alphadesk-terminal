@@ -51,6 +51,41 @@ const AXIS_H = 22      // bottom time gutter
 // numbers describing it.
 const AXIS_GAP = 12
 
+/** The tag counting down to the forming bar's close.
+ *
+ * ITS OWN COMPONENT SO ITS CLOCK IS ITS OWN (2026-09-25, #76). Held in
+ * ChartCanvas, the once-a-second setState re-rendered the entire chart for
+ * a rectangle and a number — measured at 2.1-3.5 MB of allocation per
+ * second with no DOM change at all. Here a tick re-renders these two
+ * elements and nothing else.
+ *
+ * Null while the market is closed or there is no forming bar: a countdown to
+ * nothing is worse than no countdown. */
+function BarCountdown({ live, lastT, interval, x, y, w, cx, ty, fill, textFill }: {
+  live: boolean
+  lastT: string | undefined
+  interval: string | undefined
+  x: number; y: number; w: number; cx: number; ty: number
+  fill: string; textFill: string
+}) {
+  const [left, setLeft] = useState<number | null>(null)
+  useEffect(() => {
+    if (!live || !lastT || !interval) { setLeft(null); return }
+    const tick = () => setLeft(barCloseCountdown(lastT, interval))
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [live, lastT, interval])
+  if (left == null) return null
+  return (
+    <>
+      <rect x={x} y={y} width={w} height={14} fill={fill} fillOpacity={0.75} />
+      <text x={cx} y={ty} fill={textFill} fontSize={10} textAnchor="middle"
+            className="tnum">{countdownLabel(left)}</text>
+    </>
+  )
+}
+
 export function ChartCanvas({
   bars, kind, scale: scaleMode, height, panes = [],
   gain, loss, accent, grid, text, tagBg, tagFg, tagBorder, bg = "#f3f2f2",
@@ -895,17 +930,21 @@ export function ChartCanvas({
     })), 48)
   }, [parts, from, to, seriesW, s, bars.length])
 
-  /** Seconds to the forming bar's close, ticking once a second while the
-   * feed is live. Null hides the tag: a countdown on a closed market would
-   * be counting to nothing. */
-  const [countdown, setCountdown] = useState<number | null>(null)
-  useEffect(() => {
-    if (!live || !last) { setCountdown(null); return }
-    const tick = () => setCountdown(barCloseCountdown(last.t, interval))
-    tick()
-    const id = window.setInterval(tick, 1000)
-    return () => window.clearInterval(id)
-  }, [live, last?.t, interval])  // eslint-disable-line react-hooks/exhaustive-deps
+  /* The countdown's once-a-second state used to live HERE, and that one
+   * line of comfort cost the whole chart (2026-09-25, #76). Every tick set
+   * state on ChartCanvas, so React re-ran the entire render — bars, scales,
+   * indicator geometry, axis ticks — once a second, for a two-element tag.
+   *
+   * MEASURED: /chart allocated 2.1-3.5 MB a SECOND with zero SVG mutations,
+   * which is the signature exactly: everything recomputed, the output
+   * identical, nothing patched. A tab left open went from 46MB to 680MB in
+   * five minutes. /calendars, which draws no chart, allocated nothing at
+   * all. The note at `overlayPaths` above had already met this — "every
+   * countdown second re-walked every point of every line" — and memoised
+   * the paths, which treated the symptom and left the re-render.
+   *
+   * It lives in its own component below now, so a tick re-renders the tag
+   * and nothing else. */
 
   // The view controls, for whoever holds the ref.
   useEffect(() => {
@@ -1312,12 +1351,11 @@ export function ChartCanvas({
             {/* The countdown to this bar's close, under the price the way
                 theirs sits — the one number that says how much of the
                 forming bar is still to come. */}
-            {countdown != null && lastOnPane && (
-              <>
-                <rect x={plotW + 2} y={tagY + 8} width={AXIS_W - 4} height={14} fill={trend} fillOpacity={0.75} />
-                <text x={plotW + AXIS_W / 2} y={tagY + 18.5} fill={bg} fontSize={10}
-                  textAnchor="middle" className="tnum">{countdownLabel(countdown)}</text>
-              </>
+            {lastOnPane && (
+              <BarCountdown live={live} lastT={last?.t} interval={interval}
+                            x={plotW + 2} y={tagY + 8} w={AXIS_W - 4}
+                            cx={plotW + AXIS_W / 2} ty={tagY + 18.5}
+                            fill={trend} textFill={bg} />
             )}
           </g>
           )
