@@ -79,53 +79,108 @@ log = logging.getLogger("alphadesk.providers.scraped")
 # it at once. A PAST DAY IS KEPT FOR A WEEK because its list of reporters
 # does not change; today and forward are re-read every 15 minutes.
 #
-# Kept PER READER (invariant 8): a scraped source is the least licensed data
-# here, not the most, so a global cache serving the next reader would be the
-# plainest case of redistribution rather than an exception to it.
+# SHARED, NOT PER READER (2026-09-25, #71, the owner's call, reversing the
+# per-reader keying of #67 one day later). Yesterday this was kept per reader
+# on the reasoning that a scraped source is the least licensed data here. The
+# owner's counter is better and decided it: the page is IDENTICAL for every
+# reader — no key shapes a halt list or a calendar day — so per-reader keying
+# bought no privacy and cost one fetch of the site PER READER. Ten readers,
+# ten hits on the same Nasdaq page. Sharing the row is politer to the site.
+#
+# It does NOT dissolve the concern that removed operator sources in PR #71:
+# one copy of someone else's data, served from our server to many readers, is
+# the redistribution shape, and the owner took that decision with the trade
+# stated rather than by accident. See CLAUDE.md.
+#
+# In the DATABASE, not memory: a restart used to lose every day and make the
+# next visitor wait out the refill. Retention is in config.py and the sweep
+# is store.prune_vendor_data, like every other vendor table.
+_PAST_DAY_TTL_S = 7 * 86_400
+_LIVE_DAY_TTL_S = 900.0
+
 # The splits list is one answer whatever date is asked for, so it is kept
 # under one name — see split_calendar. Treated as a LIVE day (15 minutes),
 # because it is always about what is still to come.
 _SPLITS_KEY = "9999-12-31"
-_DAY_CACHE_MAX = 4_000
-_PAST_DAY_TTL_S = 7 * 86_400
-_LIVE_DAY_TTL_S = 900.0
-# ITS OWN WORKER, not the shared fill pool: that one has two threads and is
-# held for most of a minute by EDGAR release-timing lookups, so these day
-# fetches queued behind them and never ran — the fill silently never landed
-# and this source looked broken rather than merely slow. One thread is the
-# right number, because the pacing gate serialises these anyway.
+
+# Its own worker: the shared fill pool has two threads and is held for most
+# of a minute by EDGAR release-timing lookups, so these day fetches queued
+# behind them and never ran. One thread is the right number, because the
+# pacing gate serialises them anyway.
 _fill_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scraped-fill")
-_day_cache: dict[tuple[str, str, str], tuple[float, list[dict]]] = {}
-_day_lock = threading.Lock()
-
-
-def _owner() -> str:
-    """The reader this call runs for, or the open instance's single account."""
-    from alphadesk.providers.registry import _request_uid
-    return _request_uid() or "local"
+# The queue key for work that belongs to no reader. Not a user id; it exists
+# so two readers asking for one page queue one fetch between them.
+_FILL_OWNER = "scraped"
 
 
 def _today_ny() -> str:
-    from alphadesk.config import session_label            # noqa: F401 — tz set there
     return datetime.now(timezone(timedelta(hours=-5))).date().isoformat()
 
 
-def cached_day(owner: str, kind: str, day: str) -> list[dict] | None:
+def day_ttl(day: str) -> float:
+    """A past day's list does not change; today and forward do."""
+    return _PAST_DAY_TTL_S if day < _today_ny() else _LIVE_DAY_TTL_S
+
+
+# WHY THE LAST FILL FAILED, so a request can still say so (2026-09-25, #71).
+#
+# Moving the fetch into the background nearly undid #63. There, a failed read
+# was made to RAISE so a source that was switched on but unreachable stopped
+# looking exactly like a quiet day. With the fetch behind a background fill
+# the request no longer touches the site at all, so a failure would leave an
+# empty store and the panel would go back to saying "switch it on" — about a
+# source the reader is already holding.
+#
+# So the fill records why it failed and the read hands that to the caller,
+# which puts the reason back in front of the reader. Cleared on success,
+# because a source that answered is not failing any more.
+_last_error: dict[str, str] = {}
+
+
+def note_fill(kind: str, error: str | None) -> None:
+    if error:
+        _last_error[kind] = error
+    else:
+        _last_error.pop(kind, None)
+
+
+def raise_if_failing(kind: str) -> None:
+    """Raise the last fill failure for `kind`, if there was one. Called when
+    the store has nothing: empty-because-unread is silence, but
+    empty-because-refused is an error the reader should see."""
+    why = _last_error.get(kind)
+    if why:
+        raise ProviderError(why)
+
+
+def _key(day: str) -> str:
+    """ONE SPELLING FOR BOTH SIDES OF THE STORE (2026-09-25, #71).
+
+    The fill queue is a SYMBOL api and uppercases what it is given, which is
+    right for a ticker and invisible for an ISO date — but a key like
+    "today" came back as "TODAY", so the job stored a row the read could
+    never find. Halts filled and then read as empty, over and over, while
+    the calendars worked perfectly because a date has no letters in it.
+    Normalising here means the two sides agree whatever the queue does."""
+    return day.upper()
+
+
+def cached_day(kind: str, day: str) -> list[dict] | None:
     """Rows already read for this day, or None when it must be fetched."""
-    with _day_lock:
-        hit = _day_cache.get((owner, kind, day))
-    if hit is None:
+    from alphadesk.ledger import store
+    try:
+        return store.get_scraped("nasdaq", kind, _key(day), day_ttl(day))
+    except Exception as exc:                             # a store fault must not blank a panel
+        log.debug("scraped read %s/%s: %s", kind, day, exc)
         return None
-    at, rows = hit
-    ttl = _PAST_DAY_TTL_S if day < _today_ny() else _LIVE_DAY_TTL_S
-    return rows if time.time() - at < ttl else None
 
 
-def store_day(owner: str, kind: str, day: str, rows: list[dict]) -> None:
-    with _day_lock:
-        if len(_day_cache) > _DAY_CACHE_MAX:
-            _day_cache.clear()
-        _day_cache[(owner, kind, day)] = (time.time(), rows)
+def store_day(kind: str, day: str, rows: list[dict]) -> None:
+    from alphadesk.ledger import store
+    try:
+        store.put_scraped("nasdaq", kind, _key(day), rows)
+    except Exception as exc:                             # pragma: no cover
+        log.debug("scraped write %s/%s: %s", kind, day, exc)
 
 
 _MIN_GAP_S = 0.4
@@ -530,7 +585,7 @@ class NasdaqCalendars:
 
     # ── the calendars ──────────────────────────────────────────────────────
 
-    def _fill_days(self, owner: str, kind: str, days: list[str]) -> None:
+    def _fill_days(self, kind: str, days: list[str]) -> None:
         """Read these days in the background, under the reader who asked.
 
         Queued through ingest/background_fill.py, which already stamps the
@@ -549,14 +604,23 @@ class NasdaqCalendars:
                 try:
                     if kind == "earnings":
                         rows = self._rows(f"calendar/earnings?date={key}")
+                    elif kind == "halts":
+                        rows = self._read_halts()
                     else:
                         rows = self._rows("calendar/splits?date=" + _today_ny())
                 except ProviderError as exc:
                     log.debug("nasdaq %s %s: %s", kind, key, exc)
+                    note_fill(kind, str(exc))
                     continue
-                store_day(owner, kind, key, rows)
+                note_fill(kind, None)
+                store_day(kind, key, rows)
 
-        background_fill.submit(f"nasdaq-{kind}", owner, days, job, pool=_fill_pool)
+        # DEDUPED GLOBALLY, not per reader (2026-09-25, #71). The store is
+        # shared now, so two readers wanting the same day want the SAME
+        # fetch; keying the queue by reader would have them both make it.
+        # The job needs no identity — it reads a public page with no
+        # credential and writes a row belonging to nobody.
+        background_fill.submit(f"nasdaq-{kind}", _FILL_OWNER, days, job, pool=_fill_pool)
 
     def earnings_calendar(self, start: str, end: str, symbol: str | None = None) -> list[dict] | None:
         """The market's reporters, day by day, WITH the session each states.
@@ -570,15 +634,14 @@ class NasdaqCalendars:
         # "time-pre-market" / "time-after-hours" / "time-not-supplied".
         session = {"time-pre-market": "BMO", "time-after-hours": "AMC"}
         want = (symbol or "").upper()
-        owner = _owner()
         out: list[dict] = []
-        missing = [d for d in days if cached_day(owner, "earnings", d) is None]
+        missing = [d for d in days if cached_day("earnings", d) is None]
         if missing:
             # The request does not wait for these; the next build reads them
             # from the cache this fill warms.
-            self._fill_days(owner, "earnings", missing)
+            self._fill_days("earnings", missing)
         for day in days:
-            rows = cached_day(owner, "earnings", day)
+            rows = cached_day("earnings", day)
             if rows is None:
                 continue
             for r in rows:
@@ -642,7 +705,6 @@ class NasdaqCalendars:
         # 3.27s against Alpaca's 0.07s for the same surface, so this waits on
         # the background fill too — one request, but one nobody should sit
         # through on a page load.
-        owner = _owner()
         # ONE KEY, NOT THE WINDOW (2026-09-24, #67). Keying this by the
         # window looked right and never hit: the calendar asks for "today
         # forward" padded by the match window, so the key moved with the
@@ -651,9 +713,9 @@ class NasdaqCalendars:
         # returns the same upcoming list either way — which is exactly why it
         # is asked once — so one key is both correct and stable, and the
         # filtering below already cuts it to the window asked for.
-        rows = cached_day(owner, "splits", _SPLITS_KEY)
+        rows = cached_day("splits", _SPLITS_KEY)
         if rows is None:
-            self._fill_days(owner, "splits", [_SPLITS_KEY])
+            self._fill_days("splits", [_SPLITS_KEY])
             return None
         out: list[dict] = []
         seen: set[tuple[str, str]] = set()
@@ -696,7 +758,7 @@ class NasdaqCalendars:
         "IPOQ": "New issue — quotation period",
     }
 
-    def trading_halts(self, limit: int = 100) -> list[dict] | None:
+    def _read_halts(self) -> list[dict]:
         """TRADING HALTS AND RESUMPTIONS the exchange currently lists, newest
         first — which is NOT the same as today's.
 
@@ -767,7 +829,20 @@ class NasdaqCalendars:
         # Newest first. The same stock can be halted several times in a day —
         # each pause is its own event and none of them is a duplicate.
         out.sort(key=lambda r: r["halted_at"] or "", reverse=True)
-        return out[:max(1, min(int(limit), 500))] or None
+        return out
+
+    def trading_halts(self, limit: int = 100) -> list[dict] | None:
+        """The halts, from the SHARED STORE the background loop keeps fresh
+        (2026-09-25, #71) — a reader never waits for this scrape. Missing or
+        stale, it is queued and this answers with nothing rather than
+        holding the page; the loop refreshes it every couple of minutes, so
+        "nothing" is a state that lasts one cycle at most."""
+        rows = cached_day("halts", "today")
+        if rows is None:
+            raise_if_failing("halts")
+            self._fill_days("halts", ["today"])
+            return None
+        return rows[:max(1, min(int(limit), 500))] or None
 
     def ipo_calendar(self, start: str, end: str) -> list[dict] | None:
         """New listings. This route is a MONTH at a time and answers four
@@ -850,6 +925,38 @@ class SocialPulse:
         self.reader_id: str | None = None
 
     def social_posts(self, limit: int = 20) -> list[dict] | None:
+        """The posts, from the SHARED STORE the background loop keeps fresh
+        (2026-09-25, #71) — a reader never waits for this scrape."""
+        from alphadesk.ledger import store
+        try:
+            rows = store.get_scraped("social", "posts", "LATEST", _LIVE_DAY_TTL_S)
+        except Exception as exc:                        # a store fault must not blank the panel
+            log.debug("social read: %s", exc)
+            rows = None
+        if rows is None:
+            raise_if_failing("posts")
+            self._fill_posts()
+            return None
+        return rows[:max(1, min(int(limit), 100))] or None
+
+    def _fill_posts(self) -> None:
+        """Read the mirror in the background, into the shared store."""
+        from alphadesk.ingest import background_fill
+
+        def job(_keys: list[str]) -> None:
+            from alphadesk.ledger import store
+            try:
+                rows = self._read_posts()
+            except ProviderError as exc:
+                log.debug("social fill: %s", exc)
+                note_fill("posts", str(exc))
+                return
+            note_fill("posts", None)
+            store.put_scraped("social", "posts", "LATEST", rows)
+
+        background_fill.submit("social-posts", _FILL_OWNER, ["LATEST"], job, pool=_fill_pool)
+
+    def _read_posts(self) -> list[dict]:
         """Recent posts from the Truth Social account mirror at
         trumpstruth.org, newest first.
 
@@ -896,7 +1003,7 @@ class SocialPulse:
                                  "and this is a third party's copy of one",
                         "source": self.name})
         out.sort(key=lambda r: r["at"], reverse=True)
-        return out[:max(1, min(int(limit), 100))] or None
+        return out
 
 register("prices", YahooPrices.name, YahooPrices)
 register("prices", NasdaqCalendars.name, NasdaqCalendars)

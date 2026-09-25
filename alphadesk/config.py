@@ -145,6 +145,12 @@ FORECAST_KEEP_DAYS = 120
 HABIT_KEEP_DAYS = 3
 PRESS_CHECK_KEEP_HOURS = 24
 POOL_KEEP_DAYS = 7
+# Scraped pages, held once for everyone (2026-09-25, #71). A calendar day is
+# useful while the earnings window still reaches it; halts and posts are
+# about right now and are worthless the next day. Kept only as long as a
+# feature reads them, like every other vendor table.
+SCRAPED_KEEP_DAYS = float(env_value("SCRAPED_KEEP_DAYS", "21"))
+SCRAPED_LIVE_KEEP_HOURS = float(env_value("SCRAPED_LIVE_KEEP_HOURS", "24"))
 # Per-user feeds (phase 3). A reader's own key is polled only while they have
 # been seen within the activity window, and each cycle is capped, so a
 # sleeping reader's vendor quota is not spent. Both caps are visible here,

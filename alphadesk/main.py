@@ -195,6 +195,37 @@ async def _serve() -> None:
             scheduler.beat()
             await asyncio.sleep(30 * 60)
 
+    async def _scrape_loop():
+        """The scraped pages, kept fresh in the shared store (2026-09-25,
+        #71, ingest/scrape_loop.py). Only for a source somebody switched on,
+        and stoppable with ALPHADESK_SCRAPE_LOOP=off.
+
+        ON ITS OWN THREAD, not the default executor: a cold first cycle
+        measured 55 seconds (21 calendar days behind the scraper's 0.4s
+        pacing gate), and the default executor is shared with work that
+        serves requests. Background work must never take a thread a reader
+        is waiting on — the same rule the embedding worker learned the hard
+        way (semantic.py, 2026-09-19)."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        from alphadesk.ingest import scrape_loop
+        loop = asyncio.get_running_loop()
+        log = logging.getLogger("alphadesk.scrape")
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scrape-loop")
+        # Minus infinity, not 0: the monotonic clock counts from the
+        # machine's boot, so 0 would skip the first interval on a fresh
+        # container (#264).
+        last: dict[str, float] = {}
+        while True:
+            if scrape_loop.switched_on():
+                try:
+                    done = await loop.run_in_executor(pool, scrape_loop.cycle, last)
+                    if done:
+                        log.info("scraped: %s", done)
+                except Exception as exc:
+                    log.warning("scrape cycle failed: %s", exc)
+            await asyncio.sleep(60)
+
     # The web server is the FOREGROUND task and the ingest loops are
     # background tasks — not one gather over all three. Uvicorn installs the
     # SIGINT/SIGTERM handlers and its serve() returns once it has drained;
@@ -211,7 +242,8 @@ async def _serve() -> None:
     prewarm.start()
     ingest_tasks = [asyncio.create_task(_edgar_releases_loop()),
                     asyncio.create_task(_news_loop()),
-                    asyncio.create_task(_forecast_loop())]
+                    asyncio.create_task(_forecast_loop()),
+                    asyncio.create_task(_scrape_loop())]
     try:
         await _web_server().serve()
     finally:
