@@ -24,6 +24,8 @@ const etTime = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { time
 const isoDate = (d: Date) => d.toISOString().slice(0, 10)
 const shift = (day: string, days: number) => { const d = new Date(day + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return isoDate(d) }
 /** The Monday of the week holding `day`. */
+const weekLabel = (day: string) =>
+  new Date(day + "T12:00:00Z").toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" })
 const weekStart = (day: string) => { const d = new Date(day + "T12:00:00Z"); const off = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - off); return isoDate(d) }
 
 const IMPACT: Record<string, string> = { high: "bg-loss", medium: "bg-accent-700", low: "bg-muted-foreground/50" }
@@ -153,16 +155,20 @@ export function EconomicCalendarPanel({ span = 12 }: { span?: number }) {
                   </Menu>
                 )}
                 <Btn onClick={() => setStart(s => shift(s, -7))} title="Previous week">‹</Btn>
-                {/* "THIS WEEK", NOT "TODAY" (2026-09-25, #75, the reader: "this button
-          is misleading, making all feel like today"). It sits between two
-          week arrows and jumps back to the CURRENT week — its own tooltip
-          already said "This week" while the label said "Today", so the
-          control disagreed with itself. A calendar showing five days should
-          never label anything "Today" unless that is the day it is
-          showing. */}
-      <Btn onClick={() => setStart(weekStart(isoDate(new Date())))}
-           title="Jump back to the current week">This week</Btn>
+                {/* THE WEEK ON SCREEN, NOT A BUTTON PRETENDING TO BE ONE
+                    (2026-09-25, #77). A fixed label between two arrows reads
+                    as a STATEMENT about what is displayed, so paging to
+                    October still said "This week" and every row felt like
+                    today's. The dates are the honest label, and the way back
+                    exists only when there is somewhere to come back from. */}
+                <span className="px-1 text-caption tabular-nums text-muted-foreground">
+                  {weekLabel(start)} – {weekLabel(shift(start, 6))}
+                </span>
                 <Btn onClick={() => setStart(s => shift(s, 7))} title="Next week">›</Btn>
+                {start !== weekStart(isoDate(new Date())) && (
+                  <Btn onClick={() => setStart(weekStart(isoDate(new Date())))}
+                       title="Jump back to the week containing today">This week</Btn>
+                )}
               </div>
             }>
       {q.isPending ? <Empty>loading…</Empty>

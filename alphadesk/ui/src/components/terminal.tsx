@@ -174,8 +174,8 @@ export function TileSlot({ span, align, children }: {
 export const BODY_VIEWPORT_CAP = "calc(100vh - 190px)"
 
 export function Widget({
-  title, symbol, subtitle, actions, toolbar, span = 12, className, bodyClassName, scroll, minBody,
-  fitViewport = true, children,
+  title, symbol, subtitle, actions, toolbar, toolbarWraps, span = 12, className, bodyClassName,
+  scroll, minBody, fitViewport = true, children,
 }: {
   title?: React.ReactNode
   /** Rendered in accent blue before the title, the way AlphaSpace prefixes a
@@ -201,6 +201,9 @@ export function Widget({
    * (2026-09-02). A STRING is exact — viewport-fit bodies like the earnings
    * calendar reserve their height up front. */
   scroll?: number | string
+  /** A toolbar holding a DROP-DOWN wraps instead of scrolling: a scrolling
+   * row is a clipping box and the menu opens inside it, invisible. */
+  toolbarWraps?: boolean
   /** Reserve this many pixels of BODY height without capping it, so a tile
    * that grows into its rows does not shove the board down when they land.
    * A cap would bring back the inner scroller the board deliberately has
@@ -346,7 +349,17 @@ export function Widget({
         // Scrolls sideways when its controls are wider than the tile — on a
         // phone the movers tabs cut "Losers" off at the edge (2026-09-18).
         <div data-slot="widget-toolbar"
-             className="scrollbar-none flex h-[40px] shrink-0 items-center gap-1.5 overflow-x-auto border-b border-card-rule bg-card px-3">
+             className={cn(
+               "flex shrink-0 items-center gap-1.5 border-b border-card-rule bg-card px-3",
+               // A SCROLLING ROW CLIPS ITS MENU (the convention, and #77 is
+               // it being broken): `overflow-x-auto` makes a clipping box,
+               // so a drop-down opened from inside one is rendered outside
+               // the clip and simply never appears. A toolbar that holds a
+               // menu WRAPS instead, and grows rather than scrolling.
+               toolbarWraps
+                 ? "min-h-[40px] flex-wrap py-1"
+                 : "scrollbar-none h-[40px] overflow-x-auto",
+             )}>
           {toolbar}
         </div>
       )}
