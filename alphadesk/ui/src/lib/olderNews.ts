@@ -17,7 +17,27 @@ import { api, type NewsArticle } from "@/lib/api"
  */
 
 const PAGES_PER_PRESS = 3
-const PAGE = 100
+// THE PAGE IS THE SERVER'S CAP, NOT A FIFTH OF IT (2026-09-25, #74, the
+// reader watching the count climb: "I see that its increasing as i reload,
+// why cant i have it all at once").
+//
+// The window is filled by paging backwards until the oldest story held is
+// older than the lookback, and at a hundred a page that is about
+// THIRTY-SIX round trips to cover a busy 72 hours — each one paying the
+// reader's own distance to the server, ~110-250ms, whatever it carries.
+// The number on screen climbs the whole time.
+//
+// MEASURED on one page: 100 stories is 15KB gzipped in 16ms, 500 is 76KB in
+// 31ms. Five times the rows for 1.9 times the server time, because the
+// round trip dominates and the rows are cheap. So ask for what the route
+// will actually give — `api_news` caps a page at 500 — and the same window
+// arrives in about eight trips instead of thirty-six.
+//
+// The LIVE query is untouched at 300: that one is refetched every sixty
+// seconds by every open tab, and it is the payload that note about
+// "several megabytes on a 60-second poll" is about. These pages are read
+// once.
+const PAGE = 500
 
 export type OlderState = "idle" | "loading" | "end" | "error"
 
