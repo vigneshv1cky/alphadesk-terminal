@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from "react"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { useQuery } from "@tanstack/react-query"
-import { api, type EconomicEvent } from "@/lib/api"
+import { on, type EconomicEvent } from "@/lib/api"
 import { Menu } from "@/components/ChartToolbar"
 import { DEFAULT_FILTER, countryCounts, isDefault, parseFilter, passes, type EconomicFilter, type ImpactFloor } from "@/lib/economicFilter"
 import { Btn, Empty, Table, TD, TH, THead, Widget, btnCls } from "@/components/terminal"
@@ -110,7 +110,7 @@ function FilterPopover({ filter, onChange, countries }: {
 export function useEconomicCalendar(start: string, end: string) {
   return useQuery({
     queryKey: ["economic", start, end],
-    queryFn: () => api.economic(start, end),
+    queryFn: ({ signal }) => on(signal).economic(start, end),
     staleTime: 30 * 60_000,
     refetchInterval: 30 * 60_000,
     refetchIntervalInBackground: true,

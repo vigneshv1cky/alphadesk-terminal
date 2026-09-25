@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { api, type Quote } from "@/lib/api"
+import { on, type Quote } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { useEarnings, useFundamentals, useQuote, useQuotes, useScreener, useThemes } from "@/lib/queries"
 import { ComparisonPanel } from "@/components/ComparisonPanel"
@@ -158,7 +158,7 @@ function EarningsContextTile() {
   const { active } = useBoardSymbols()
   const ctx = useQuery({
     queryKey: ["earnings-context", active],
-    queryFn: () => api.earningsContext(active),
+    queryFn: ({ signal }) => on(signal).earningsContext(active),
     enabled: !!active,
     staleTime: 10 * 60_000,
   })
@@ -295,7 +295,7 @@ function MarketFilings() {
   const { add } = useBoardSymbols()
   const q = useQuery({
     queryKey: ["filing-feed"],
-    queryFn: () => api.filingFeed(40),
+    queryFn: ({ signal }) => on(signal).filingFeed(40),
     staleTime: 60_000,
     refetchInterval: 3 * 60_000,
     refetchIntervalInBackground: true,
@@ -360,7 +360,7 @@ function FilingsTile() {
   const [scope, setScope] = useState<"symbol" | "market">("symbol")
   const filings = useQuery({
     queryKey: ["filings", active],
-    queryFn: () => api.filings(active),
+    queryFn: ({ signal }) => on(signal).filings(active),
     enabled: !!active && scope === "symbol",
     staleTime: 10 * 60_000,
   })
@@ -443,7 +443,7 @@ function OwnershipTile() {
   const { active } = useBoardSymbols()
   const own = useQuery({
     queryKey: ["ownership", active],
-    queryFn: () => api.ownership(active),
+    queryFn: ({ signal }) => on(signal).ownership(active),
     enabled: !!active,
     staleTime: 30 * 60_000,
     retry: false,

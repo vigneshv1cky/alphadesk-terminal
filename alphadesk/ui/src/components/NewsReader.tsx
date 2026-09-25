@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useEarningsFind } from "@/lib/queries"
 import { reportBehindStory, reportedLine } from "@/lib/storyReport"
 import { HeadlineTickers } from "@/components/HeadlineTickers"
-import { api, type NewsArticle } from "@/lib/api"
+import { on, type NewsArticle } from "@/lib/api"
 import { vendorLabel, viaFeeds } from "@/lib/vendors"
 import { Empty } from "@/components/terminal"
 
@@ -50,7 +50,7 @@ export function NewsReader({ article: listed, onBack }: {
   const wantsText = !!listed && !listed.body && (!!listed.has_body || (listed.feeds ?? []).includes("alpaca"))
   const story = useQuery({
     queryKey: ["news", "story", listed?.article_id],
-    queryFn: () => api.newsStory(listed!.article_id),
+    queryFn: ({ signal }) => on(signal).newsStory(listed!.article_id),
     enabled: wantsText,
     staleTime: Infinity,
     retry: false,

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { Empty, TD, TH, THead, TR, Table, Widget } from "@/components/terminal"
-import { api, type GovEvent } from "@/lib/api"
+import { on, type GovEvent } from "@/lib/api"
 
 /** WHAT THE GOVERNMENT JUST DID, beside the economic calendar (2026-09-23).
  *
@@ -44,7 +44,7 @@ function when(e: GovEvent): { text: string; title: string } {
 export function GovernmentActionsPanel({ span = 12 }: { span?: number }) {
   const q = useQuery({
     queryKey: ["gov-feed"],
-    queryFn: () => api.govFeed(40, 7),
+    queryFn: ({ signal }) => on(signal).govFeed(40, 7),
     staleTime: 5 * 60_000,
     refetchInterval: 10 * 60_000,
     refetchIntervalInBackground: true,

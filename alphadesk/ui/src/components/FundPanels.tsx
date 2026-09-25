@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { vendorLabel } from "@/lib/vendors"
 import { KeyPrompt, QueryFailure } from "@/components/KeyPrompt"
-import { api } from "@/lib/api"
+import { on } from "@/lib/api"
 import { usePrefetchChart } from "@/lib/queries"
 import { compact } from "@/components/Treemap"
 import { useBoardSymbols } from "@/lib/boardSymbols"
@@ -22,7 +22,7 @@ const pct = (v: number | null | undefined, d = 2) => (v == null ? dash : `${v.to
 export function useFund(symbol: string) {
   return useQuery({
     queryKey: ["fund", symbol],
-    queryFn: () => api.fund(symbol),
+    queryFn: ({ signal }) => on(signal).fund(symbol),
     enabled: !!symbol,
     staleTime: 6 * 60 * 60_000,
     retry: false,

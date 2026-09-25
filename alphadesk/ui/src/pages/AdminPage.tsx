@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { api, type Access, type AdminUser } from "@/lib/api"
+import { on, api, type Access, type AdminUser } from "@/lib/api"
 import { Empty, Table, TD, TH, THead, Widget, btnCls, fieldCls } from "@/components/terminal"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { DeleteAccountDialog } from "@/components/DeleteAccountDialog"
@@ -54,7 +54,7 @@ function Stat({ label, value }: { label: string; value: number | string }) {
 export default function AdminPage() {
   const { data: me } = useAuthMe()
   const qc = useQueryClient()
-  const users = useQuery({ queryKey: ["admin-users"], queryFn: api.adminUsers, enabled: !!me?.user?.owner, retry: false })
+  const users = useQuery({ queryKey: ["admin-users"], queryFn: ({ signal }) => on(signal).adminUsers(), enabled: !!me?.user?.owner, retry: false })
   const [busy, setBusy] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [query, setQuery] = useState("")

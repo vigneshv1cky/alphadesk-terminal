@@ -3,7 +3,7 @@ import { useKeptState } from "@/lib/keptState"
 import { defaultDay } from "@/lib/earningsDefaultDay"
 import { useQueryClient } from "@tanstack/react-query"
 import { X } from "lucide-react"
-import { api, type EarningsDay, type EarningsFind, type EarningsRow, type EarningsWeek } from "@/lib/api"
+import { on, type EarningsDay, type EarningsFind, type EarningsRow, type EarningsWeek } from "@/lib/api"
 import { keys, useEarningsFind, useEarningsWeek } from "@/lib/queries"
 import { Empty, btnCls } from "@/components/terminal"
 import { QueryFailure } from "@/components/KeyPrompt"
@@ -423,7 +423,7 @@ export function EarningsCalendar({ picked, pickedRow, onPick }: {
       for (const n of [1, -1]) {
         if (cancelled) return
         const s = shiftWeek(loadedStart, n)
-        await qc.prefetchQuery({ queryKey: keys.earningsWeek(s), queryFn: () => api.earningsWeek(s), staleTime: 60_000 })
+        await qc.prefetchQuery({ queryKey: keys.earningsWeek(s), queryFn: ({ signal }) => on(signal).earningsWeek(s), staleTime: 60_000 })
       }
     }
     void ahead()

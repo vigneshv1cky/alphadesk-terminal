@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { api, type RelatedFund } from "@/lib/api"
+import { on, type RelatedFund } from "@/lib/api"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { usePrefetchChart } from "@/lib/queries"
@@ -87,7 +87,7 @@ export function RelatedFundsPanel({ symbol, span = 6, scroll }: {
 }) {
   const q = useQuery({
     queryKey: ["related-funds", symbol],
-    queryFn: () => api.relatedFunds(symbol),
+    queryFn: ({ signal }) => on(signal).relatedFunds(symbol),
     enabled: !!symbol,
     staleTime: 10 * 60_000,
     retry: false,

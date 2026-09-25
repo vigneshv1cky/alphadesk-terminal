@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { vendorLabel } from "@/lib/vendors"
 import { QueryFailure } from "@/components/KeyPrompt"
-import { api, type KeyStats } from "@/lib/api"
+import { on, type KeyStats } from "@/lib/api"
 import { compact } from "@/components/Treemap"
 import { Empty, Widget } from "@/components/terminal"
 
@@ -19,7 +19,7 @@ const x = (v: number | null | undefined) => (v == null ? dash : `${v.toFixed(2)}
 export function useKeyStats(symbol: string) {
   return useQuery({
     queryKey: ["keystats", symbol],
-    queryFn: () => api.keyStats(symbol),
+    queryFn: ({ signal }) => on(signal).keyStats(symbol),
     enabled: !!symbol,
     staleTime: 10 * 60_000,
     refetchInterval: 10 * 60_000,

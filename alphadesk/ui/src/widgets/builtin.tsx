@@ -4,7 +4,7 @@ import { QueryFailure } from "@/components/KeyPrompt"
 import { HeadlineTickers } from "@/components/HeadlineTickers"
 import { NewsReader } from "@/components/NewsReader"
 import { OlderNews } from "@/components/OlderNews"
-import { api, type NewsArticle, type SocialPost } from "@/lib/api"
+import { on, type NewsArticle, type SocialPost } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { useNews, useSymbolNews } from "@/lib/queries"
 import { useOlderNews } from "@/lib/olderNews"
@@ -86,7 +86,7 @@ export function NewsTape({ span = 12 }: {
   // a different thing from showing them under a ticker they do not carry.
   const posts = useQuery({
     queryKey: ["social-posts"],
-    queryFn: () => api.socialPosts(20),
+    queryFn: ({ signal }) => on(signal).socialPosts(20),
     staleTime: 60_000,
     refetchInterval: 2 * 60_000,
     refetchIntervalInBackground: true,

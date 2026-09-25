@@ -1,7 +1,7 @@
 import { LogOut } from "lucide-react"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { api, type Access } from "@/lib/api"
+import { on, api, type Access } from "@/lib/api"
 import { useAuthMe, useSystem, useUserKeys } from "@/lib/queries"
 import { Dialog, Empty, fieldCls, Table, TD, TH, THead, TR, Widget, btnCls } from "@/components/terminal"
 import { PROVIDER_MARKS } from "@/components/providerMarks"
@@ -152,7 +152,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
 }) {
   const qc = useQueryClient()
   const { data } = useUserKeys()
-  const vendors = useQuery({ queryKey: ["data-vendors"], queryFn: api.dataVendors, staleTime: 30_000 })
+  const vendors = useQuery({ queryKey: ["data-vendors"], queryFn: ({ signal }) => on(signal).dataVendors(), staleTime: 30_000 })
   const vendorList = vendors.data?.vendors ?? []
   const vendorLabel = (name: string) => vendorList.find(v => v.name === name)?.label ?? name
   const [editing, setEditing] = useState<Seam | null>(null)
@@ -666,12 +666,12 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
  * carries only a name and the last four characters. */
 function AgentAccessPanel({ span = 12 }: { span?: number }) {
   const qc = useQueryClient()
-  const list = useQuery({ queryKey: ["agent-access-tokens"], queryFn: api.agentAccessTokens })
+  const list = useQuery({ queryKey: ["agent-access-tokens"], queryFn: ({ signal }) => on(signal).agentAccessTokens() })
   const [name, setName] = useState("")
   const [fresh, setFresh] = useState<{ id: string; token: string } | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [client, setClient] = useState<AgentClient>("claude-code")
-  const connections = useQuery({ queryKey: ["agent-connections"], queryFn: api.agentConnections })
+  const connections = useQuery({ queryKey: ["agent-connections"], queryFn: ({ signal }) => on(signal).agentConnections() })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const url = list.data?.url ?? ""
@@ -822,9 +822,9 @@ function AgentAccessPanel({ span = 12 }: { span?: number }) {
  * from the same queries the panels below use, so the two cannot disagree. */
 function StatStrip({ open }: { open: boolean }) {
   const { data: keys } = useUserKeys()
-  const vendors = useQuery({ queryKey: ["data-vendors"], queryFn: api.dataVendors, staleTime: 30_000 })
-  const tokens = useQuery({ queryKey: ["agent-access-tokens"], queryFn: api.agentAccessTokens })
-  const connections = useQuery({ queryKey: ["agent-connections"], queryFn: api.agentConnections })
+  const vendors = useQuery({ queryKey: ["data-vendors"], queryFn: ({ signal }) => on(signal).dataVendors(), staleTime: 30_000 })
+  const tokens = useQuery({ queryKey: ["agent-access-tokens"], queryFn: ({ signal }) => on(signal).agentAccessTokens() })
+  const connections = useQuery({ queryKey: ["agent-connections"], queryFn: ({ signal }) => on(signal).agentConnections() })
   const vendorList = vendors.data?.vendors ?? []
   const rows = keys?.keys ?? []
   // Vendors you KEYED, counted against vendors you could key. A keyless

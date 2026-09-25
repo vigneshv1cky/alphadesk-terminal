@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { api, type Quote } from "@/lib/api"
+import { on, type Quote } from "@/lib/api"
 import { useQuotes } from "@/lib/queries"
 import { normalize } from "@/lib/symbols"
 import { useBoardSymbols } from "@/lib/boardSymbols"
@@ -115,7 +115,7 @@ export default function PortfolioPage() {
   const [showPeers, setShowPeers] = useState(false)
   const peers = useQuery({
     queryKey: ["peers", active],
-    queryFn: () => api.peers(active),
+    queryFn: ({ signal }) => on(signal).peers(active),
     enabled: !!active,
     staleTime: 24 * 60 * 60_000,
   })

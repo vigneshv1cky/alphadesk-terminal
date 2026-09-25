@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { api, type CategoryMoverRow, type MoverCategory } from "@/lib/api"
+import { on, type CategoryMoverRow, type MoverCategory } from "@/lib/api"
 import { usePrefetchChart, useQuote } from "@/lib/queries"
 import { useCryptoTicks } from "@/lib/liveCrypto"
 import { QueryFailure } from "@/components/KeyPrompt"
@@ -229,7 +229,7 @@ function HaltsTable() {
   const { add } = useBoardSymbols()
   const q = useQuery({
     queryKey: ["halts"],
-    queryFn: () => api.halts(60),
+    queryFn: ({ signal }) => on(signal).halts(60),
     staleTime: 30_000,
     refetchInterval: 60_000,
     refetchIntervalInBackground: true,
@@ -577,7 +577,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   const setFloors = (f: Floors | null) => { setFloorsState(f); writeFloors(initial, category, f) }
   const q = useQuery({
     queryKey: ["movers", category, floors?.min_price ?? "d", floors?.min_turnover ?? "d"],
-    queryFn: () => api.categoryMovers(category, MOVERS_TOP, floors),
+    queryFn: ({ signal }) => on(signal).categoryMovers(category, MOVERS_TOP, floors),
     staleTime: 20_000,
     // The server rebuilds behind a cached payload every 30s for stocks,
     // crypto and indices, so the tile asks on the same cycle; the listed
