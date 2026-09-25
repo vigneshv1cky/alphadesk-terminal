@@ -169,6 +169,34 @@ if (typeof document !== "undefined") {
 let boardSynced = false
 let accountBoard: Promise<{ board: StoredBoard; at: string } | null> | null = null
 
+/** ONE LISTENER FOR THE WHOLE APP, NOT ONE PER COMPONENT (2026-09-25, #70,
+ * the reader: "check more where website is lagging or slow" — this was it).
+ *
+ * `useBoardSymbols` is called by every tile AND by the ticker chips on every
+ * news row, so a Markets board runs dozens of copies of it. Each copy
+ * registered its own visibilitychange listener, and each listener cleared
+ * the shared memo and asked again — so ONE tab switch fired one request PER
+ * COPY. Measured on a cold local board: four visibility changes produced
+ * 116 GETs of /api/board, and an open tab sat at ~23 requests a second,
+ * every one of them taking a request worker and, live, a database round
+ * trip. It was the largest single source of load in the app and it did
+ * nothing at all, because every answer was identical.
+ *
+ * The clearing belongs to the module, once. The copies subscribe and re-run
+ * their own adoption against the ONE promise that refresh creates — which is
+ * free, since the memo hands each of them the same answer. */
+const boardWatchers = new Set<() => void>()
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return
+    // Ask again, ONCE: returning to a tab is exactly when the board may have
+    // moved on somewhere else (#44), and that reason survives — it is the
+    // per-copy repetition that does not.
+    accountBoard = null
+    boardWatchers.forEach(run => run())
+  })
+}
+
 function fetchAccountBoard(): Promise<{ board: StoredBoard; at: string } | null> {
   const pending = accountBoard ?? (accountBoard = import("@/lib/api")
     .then(({ api }) => api.getBoard())
@@ -310,14 +338,11 @@ export function useBoardSymbols() {
    * later one. The adoption is still abandoned if the reader has changed
    * the strip while the answer was in flight.
    */
-  const syncWithAccount = useCallback((fresh: boolean) => {
+  const syncWithAccount = useCallback(() => {
     let dropped = false
-    // COMING BACK TO A TAB ASKS AGAIN (2026-09-21). The answer is cached for
-    // the tab's lifetime, so a device left open never saw anything the other
-    // one did — which is why a reload was needed to pick up a change, and
-    // why it looked like the sync ran once and then stopped. Returning to a
-    // tab is exactly when the board may have moved on somewhere else.
-    if (fresh) accountBoard = null
+    // The memo is cleared by the ONE listener above, never here: clearing it
+    // per copy is what turned a tab switch into dozens of identical
+    // requests.
     const stored = readStored()
     const ourSymbols = stored?.symbols.join(",") || ""
     // WHICH CHIP IS SELECTED IS PART OF THE BOARD (2026-09-21, the owner:
@@ -358,12 +383,10 @@ export function useBoardSymbols() {
   }, [setParams])
 
   useEffect(() => {
-    const stop = syncWithAccount(false)
-    const onShown = () => {
-      if (document.visibilityState === "visible") syncWithAccount(true)
-    }
-    document.addEventListener("visibilitychange", onShown)
-    return () => { stop(); document.removeEventListener("visibilitychange", onShown) }
+    let stop = syncWithAccount()
+    const again = () => { stop(); stop = syncWithAccount() }
+    boardWatchers.add(again)
+    return () => { stop(); boardWatchers.delete(again) }
   }, [syncWithAccount])
 
   /** Add a symbol to the strip and make it active. Adding one already on the
