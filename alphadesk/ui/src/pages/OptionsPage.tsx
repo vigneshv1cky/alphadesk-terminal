@@ -2,7 +2,9 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import type { OptionFlowTrade, OptionRow } from "@/lib/api"
 import { useOptionChain, useOptionExpirations, useOptionFlow, useQuote } from "@/lib/queries"
-import { Btn, Empty, Widget, btnCls } from "@/components/terminal"
+import { Btn, Empty, Widget, btnCls, menuItemCls } from "@/components/terminal"
+import { Menu } from "@/components/ChartToolbar"
+import { cn } from "@/lib/utils"
 import { ComposedBoard } from "@/components/ComposedBoard"
 import { normalize } from "@/lib/symbols"
 import { DEFAULT_SYMBOL, useBoardSymbols } from "@/lib/boardSymbols"
@@ -365,25 +367,48 @@ function Flow({ symbols, onPick }: { symbols: string[]; onPick: (t: OptionFlowTr
   }, [q.data, ticker, sort])
   useEffect(() => { if (ticker !== "all" && !symbols.includes(ticker)) setTicker("all") }, [symbols, ticker])
 
-  const pill = (on: boolean) => btnCls({ variant: "ghost", active: on })
   const toolbar = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1 text-caption">
+      {/* TWO PICKERS, NOT FOURTEEN BUTTONS (2026-09-25, #75, the reader:
+          "can you include dropdowns here too"). A board of nine symbols put
+          ten ticker buttons beside four premium buttons and a Pause, and the
+          row wrapped to two lines — the same fault as the news header in #68
+          and the news page in #73, and it grows with the board: every chip
+          added another button here.
+          Two AXES, so two pickers rather than one: which company, and how
+          big an order. Unlike the news views they do not exclude each other,
+          so they cannot collapse into one list. */}
       {symbols.length > 1 && (
-        <div className="flex items-center gap-0.5" role="group" aria-label="Ticker">
-          {["all", ...symbols].map(s => (
-            <button key={s} type="button" onClick={() => setTicker(s)} aria-pressed={ticker === s} className={pill(ticker === s)}>
-              {s === "all" ? "All" : s}
-            </button>
-          ))}
-        </div>
+        <Menu label={ticker === "all" ? "All tickers" : ticker} title="Which company's orders">
+          {close => (
+            <>
+              {["all", ...symbols].map(s => (
+                <button key={s} type="button" role="menuitemradio" aria-checked={ticker === s}
+                        onClick={() => { setTicker(s); close() }}
+                        className={cn(menuItemCls, "justify-between gap-3")}>
+                  <span>{s === "all" ? "All tickers" : s}</span>
+                  <span className="text-muted-foreground">{ticker === s ? "✓" : ""}</span>
+                </button>
+              ))}
+            </>
+          )}
+        </Menu>
       )}
-      <div className="flex items-center gap-0.5" role="group" aria-label="Minimum premium">
-        {PREMIUMS.map(p => (
-          <button key={p.v} type="button" onClick={() => setMinPremium(p.v)} aria-pressed={minPremium === p.v} className={pill(minPremium === p.v)}>
-            {p.label}
-          </button>
-        ))}
-      </div>
+      <Menu label={PREMIUMS.find(p => p.v === minPremium)?.label ?? "Any size"}
+            title="The smallest order worth showing, by premium paid">
+        {close => (
+          <>
+            {PREMIUMS.map(p => (
+              <button key={p.v} type="button" role="menuitemradio" aria-checked={minPremium === p.v}
+                      onClick={() => { setMinPremium(p.v); close() }}
+                      className={cn(menuItemCls, "justify-between gap-3")}>
+                <span>{p.label}</span>
+                <span className="text-muted-foreground">{minPremium === p.v ? "✓" : ""}</span>
+              </button>
+            ))}
+          </>
+        )}
+      </Menu>
       <Btn onClick={() => setPaused(v => !v)} title={paused ? "Resume the live capture" : "Pause: while paused, new orders are not seen live, so their side stays unknown"}>
         {paused ? "Resume" : "Pause"}
       </Btn>

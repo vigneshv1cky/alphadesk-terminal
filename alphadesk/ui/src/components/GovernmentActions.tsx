@@ -74,7 +74,14 @@ export function GovernmentActionsPanel({ span = 12 }: { span?: number }) {
                 <TH className="w-[96px]" title="When, at the precision the source actually states">When</TH>
                 <TH className="w-[132px]" title="A rule changes what a company may do; a proposed rule is the consultation before it">Kind</TH>
                 <TH title="The record's own title, never a summary written here">What</TH>
-                <TH className="w-[196px]" title="Which agency or body acted">Who</TH>
+                {/* 300px, not 196 (2026-09-25, #75, the reader: "reduce what
+                    coloumn width a bit, and increase who"). Every agency name
+                    was cut — "Environmental Protection Ag…", "National
+                    Highway Traffic Safe…" — while the title column had room
+                    to give. An agency's name IS the answer to "who acted",
+                    so truncating it costs more than a few characters of a
+                    rule's title do. */}
+                <TH className="w-[300px]" title="Which agency or body acted">Who</TH>
               </THead>
               <tbody>
                 {events.map((e, i) => {
@@ -84,10 +91,14 @@ export function GovernmentActionsPanel({ span = 12 }: { span?: number }) {
                     : e.source === "fed" ? "Federal Reserve" : "US Treasury"
                   return (
                     <TR key={`${e.source}-${e.at}-${i}`}>
-                      <TD mono className="text-muted-foreground" title={w.title}>
-                        {w.text}
-                        {e.at_precision === "day" && <span className="ml-1 text-label">·d</span>}
-                      </TD>
+                      {/* NO "·d" MARKER (2026-09-25, #75, the reader: "what is
+                          this d in every row" — which is the whole answer).
+                          It meant day-precision, and it was both cryptic and
+                          redundant: a row with a real clock SHOWS the clock,
+                          so the absence of one already says the source only
+                          publishes a date. The explanation stays on hover,
+                          where it does not have to be decoded. */}
+                      <TD mono className="text-muted-foreground" title={w.title}>{w.text}</TD>
                       <TD className="truncate text-muted-foreground">{e.kind}</TD>
                       <TD className="truncate" title={e.abstract || e.title}>
                         {e.url
