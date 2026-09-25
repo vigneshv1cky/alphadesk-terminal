@@ -1359,7 +1359,16 @@ def page_timings() -> dict:
     changing, to the next two animation frames — the first moment the new
     page is actually painted. `median_click_to_route_ms` is React Router and
     the press handler; `median_route_to_paint_ms` is the new page mounting
-    its tiles. Which of the two is larger is the whole answer.
+    its tiles.
+
+    `filled` answers the DIFFERENT question of when the page stopped
+    fetching and actually held something: a page that draws its frame at
+    once and then sits empty scored as fast under the paint timing alone.
+    A press the reader left before it finished is counted separately, never
+    averaged in — its number is how long they waited, not how long the page
+    takes. `median_peak_requests` and `median_stranded_requests` are there
+    for the case the reader described, cycling pages faster than they fill:
+    if abandoned requests pile up, those two say so.
 
     Held in memory only and never stored, so a restart empties it and
     nothing here outlives the question. Empty until the reader has clicked

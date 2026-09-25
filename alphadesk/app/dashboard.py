@@ -1192,10 +1192,18 @@ def api_perf_nav(body: NavSamples, request: Request):
     for raw in body.samples[:20]:
         # Read only the four fields; anything else the page sent is ignored.
         try:
+            settle = str(raw.get("settle") or "settled")
             rows.append({"to": str(raw.get("to") or "")[:40],
                          "click_to_route_ms": int(raw.get("clickToRoute") or 0),
                          "route_to_paint_ms": int(raw.get("routeToPaint") or 0),
                          "total_ms": int(raw.get("total") or 0),
+                         # How long until the page stopped fetching, and how
+                         # that ended: settled, left for another page, or
+                         # still going at the cap.
+                         "settle_ms": int(raw.get("settleMs") or 0),
+                         "settle": settle if settle in ("settled", "left", "slow") else "settled",
+                         "peak_inflight": int(raw.get("peakInflight") or 0),
+                         "left_inflight": int(raw.get("leftInflight") or 0),
                          "at": datetime.now(timezone.utc).isoformat()})
         except (TypeError, ValueError):
             continue
@@ -1234,8 +1242,40 @@ def nav_timings(uid: str) -> dict:
         "median_route_to_paint_ms": sorted(r["route_to_paint_ms"] for r in rows)[len(rows) // 2],
         "by_page": {k: {"presses": len(v), "median_ms": sorted(v)[len(v) // 2], "worst_ms": max(v)}
                     for k, v in sorted(by_page.items())},
+        # TO A PAGE THAT HOLDS SOMETHING, which is a different question from
+        # to a page that has been drawn. A press counts as settled only if
+        # the reader stayed long enough for it to finish; one they pressed
+        # away from is reported separately rather than averaged in, because
+        # its number says how long they waited, not how long the page takes.
+        "filled": _settle_summary(rows),
         "recent": rows[-12:],
     }
+
+
+def _settle_summary(rows: list[dict]) -> dict:
+    """How long until a page stopped fetching, split by how it ended."""
+    done = sorted(r["settle_ms"] for r in rows if r.get("settle") == "settled")
+    left = [r for r in rows if r.get("settle") == "left"]
+    slow = [r for r in rows if r.get("settle") == "slow"]
+    out: dict = {
+        "settled": len(done),
+        "left_early": len(left),
+        "never_settled": len(slow),
+    }
+    if done:
+        out["median_ms"] = done[len(done) // 2]
+        out["worst_ms"] = done[-1]
+    # The pile-up, if there is one: how many requests were in flight at
+    # once, and how many were still running when the reader pressed away.
+    peaks = sorted(r.get("peak_inflight", 0) for r in rows)
+    if peaks:
+        out["median_peak_requests"] = peaks[len(peaks) // 2]
+        out["worst_peak_requests"] = peaks[-1]
+    if left:
+        stranded = sorted(r.get("left_inflight", 0) for r in left)
+        out["median_stranded_requests"] = stranded[len(stranded) // 2]
+        out["worst_stranded_requests"] = stranded[-1]
+    return out
 
 
 @app.get("/api/sectors")
