@@ -215,7 +215,24 @@ class _CachedPrices:
                 with self._memo_lock:
                     self._memo[key] = (now, _REFUSAL_TTL_S, exc)
                 raise
-            hold = min(ttl, _FILLING_TTL_S) if isinstance(val, dict) and val.get("filling") else ttl
+            # AN ANSWER THAT IS STILL COMING IS NOT AN ANSWER (2026-09-24,
+            # #67). A dict marked `filling` was already held briefly. A
+            # provider that DEFERS its first read needs the same treatment
+            # for None: the scraped calendars answer None while a background
+            # fill runs, and the full hold meant the fill's answer, stored
+            # seconds later, went unread until the memo expired — the source
+            # looked permanently empty on a page that had already fetched it.
+            #
+            # ONLY FOR PROVIDERS THAT SAY SO (`DEFERS_FIRST_READ`), never for
+            # None in general: None normally means "I do not carry this",
+            # which is static, and several providers only discover it AFTER
+            # an HTTP call. Shortening the hold for all of them would turn
+            # every not-found lookup on a polling panel into a fresh vendor
+            # request every couple of seconds, spending the reader's rate
+            # limit to re-learn the same nothing.
+            deferring = val is None and getattr(self._inner, "DEFERS_FIRST_READ", False)
+            filling = deferring or (isinstance(val, dict) and val.get("filling"))
+            hold = min(ttl, _FILLING_TTL_S) if filling else ttl
             with self._memo_lock:
                 if len(self._memo) >= _CACHE_MAX_ENTRIES:
                     live = {k: v for k, v in self._memo.items() if now - v[0] < v[1]}

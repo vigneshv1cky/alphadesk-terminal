@@ -45,9 +45,20 @@ def note_failed(kind: str, owner: str, symbols: Iterable[str]) -> None:
             _failed[(kind, owner, s.upper())] = now
 
 
-def submit(kind: str, owner: str, symbols: Iterable[str], job: Callable[[list[str]], None]) -> int:
+def submit(kind: str, owner: str, symbols: Iterable[str], job: Callable[[list[str]], None],
+           pool: ThreadPoolExecutor | None = None) -> int:
     """Queue `job` for the symbols not already queued for this reader; returns
-    how many were newly queued. The job runs under the reader's identity."""
+    how many were newly queued. The job runs under the reader's identity.
+
+    `pool` RUNS IT SOMEWHERE ELSE (2026-09-24, #67). The default pool has two
+    workers and is held for most of a minute at a time by EDGAR release-timing
+    lookups, which is fine when every caller is that same slow, patient kind
+    of work. It is not fine for a caller whose whole purpose is to keep a page
+    off the critical path: the scraped calendar's day fetches were queued
+    behind those lookups and never got a turn, so the fill silently never
+    landed and the source looked broken rather than slow. A caller with a
+    different cadence brings its own worker; the bookkeeping here — identity,
+    one queue per key, backing off a key that keeps failing — is shared."""
     from alphadesk.identity import reset_request_user, set_request_user
     with _lock:
         fresh = sorted({s.upper() for s in symbols} - {k[2] for k in _in_flight if k[0] == kind and k[1] == owner})
@@ -68,5 +79,5 @@ def submit(kind: str, owner: str, symbols: Iterable[str], job: Callable[[list[st
                 for s in fresh:
                     _in_flight.discard((kind, owner, s))
 
-    _pool.submit(run)
+    (pool or _pool).submit(run)
     return len(fresh)
