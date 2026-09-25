@@ -151,6 +151,17 @@ def test_only_weekdays_are_asked_for():
     assert days == ["2026-09-18", "2026-09-21", "2026-09-22"]
 
 
+def _clear_scraped():
+    """Empty the SHARED scraped store (2026-09-25, #71). It replaced the
+    per-reader dict these tests used to clear, and it lives in the database
+    so a row survives the process — which is the point, and also why a test
+    must start from empty."""
+    from alphadesk.ledger import store
+    store.init()
+    with store._lock, store._connect() as conn:
+        conn.execute("DELETE FROM scraped_data")
+
+
 def _fill_now(monkeypatch):
     """Run the background fill INLINE (2026-09-24, #67).
 
@@ -162,7 +173,7 @@ def _fill_now(monkeypatch):
     from alphadesk.ingest import background_fill
     from alphadesk.providers import scraped
 
-    scraped._day_cache.clear()
+    _clear_scraped()
     monkeypatch.setattr(background_fill, "submit",
                         lambda kind, owner, symbols, job, pool=None: (job(sorted(symbols)), 0)[1])
 
@@ -241,7 +252,7 @@ def test_a_halt_is_a_record_with_its_own_clock():
     n = NasdaqCalendars()
     original, sc._get_text = sc._get_text, lambda url, timeout=20.0: feed
     try:
-        rows = n.trading_halts()
+        rows = n._read_halts()
     finally:
         sc._get_text = original
 
@@ -270,7 +281,7 @@ def test_the_same_stock_halted_twice_is_two_events():
     import alphadesk.providers.scraped as sc
     original, sc._get_text = sc._get_text, lambda url, timeout=20.0: feed
     try:
-        rows = NasdaqCalendars().trading_halts()
+        rows = NasdaqCalendars()._read_halts()
     finally:
         sc._get_text = original
     assert [r["halted_at"] for r in rows] == ["2026-09-22T14:28:18", "2026-09-22T14:22:24"]
@@ -305,7 +316,7 @@ def test_no_ticker_is_read_out_of_a_post(monkeypatch):
     import alphadesk.providers.scraped as sc
     original, sc._get_text = sc._get_text, lambda url, timeout=20.0: feed
     try:
-        rows = SocialPulse().social_posts()
+        rows = SocialPulse()._read_posts()
     finally:
         sc._get_text = original
     assert len(rows) == 1
@@ -335,12 +346,28 @@ def test_a_source_that_cannot_be_read_raises_rather_than_answering_nothing(monke
     def refuse(url, timeout=20.0):
         raise ProviderError("scraped source refused (403)")
     original, sc._get_text = sc._get_text, refuse
+    _clear_scraped()
     try:
-        for call in (SocialPulse().social_posts, NasdaqCalendars().trading_halts):
+        # The READ is what raises, as it always did.
+        for call in (SocialPulse()._read_posts, NasdaqCalendars()._read_halts):
             with pytest.raises(ProviderError):
                 call()
+        # AND THE FILL CARRIES IT BACK (2026-09-25, #71). The fetch happens
+        # in the background now, so a refusal would otherwise leave an empty
+        # store and the panel would go back to saying "switch it on" about a
+        # source the reader is already holding — the exact fault #63 fixed.
+        sc.note_fill("halts", "scraped source refused (403)")
+        with pytest.raises(ProviderError, match="403"):
+            NasdaqCalendars().trading_halts()
+        sc.note_fill("posts", "scraped source refused (403)")
+        with pytest.raises(ProviderError, match="403"):
+            SocialPulse().social_posts()
+        # A source that answers again is not failing any more.
+        sc.note_fill("halts", None)
+        assert NasdaqCalendars().trading_halts() is None
     finally:
         sc._get_text = original
+        sc._last_error.clear()
 
 
 def test_a_source_that_is_read_but_says_nothing_is_still_empty():
@@ -350,8 +377,11 @@ def test_a_source_that_is_read_but_says_nothing_is_still_empty():
     import alphadesk.providers.scraped as sc
     original, sc._get_text = sc._get_text, lambda url, timeout=20.0: "<rss><channel></channel></rss>"
     try:
-        assert SocialPulse().social_posts() is None      # nothing in the feed
-        assert NasdaqCalendars().trading_halts() is None
+        # The readers return what they parsed — an empty list, not None:
+        # None is the seam's word for "I do not carry this surface", and
+        # these plainly do.
+        assert SocialPulse()._read_posts() == []
+        assert NasdaqCalendars()._read_halts() == []
     finally:
         sc._get_text = original
 
@@ -483,7 +513,7 @@ def test_a_standing_suspension_is_not_a_live_pause():
     import alphadesk.providers.scraped as sc
     original, sc._get_text = sc._get_text, lambda url, timeout=20.0: feed
     try:
-        rows = {r["symbol"]: r for r in NasdaqCalendars().trading_halts()}
+        rows = {r["symbol"]: r for r in NasdaqCalendars()._read_halts()}
     finally:
         sc._get_text = original
 
@@ -644,7 +674,7 @@ def test_a_post_with_no_words_is_kept_and_says_so(monkeypatch):
     from alphadesk.providers import scraped
 
     monkeypatch.setattr(scraped, "_get_text", lambda *a, **k: _FEED)
-    rows = scraped.SocialPulse().social_posts(limit=10)
+    rows = scraped.SocialPulse()._read_posts()
 
     # The wordless post is FIRST, because it is the newest — dropping it let
     # the reader believe nothing had been posted since 15:44.
@@ -671,7 +701,7 @@ def test_a_post_with_no_clock_is_still_dropped():
     real = mod._get_text
     mod._get_text = lambda *a, **k: _FEED
     try:
-        rows = _P().social_posts(limit=10)
+        rows = _P()._read_posts()
     finally:
         mod._get_text = real
     assert all(r["at"] for r in rows)
@@ -724,7 +754,7 @@ def test_a_unioned_surface_is_not_reported_as_covered(client, store, monkeypatch
 def test_a_day_already_read_costs_no_request(monkeypatch):
     from alphadesk.providers import scraped
 
-    scraped._day_cache.clear()
+    _clear_scraped()
     calls: list[str] = []
     monkeypatch.setattr(scraped.NasdaqCalendars, "_rows",
                         lambda self, path, holder="rows": calls.append(path) or
@@ -733,7 +763,7 @@ def test_a_day_already_read_costs_no_request(monkeypatch):
     v = scraped.NasdaqCalendars()
     days = v._days("2026-09-21", "2026-09-22")
     for d in days:
-        scraped.store_day(scraped._owner(), "earnings", d,
+        scraped.store_day("earnings", d,
                           [{"symbol": "AAA", "time": "time-pre-market", "epsForecast": "$1.00"}])
     rows = v.earnings_calendar("2026-09-21", "2026-09-22")
     assert calls == [], "a cached day must not be fetched again"
@@ -748,10 +778,10 @@ def test_an_unread_day_defers_instead_of_blocking(monkeypatch):
     as the whole site lagging."""
     from alphadesk.providers import scraped
 
-    scraped._day_cache.clear()
+    _clear_scraped()
     queued: list[tuple[str, list[str]]] = []
     monkeypatch.setattr(scraped.NasdaqCalendars, "_fill_days",
-                        lambda self, owner, kind, days: queued.append((kind, list(days))))
+                        lambda self, kind, days: queued.append((kind, list(days))))
     monkeypatch.setattr(scraped.NasdaqCalendars, "_rows",
                         lambda self, path, holder="rows": pytest.fail("fetched on the request thread"))
 
@@ -762,7 +792,7 @@ def test_an_unread_day_defers_instead_of_blocking(monkeypatch):
 
     # One day already read: that day answers now, the rest are queued.
     queued.clear()
-    scraped.store_day(scraped._owner(), "earnings", "2026-09-22",
+    scraped.store_day("earnings", "2026-09-22",
                       [{"symbol": "BBB", "time": "time-after-hours"}])
     rows = v.earnings_calendar("2026-09-21", "2026-09-25")
     assert [r["symbol"] for r in rows] == ["BBB"]
@@ -776,15 +806,18 @@ def test_a_past_day_is_kept_and_a_live_one_expires(monkeypatch):
 
     from alphadesk.providers import scraped
 
-    scraped._day_cache.clear()
+    _ = _time
+    _clear_scraped()
     monkeypatch.setattr(scraped, "_today_ny", lambda: "2026-09-24")
-    owner = scraped._owner()
-    old = _time.time() - 3600                      # an hour ago
-    scraped._day_cache[(owner, "earnings", "2026-09-10")] = (old, [{"symbol": "PAST"}])
-    scraped._day_cache[(owner, "earnings", "2026-09-30")] = (old, [{"symbol": "SOON"}])
+    # A past day is held for a week, today and forward for fifteen minutes —
+    # so the SAME row, written now, is fresh for one and stale for the other
+    # the moment the live window is shortened to nothing.
+    scraped.store_day("earnings", "2026-09-10", [{"symbol": "PAST"}])
+    scraped.store_day("earnings", "2026-09-30", [{"symbol": "SOON"}])
+    monkeypatch.setattr(scraped, "_LIVE_DAY_TTL_S", 0.0)
 
-    assert scraped.cached_day(owner, "earnings", "2026-09-10") == [{"symbol": "PAST"}]
-    assert scraped.cached_day(owner, "earnings", "2026-09-30") is None
+    assert scraped.cached_day("earnings", "2026-09-10") == [{"symbol": "PAST"}]
+    assert scraped.cached_day("earnings", "2026-09-30") is None
 
 
 def test_the_splits_window_is_cached_whole(monkeypatch):
@@ -792,10 +825,10 @@ def test_the_splits_window_is_cached_whole(monkeypatch):
     nobody sits through it on a page load either."""
     from alphadesk.providers import scraped
 
-    scraped._day_cache.clear()
+    _clear_scraped()
     queued: list[str] = []
     monkeypatch.setattr(scraped.NasdaqCalendars, "_fill_days",
-                        lambda self, owner, kind, days: queued.extend(days))
+                        lambda self, kind, days: queued.extend(days))
     v = scraped.NasdaqCalendars()
     assert v.split_calendar("2026-09-21", "2026-09-26") is None
     # ONE KEY, NOT THE WINDOW. Keyed by the window this never hit: the
@@ -806,10 +839,141 @@ def test_the_splits_window_is_cached_whole(monkeypatch):
 
     # A DIFFERENT window finds the SAME stored answer, which is the whole
     # point — and the filtering still cuts it to what was asked for.
-    scraped.store_day(scraped._owner(), "splits", scraped._SPLITS_KEY,
+    scraped.store_day("splits", scraped._SPLITS_KEY,
                       [{"symbol": "ZZZ", "ratio": "2 : 1", "executionDate": "9/30/2026"}])
     # Nothing in that window: None, the seam's word for "I carry nothing
     # here", not an empty list.
     assert v.split_calendar("2026-10-05", "2026-10-09") is None
     inside = v.split_calendar("2026-09-25", "2026-10-02")
     assert [r["symbol"] for r in inside] == ["ZZZ"]
+
+
+# ---------------------------------------------------------------------------
+# THE SHARED STORE, ON A TIMER (2026-09-25, #71, the owner's call)
+#
+# A scraped page is IDENTICAL for every reader — no key shapes a halt list —
+# so keying it per reader bought no privacy and cost one fetch of the site
+# PER READER. One shared row is politer to the site, not ruder. What it does
+# NOT dissolve is the redistribution shape that removed operator sources in
+# PR #71; the owner weighed that and chose this, and CLAUDE.md records it.
+# ---------------------------------------------------------------------------
+
+def test_the_store_is_shared_and_holds_no_reader():
+    """No owner column, by design. Two readers asking for the same page get
+    the same row, and the site is asked once between them."""
+    from alphadesk.ledger import store
+
+    _clear_scraped()
+    store.put_scraped("nasdaq", "halts", "TODAY", [{"symbol": "AAA"}])
+    # Whoever asks, the same answer — there is no identity in the call.
+    assert store.get_scraped("nasdaq", "halts", "TODAY", 3600) == [{"symbol": "AAA"}]
+    # And an EMPTY read is stored as readily as a full one: a day with no
+    # reporters is an answer, and not storing it would re-fetch it forever.
+    store.put_scraped("nasdaq", "earnings", "2026-09-26", [])
+    assert store.get_scraped("nasdaq", "earnings", "2026-09-26", 3600) == []
+
+
+def test_a_key_survives_the_queue_that_uppercases_it():
+    """The fill queue is a SYMBOL api and uppercases what it is given, which
+    is right for a ticker and invisible for an ISO date — but "today" came
+    back as "TODAY", so the job stored a row the read could never find.
+    Halts filled and then read as empty, over and over, while the calendars
+    worked perfectly because a date has no letters in it."""
+    from alphadesk.providers import scraped
+
+    _clear_scraped()
+    scraped.store_day("halts", "today", [{"symbol": "ZZZ"}])
+    assert scraped.cached_day("halts", "TODAY") == [{"symbol": "ZZZ"}]
+    assert scraped.cached_day("halts", "today") == [{"symbol": "ZZZ"}]
+
+
+def test_the_loop_only_runs_for_a_source_somebody_switched_on(monkeypatch, store):
+    """Invariant 4 says an idle terminal spends nothing, and a blind timer
+    scrapes at 3am for nobody. A source no account has enabled is never
+    fetched, so an instance where nobody wants scraping does none."""
+    import uuid
+
+    from alphadesk.ingest import scrape_loop
+
+    uid = uuid.uuid4().hex
+    store.create_user(uid, f"{uid}@example.com", "x")
+    assert "nasdaq" not in scrape_loop.enabled_sources()
+
+    store.set_user_key(uid, "prices", "nasdaq", "sealed", "")
+    assert "nasdaq" in scrape_loop.enabled_sources()
+    # A KEYED vendor is not a scraped source and must never be swept in here.
+    store.set_user_key(uid, "prices", "alpaca", "sealed", "…abcd")
+    assert "alpaca" not in scrape_loop.enabled_sources()
+
+    # Nothing enabled, nothing done — whatever the clock says.
+    monkeypatch.setattr(scrape_loop, "enabled_sources", lambda: set())
+    monkeypatch.setattr(scrape_loop, "refresh_halts", lambda: 1 / 0)
+    assert scrape_loop.cycle({}) == {}
+
+
+def test_each_kind_keeps_its_own_clock(monkeypatch):
+    """Halts move minute to minute; a calendar day does not, and a past one
+    never does. A cycle that refreshed everything on the fastest interval
+    would hit the site twenty times as often for no new information."""
+    from alphadesk.ingest import scrape_loop
+
+    monkeypatch.setattr(scrape_loop, "enabled_sources", lambda: {"nasdaq", "social"})
+    monkeypatch.setattr(scrape_loop, "refresh_halts", lambda: 7)
+    monkeypatch.setattr(scrape_loop, "refresh_social", lambda: 5)
+    monkeypatch.setattr(scrape_loop, "refresh_calendars", lambda: 3)
+
+    last: dict[str, float] = {}
+    # The first cycle runs everything: the clock starts at minus infinity,
+    # not 0 — 0 would skip the first interval on a fresh container (#264).
+    assert scrape_loop.cycle(last) == {"halts": 7, "calendars": 3, "social": 5}
+    # Nothing is due a second later.
+    assert scrape_loop.cycle(last) == {}
+    # The halts clock comes round first, alone.
+    last["halts"] -= scrape_loop.HALTS_EVERY_S + 1
+    assert scrape_loop.cycle(last) == {"halts": 7}
+
+
+def test_one_failing_scrape_does_not_stop_the_others(monkeypatch):
+    from alphadesk.ingest import scrape_loop
+
+    monkeypatch.setattr(scrape_loop, "enabled_sources", lambda: {"nasdaq", "social"})
+    monkeypatch.setattr(scrape_loop, "refresh_halts", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(scrape_loop, "refresh_social", lambda: 5)
+    monkeypatch.setattr(scrape_loop, "refresh_calendars", lambda: 3)
+    assert scrape_loop.cycle({}) == {"calendars": 3, "social": 5}
+
+
+def test_the_kill_switch_stops_it(monkeypatch):
+    """Background work that reaches the network is exactly what you want to
+    stop from the console without a deploy — the embedding worker's outage
+    (semantic.py, 2026-09-19) is why."""
+    from alphadesk.ingest import scrape_loop
+
+    monkeypatch.delenv("ALPHADESK_SCRAPE_LOOP", raising=False)
+    assert scrape_loop.switched_on() is True
+    for off in ("off", "0", "false", "no", "OFF"):
+        monkeypatch.setenv("ALPHADESK_SCRAPE_LOOP", off)
+        assert scrape_loop.switched_on() is False, off
+
+
+def test_scraped_rows_are_pruned_like_every_other_vendor_table(store):
+    """"Delete it after some time" was half the owner's ask. The live kinds
+    are worthless tomorrow; a calendar day lasts while the earnings window
+    still reaches it."""
+    from datetime import datetime, timedelta, timezone
+
+    _clear_scraped()
+    old = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    ancient = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    with store._lock, store._connect() as conn:
+        for kind, key, at in (("halts", "TODAY", old), ("posts", "LATEST", old),
+                              ("earnings", "2026-08-01", ancient), ("earnings", "2026-09-24", old)):
+            conn.execute("INSERT INTO scraped_data (source, kind, key, payload, fetched_at)"
+                         " VALUES (?,?,?,?,?)", ("nasdaq", kind, key, "[]", at))
+
+    store.prune_vendor_data()
+    left = {(r["kind"], r["rows"]) for r in store.scraped_freshness()}
+    # The live kinds are gone at two days old; a calendar day two days old
+    # is still inside the window and stays; a forty-day-old one does not.
+    assert ("halts", 1) not in left and ("posts", 1) not in left
+    assert ("earnings", 1) in left

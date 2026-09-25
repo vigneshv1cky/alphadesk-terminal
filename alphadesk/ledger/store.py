@@ -166,6 +166,29 @@ CREATE TABLE IF NOT EXISTS annual_report_sections (
 -- 2026-09-19): a normalised float16 vector from the self-hosted embedding
 -- model, base64 text so SQLite and Postgres read it alike. One per story per
 -- owner, and it goes when the story goes (prune, purge, account delete).
+-- SCRAPED PAGES, HELD ONCE FOR EVERYONE (2026-09-25, #71, the owner's call
+-- after weighing the exposure). Unlike every other vendor table here there is
+-- NO owner column, and that is the whole point: a scraped page is a public
+-- page, identical for every reader, and nobody's key shapes it. Keyed per
+-- reader it was fetched once PER READER — ten readers, ten hits on the same
+-- Nasdaq page — so sharing the row is politer to the site than the
+-- alternative, not ruder.
+--
+-- It is NOT free of the concern that removed operator sources in PR #71: one
+-- copy of someone else's data, served from our server to many readers, is
+-- the redistribution shape. The owner took that decision explicitly with the
+-- trade stated. Pruned like every other vendor table — retention in
+-- config.py, swept by prune_vendor_data.
+CREATE TABLE IF NOT EXISTS scraped_data (
+    source     TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (source, kind, key)
+);
+CREATE INDEX IF NOT EXISTS idx_scraped_at ON scraped_data (fetched_at);
+
 CREATE TABLE IF NOT EXISTS news_vectors (
     owner       TEXT NOT NULL,
     article_id  TEXT NOT NULL,
@@ -1785,6 +1808,14 @@ def prune_vendor_data(now: datetime | None = None) -> dict[str, int]:
             (ago(hours=cfg.PRESS_CHECK_KEEP_HOURS),))
         run("dollar_pools", "DELETE FROM reader_dollar_pools WHERE built_at < ?",
             (int((now - timedelta(days=cfg.POOL_KEEP_DAYS)).timestamp()),))
+        # Scraped pages (2026-09-25, #71). The live kinds — halts, posts,
+        # the splits list — are about right now and worthless tomorrow; a
+        # calendar day is useful while the earnings window still reaches it.
+        # Shared rows, so this is the only place they are deleted.
+        run("scraped_live", "DELETE FROM scraped_data WHERE kind IN ('halts','posts','splits')"
+                            " AND fetched_at < ?", (ago(hours=cfg.SCRAPED_LIVE_KEEP_HOURS),))
+        run("scraped_days", "DELETE FROM scraped_data WHERE fetched_at < ?",
+            (ago(days=cfg.SCRAPED_KEEP_DAYS),))
         run("nasdaq_earnings", "DELETE FROM earnings")
         run("news_vectors", _ORPHAN_VECTORS)
     return out
@@ -1831,6 +1862,60 @@ def save_annual_report_sections(accession: str, payload: dict) -> None:
         conn.execute("DELETE FROM annual_report_sections WHERE accession=?", (accession,))
         conn.execute("INSERT INTO annual_report_sections (accession, payload, extracted_at) VALUES (?,?,?)",
                      (accession, json.dumps(payload), datetime.now(timezone.utc).isoformat()))
+
+
+def enabled_providers(seam: str = "prices") -> set[str]:
+    """Every provider at least one account has connected on `seam`.
+
+    The gate for background work that belongs to no reader (2026-09-25,
+    #71): a scraped source nobody switched on is never fetched, so an
+    instance where nobody wants scraping does none of it — which is
+    invariant 4 holding even though the loop runs on a timer."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT DISTINCT provider FROM user_api_keys WHERE seam=?", (seam,)).fetchall()
+    return {r["provider"] for r in rows}
+
+
+def get_scraped(source: str, kind: str, key: str, max_age_s: float) -> list[dict] | None:
+    """A scraped page's rows, or None when nothing was read or it is stale.
+
+    Shared: no owner. A scraped page is identical for every reader, so one
+    row serves them all — which also means one fetch of the site rather than
+    one per reader (2026-09-25, #71)."""
+    with _connect() as conn:
+        row = conn.execute("SELECT payload, fetched_at FROM scraped_data WHERE source=? AND kind=? AND key=?",
+                           (source, kind, key)).fetchone()
+    if not row:
+        return None
+    try:
+        at = datetime.fromisoformat(row["fetched_at"])
+    except ValueError:                                   # pragma: no cover
+        return None
+    if (datetime.now(timezone.utc) - at).total_seconds() > max_age_s:
+        return None
+    try:
+        return json.loads(row["payload"])
+    except ValueError:                                   # pragma: no cover
+        return None
+
+
+def put_scraped(source: str, kind: str, key: str, rows: list[dict]) -> None:
+    """Store what one read of a page returned. An EMPTY list is stored as
+    readily as a full one: a day with no reporters is an answer, and not
+    storing it would re-fetch that day forever."""
+    with _lock, _connect() as conn:
+        conn.execute("DELETE FROM scraped_data WHERE source=? AND kind=? AND key=?", (source, kind, key))
+        conn.execute("INSERT INTO scraped_data (source, kind, key, payload, fetched_at) VALUES (?,?,?,?,?)",
+                     (source, kind, key, json.dumps(rows), datetime.now(timezone.utc).isoformat()))
+
+
+def scraped_freshness() -> list[dict]:
+    """How old each scraped kind is, newest first — what the loop and the
+    Account page report instead of guessing."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT source, kind, COUNT(*) AS n, MAX(fetched_at) AS newest "
+                            "FROM scraped_data GROUP BY source, kind").fetchall()
+    return [{"source": r["source"], "kind": r["kind"], "rows": r["n"], "newest": r["newest"]} for r in rows]
 
 
 def unembedded_articles(model: str, limit: int = 64) -> list[dict]:
