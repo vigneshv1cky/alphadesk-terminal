@@ -222,33 +222,23 @@ export function Widget({
   // below remains, because that answers a different question (a record
   // taller than its cap) and leaves the tile where it is.
 
-  // SHOW ALL (2026-09-13). A capped body that still overflows the viewport
-  // cap — a dividend record, forty rating changes, the filing list — gets a
-  // header control that lifts its cap, so the whole record sits in the
-  // page flow and the page scrolls instead of the tile. Measured, not
-  // assumed: the control appears only while the body actually overflows.
-  const bodyRef = React.useRef<HTMLDivElement | null>(null)
-  const [overflows, setOverflows] = React.useState(false)
-  const [showAll, setShowAll] = React.useState(false)
-  const capped = typeof scroll === "number"
-  React.useEffect(() => {
-    const el = bodyRef.current
-    if (!el || !capped) { setOverflows(false); return }
-    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 2)
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    const mo = new MutationObserver(measure)
-    mo.observe(el, { childList: true, subtree: true })
-    return () => { ro.disconnect(); mo.disconnect() }
-  }, [capped, showAll])
+  // NO "SHOW ALL" EITHER (2026-09-25, the owner, on being shown what it was
+  // for: "1" — remove it). It lifted a capped tile's height so a long
+  // record ran in the page instead of scrolling inside the tile, and it
+  // carried the SAME flaw as the popup removed beside it: local state, so
+  // it did not survive a reload or leaving the page. It was a per-visit
+  // gesture standing in for a board setting that does not exist — the
+  // editor sizes a tile by width and place, never height — and nothing was
+  // unreachable without it, because the body scrolls. Its measurement went
+  // with it: every capped tile ran a ResizeObserver AND a subtree
+  // MutationObserver purely to decide whether to offer the button, which on
+  // a news tile is a re-measure on every headline that arrives.
+  //
+  // If tile HEIGHT is wanted again, it belongs in the board editor beside
+  // width and place, where it would persist — not as a header control.
 
   const overrideSpan = React.useContext(SpanOverride)
   const align = React.useContext(AlignOverride)
-  // OPEN IS A POPUP, not an in-place stretch: the tile keeps its size and
-  // place in the grid (nothing reflows under the reader), and the content
-  // moves to a centered dialog with real height. The old span-12 expansion
-  // reshuffled every neighbour and still capped the body at one row.
   const cols = overrideSpan ?? span
   const bodyHeight = scroll
   return (
@@ -325,17 +315,6 @@ export function Widget({
           {subtitle && <div className="min-w-0 flex-1 sm:hidden" />}
           {!subtitle && <div className="min-w-0 flex-1" />}
           {actions}
-          {capped && (overflows || showAll) && (
-            <button
-              type="button"
-              onClick={() => setShowAll(v => !v)}
-              aria-pressed={showAll}
-              title={showAll ? "Back to a screen's worth; the tile scrolls again" : "The whole record in the page; the tile stops scrolling"}
-              className={btnCls()}
-            >
-              {showAll ? "Show less" : "Show all"}
-            </button>
-          )}
         </header>
       )}
       {toolbar && (
@@ -368,9 +347,8 @@ export function Widget({
         // reads whole on a normal screen and only a list longer than the
         // screen scrolls inside its tile. The page scrolls instead — one
         // scrollbar rather than one per tile.
-        ref={bodyRef}
         style={typeof bodyHeight === "string" ? { height: bodyHeight }
-             : typeof bodyHeight === "number" && !showAll
+             : typeof bodyHeight === "number"
                ? { maxHeight: fitViewport ? `max(${bodyHeight}px, ${BODY_VIEWPORT_CAP})` : `${bodyHeight}px` }
              : undefined}
         className={cn(
