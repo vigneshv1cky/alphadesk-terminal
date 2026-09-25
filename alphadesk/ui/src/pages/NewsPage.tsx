@@ -239,7 +239,7 @@ export default function NewsPage() {
         // Not expandable, same as the Reader beside it: the list and the
         // reader ARE this page's layout, and full-width for either one just
         // hides the other.
-        expandable={false}
+       
       >
         {readingInList ? (
           <NewsReader article={open} onBack={closeStory} />
@@ -419,7 +419,7 @@ export default function NewsPage() {
         span={5}
         title="Reader"
         scroll="calc(100vh - 212px)"
-        expandable={false}
+       
         actions={
           <button type="button" aria-label="Close the reader" title="Close"
             onClick={closeStory}

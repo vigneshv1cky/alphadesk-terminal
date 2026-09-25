@@ -1,4 +1,3 @@
-import { useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { OhlcvStrip } from "@/components/chart/OhlcvStrip"
 import { ChartSurface } from "@/components/chart/ChartSurface"
@@ -54,8 +53,10 @@ export function MarketChart({ span = 12, symbol: symbolProp }: {
 } = {}) {
   const [params] = useSearchParams()
   const symbol = (symbolProp ?? params.get("symbol") ?? "").toUpperCase()
-  const [expanded, setExpanded] = useState(false)
-  const e = useChartEngine(symbol, { priceHeight: expanded ? 620 : COLLAPSED })
+  // The chart tile draws at its board height (2026-09-25): the popup that
+  // gave it 620px is gone, so there is no second size to hold. A chart that
+  // wants more room is widened in the board editor, which persists.
+  const e = useChartEngine(symbol, { priceHeight: COLLAPSED })
   const { data: caps } = useChartCapabilities()
   const { data, bars, err, isFetching, live, hovered, hoverAt } = e
 
@@ -79,12 +80,6 @@ export function MarketChart({ span = 12, symbol: symbolProp }: {
       // The canvas already draws at the standard tile height, so on desktop
       // the tile lands where it always did.
       scroll={undefined}
-      // Controlled, so the header's ⤢ and the toolbar's drive ONE state. The
-      // chart cannot expand on its own terms — the price pane grows and the
-      // oscillator panes only appear once there is height to read them — so
-      // the widget must not keep a second opinion about whether it is open.
-      expanded={expanded}
-      onExpandChange={setExpanded}
     >
       <ChartToolbar
         type={e.type} onType={e.setType}
@@ -113,7 +108,7 @@ export function MarketChart({ span = 12, symbol: symbolProp }: {
           visible on a reload. The placeholder now stands as tall as the
           canvas it is about to be replaced by. */}
       {!err && !data && (
-        <div className="flex items-center justify-center" style={{ height: expanded ? 620 : COLLAPSED }}>
+        <div className="flex items-center justify-center" style={{ height: COLLAPSED }}>
           <Empty>loading…</Empty>
         </div>
       )}

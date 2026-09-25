@@ -175,7 +175,7 @@ export default function PortfolioPage() {
   )
 
   const needPick = (label: string, span: number) => (
-    <Widget span={span} title={label} expandable={false}>
+    <Widget span={span} title={label}>
       <div className="px-3 py-4 text-left text-body text-muted-foreground">
         Pick a symbol in the table to scope this panel.
       </div>

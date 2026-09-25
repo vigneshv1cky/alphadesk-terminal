@@ -143,7 +143,7 @@ export function RelativePerformancePanel({ symbols, span = 12, title = "Relative
 
   return (
     <Widget span={span} title={title} subtitle={`rebased to 0% at the start of the range · daily closes`}
-            expandable={false} toolbar={toolbar}
+            toolbar={toolbar}
             actions={
               <div className="flex items-center gap-0.5">
                 {RANGES.map(r => (
@@ -268,7 +268,7 @@ export function PricePerformancePanel({ symbols, span = 12, minSymbols = 2, quot
     }
   })
   return (
-    <Widget span={span} title="Price performance" subtitle="returns over the trailing periods · the live quote for today" expandable={false}>
+    <Widget span={span} title="Price performance" subtitle="returns over the trailing periods · the live quote for today">
       {symbols.length < minSymbols ? <Empty>Add more chips to the board to compare.</Empty> : (
         <div className="overflow-x-auto"><div className="min-w-[640px]">
         <Table>
@@ -394,7 +394,7 @@ export function ComparisonMetricsPanel({ symbols, active, peers, showPeers, onTo
     ? `the strip's chips and ${peerCount} peers of ${active} · ${peers?.source === "finnhub" ? "Finnhub" : ""}`
     : "the strip's chips, active first · the company record"
   return (
-    <Widget span={span} title="Comparison analysis" subtitle={subtitle} expandable={false}
+    <Widget span={span} title="Comparison analysis" subtitle={subtitle}
             actions={
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={onTogglePeers}

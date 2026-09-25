@@ -55,7 +55,7 @@ export default function EarningsPage() {
   // Without a company picked, each company panel states what would fill it —
   // one placeholder per panel, so hiding or resizing them still composes.
   const needPick = (label: string) => (
-    <Widget span={4} title={label} expandable={false}>
+    <Widget span={4} title={label}>
       <div className="px-3 py-4 text-left text-body text-muted-foreground">
         Pick a reporter in the calendar — or mark a chip on the board.
       </div>

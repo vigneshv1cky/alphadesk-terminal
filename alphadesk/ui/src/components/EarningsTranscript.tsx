@@ -53,7 +53,7 @@ export function EarningsTranscriptPanel({ symbol, span = 6, scroll }: { symbol: 
 
   return (
     <Widget span={span} symbol={symbol} title="Earnings transcript" subtitle={subtitle}
-            scroll={unkeyed ? undefined : (scroll ?? "max(520px, calc(100vh - 320px))")} expandable={false}
+            scroll={unkeyed ? undefined : (scroll ?? "max(520px, calc(100vh - 320px))")}
             actions={rows.length > 0 && !unkeyed ? (
               <select value={id ?? ""} onChange={e => setPicked(e.target.value)}
                       aria-label="Which document" className={`${fieldCls} h-[24px] max-w-[260px] py-0 text-caption`}>

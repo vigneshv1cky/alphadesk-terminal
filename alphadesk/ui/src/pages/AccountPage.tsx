@@ -260,7 +260,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
           There is deliberately NO routing-order column — the catalogue
           orders vendors per PANEL, so one numbered list would claim an order
           that does not exist. */}
-      <Widget span={12} title={<Heading>Market data</Heading>} expandable={false} bodyClassName="@container"
+      <Widget span={12} title={<Heading>Market data</Heading>} bodyClassName="@container"
               subtitle="each panel uses the first connected vendor that carries it"
               actions={keyedVendors.length ? <Pill tone={connectedCount ? "gain" : "muted"}>{connectedCount} of {keyedVendors.length} connected</Pill> : undefined}>
         {blocked ?? (
@@ -390,7 +390,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
           pages this server reads, and the section says so once rather than
           on every row. */}
       {scrapedSources.length > 0 && (
-        <Widget span={12} title={<Heading>Sources without a key</Heading>} expandable={false} bodyClassName="@container"
+        <Widget span={12} title={<Heading>Sources without a key</Heading>} bodyClassName="@container"
                 subtitle="public pages this server reads — asked only where no vendor you keyed answered"
                 actions={<Pill tone={scrapedOn ? "warn" : "muted"}>{scrapedOn} of {scrapedSources.length} on</Pill>}>
           {blocked ?? (
@@ -487,7 +487,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
         </Widget>
       )}
 
-      <Widget span={12} title={<Heading>News & transcripts</Heading>} expandable={false} bodyClassName="@container"
+      <Widget span={12} title={<Heading>News & transcripts</Heading>} bodyClassName="@container"
               subtitle="your window merges every feed you key, deduplicated by link"
               actions={blocked ? undefined : <>
                 {newsRows.length > 0 && <Pill tone="info">{stories.toLocaleString()} stories · 24h</Pill>}
@@ -721,7 +721,7 @@ function AgentAccessPanel({ span = 12 }: { span?: number }) {
   const groups = connectionGroups(connections.data?.connections ?? [])
 
   return (
-    <Widget span={span} title={<Heading>Agent access</Heading>} subtitle="your own agent, over MCP" expandable={false}
+    <Widget span={span} title={<Heading>Agent access</Heading>} subtitle="your own agent, over MCP"
             bodyClassName="@container">
       <Row label="Server address"
            actions={url ? <button type="button" className={BTN} onClick={() => copy("url", url)}>
@@ -874,7 +874,7 @@ function SecurityPanel({ providers, sso, signIns, onSignOutEverywhere, email, ow
   const when = (iso: string | null | undefined) =>
     iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""
   return (
-    <Widget span={6} title={<Heading>Security</Heading>} subtitle="how you sign in, and where" expandable={false} bodyClassName="@container">
+    <Widget span={6} title={<Heading>Security</Heading>} subtitle="how you sign in, and where" bodyClassName="@container">
       {providers.map(p => (
         <Row key={p.id}
              label={<span className="flex min-w-0 items-center gap-2">

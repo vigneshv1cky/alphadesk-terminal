@@ -8,7 +8,9 @@ import { api, type NewsArticle, type SocialPost } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { useNews, useSymbolNews } from "@/lib/queries"
 import { useOlderNews } from "@/lib/olderNews"
-import { Btn, Empty, Widget } from "@/components/terminal"
+import { Empty, Widget, menuItemCls } from "@/components/terminal"
+import { Menu } from "@/components/ChartToolbar"
+import { cn } from "@/lib/utils"
 import { registerWidget } from "@/widgets/registry"
 import { TILE_BODY_HEIGHT } from "@/widgets/tile"
 import { newsTime } from "@/lib/newsClock"
@@ -115,6 +117,32 @@ export function NewsTape({ span = 12 }: {
       .filter(r => (kind === "posts" ? !!r.post : true))
       .sort((a, b) => b.at - a.at)
   }, [headlines, livePosts, scoped, kind])
+  // The states this tile can actually be in, in the order a reader reads
+  // them: narrowest first. Scoping and posts are mutually exclusive, so
+  // picking a post view leaves the scope rather than quietly showing
+  // nothing — the label is then true of what appears.
+  const views = [
+    ...(active ? [{
+      id: "symbol", label: active, on: scoped,
+      why: `Only stories naming ${active}`,
+      pick: () => { setShowAll(false); setKind("news") },
+    }] : []),
+    {
+      id: "news", label: active ? "All news" : "News", on: !scoped && kind === "news",
+      why: "Stories from the feeds you keyed — nothing unverified",
+      pick: () => { setShowAll(true); setKind("news") },
+    },
+    ...(hasPosts ? [{
+      id: "all", label: "News and posts", on: !scoped && kind === "all",
+      why: "Stories and posts together, newest first. A post carries no ticker, so this shows the whole window",
+      pick: () => { setShowAll(true); setKind("all") },
+    }, {
+      id: "posts", label: `Posts · ${livePosts.length}`, on: !scoped && kind === "posts",
+      why: "Social posts only. Nobody is accountable for one. A post carries no ticker, so this shows the whole window",
+      pick: () => { setShowAll(true); setKind("posts") },
+    }] : []),
+  ]
+
   return (
   <Widget
     span={span}
@@ -123,33 +151,38 @@ export function NewsTape({ span = 12 }: {
       ? `${livePosts.length} posts, newest first`
       : `${headlines.length} headlines, newest first`}
     scroll={TILE_BODY_HEIGHT}
-    actions={
-      <>
-        {active && <Btn active={scoped} onClick={() => setShowAll(false)}>{active}</Btn>}
-        {active && <Btn active={!scoped} onClick={() => setShowAll(true)}>All</Btn>}
-        {/* Offered wherever posts EXIST, not only where they would already
-            show: with the social source off there are none to filter, and a
-            control over an empty set is a claim that something is there.
-            Both and Posts carry posts, which a scoped list cannot hold, so
-            pressing either leaves the scope — the control does what its
-            label says instead of quietly showing nothing. News is stories
-            alone, which a scoped list can hold, so it keeps the symbol. */}
-        {hasPosts && (
+    actions={views.length > 1 ? (
+      // ONE PICKER, NOT TWO ROWS OF TOGGLES (2026-09-25, the reader:
+      // "multiple boxes to choose is confusing, make dropdowns or reduce
+      // options"). The header carried five buttons across two unrelated
+      // axes — scope (this symbol / all) beside kind (both / news / posts)
+      // — with no separation and TWO of them lit at once, so five options
+      // read as one exclusive set and neither axis was legible.
+      //
+      // They are not really two axes: a post carries no ticker, so nothing
+      // that includes posts can also be scoped to a symbol. That leaves
+      // FOUR reachable states, not six, and four states are a list. The
+      // options that exist are the ones the reader can reach — the scoped
+      // entry only with a chip marked, the post entries only where posts
+      // actually arrived.
+      <Menu label={views.find(v => v.on)?.label ?? "News"} align="right"
+            title="What this list shows">
+        {close => (
           <>
-            <Btn active={!scoped && kind === "all"}
-                 onClick={() => { setShowAll(true); setKind("all") }}
-                 title="Stories and posts together, newest first. A post carries no ticker, so this shows the whole window">Both</Btn>
-            <Btn active={scoped || kind === "news"} onClick={() => setKind("news")}
-                 title="Stories from the feeds you keyed — nothing unverified">News</Btn>
-            <Btn active={!scoped && kind === "posts"}
-                 onClick={() => { setShowAll(true); setKind("posts") }}
-                 title="Social posts only. Nobody is accountable for one. A post carries no ticker, so this shows the whole window">
-              Posts · {livePosts.length}
-            </Btn>
+            {views.map(v => (
+              <button key={v.id} type="button" role="menuitemradio" aria-checked={v.on}
+                      title={v.why}
+                      onClick={() => { v.pick(); close() }}
+                      className={cn(menuItemCls, "justify-between gap-3")}>
+                <span>{v.label}</span>
+                {/* A picked row is a grey tick, never red (#283). */}
+                <span className="text-muted-foreground">{v.on ? "✓" : ""}</span>
+              </button>
+            ))}
           </>
         )}
-      </>
-    }
+      </Menu>
+    ) : undefined}
   >
     {open ? (
       <NewsReader article={open} onBack={() => setOpenId(null)} />
