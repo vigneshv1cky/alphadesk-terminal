@@ -93,7 +93,14 @@ export function EquityOverview() {
     )
   }
   if (isPending || !q) {
-    return <Widget span={4} symbol={symbol} title="Equity Overview"><Empty>loading…</Empty></Widget>
+    // MEASURED at 897px once filled (2026-09-25, #72). A loading state the
+    // height of one word let the whole column below it jump when the quote
+    // landed; holding the space it is about to need does not.
+    return (
+      <Widget span={4} symbol={symbol} title="Equity Overview" minBody={OVERVIEW_BODY_H}>
+        <Empty>loading…</Empty>
+      </Widget>
+    )
   }
 
   /** The headline price rides the live feed; everything below it stays on the
@@ -545,7 +552,23 @@ function FloorsPopover({ floors, defaults, onApply, onClose }: {
  * and the reader scrolls the BOARD, which is the one scrollbar the page
  * already had. A category with less to show, like the twelve Treasury
  * tenors, sizes to what it has. */
+// What the filled panel measures, less its header.
+const OVERVIEW_BODY_H = 857
+
 const MOVERS_TOP = 50
+// A table row and its head are both 32px (components/terminal.tsx), so the
+// height a movers tile is ABOUT to be is knowable before its rows arrive.
+// Reserving it is what stops the board rearranging itself under the reader
+// while six of these answer at different moments (2026-09-25, #72): measured
+// cumulative layout shift on Markets was 1.274, of which the tiles were
+// 0.907, against a 0.1 "good" threshold.
+//
+// Only while LOADING. Once the rows are here the tile sizes to what it
+// actually got, so a category that returns twelve rows is twelve rows tall
+// rather than carrying a permanent gap where the other thirty-eight would
+// have been.
+const MOVERS_ROW_H = 32
+const MOVERS_RESERVE = MOVERS_TOP * MOVERS_ROW_H + MOVERS_ROW_H
 
 function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title: string }) {
   const category = initial
@@ -625,6 +648,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         </Menu>
       ) : undefined}
       toolbar={tabs.length > 1 ? <TabStrip tabs={tabs.map(t => ({ id: t.id, label: t.label }))} value={active?.id ?? ""} onChange={setTab} /> : undefined}
+      minBody={q.isPending ? MOVERS_RESERVE : undefined}
     >
       {q.isPending ? <Empty>loading…</Empty>
         : q.isError ? <QueryFailure error={q.error}>the {CATEGORY_LABELS[category].toLowerCase()} list is unavailable right now</QueryFailure>

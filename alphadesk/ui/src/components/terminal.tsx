@@ -174,7 +174,8 @@ export function TileSlot({ span, align, children }: {
 export const BODY_VIEWPORT_CAP = "calc(100vh - 190px)"
 
 export function Widget({
-  title, symbol, subtitle, actions, toolbar, span = 12, className, bodyClassName, scroll, fitViewport = true, children,
+  title, symbol, subtitle, actions, toolbar, span = 12, className, bodyClassName, scroll, minBody,
+  fitViewport = true, children,
 }: {
   title?: React.ReactNode
   /** Rendered in accent blue before the title, the way AlphaSpace prefixes a
@@ -200,6 +201,11 @@ export function Widget({
    * (2026-09-02). A STRING is exact — viewport-fit bodies like the earnings
    * calendar reserve their height up front. */
   scroll?: number | string
+  /** Reserve this many pixels of BODY height without capping it, so a tile
+   * that grows into its rows does not shove the board down when they land.
+   * A cap would bring back the inner scroller the board deliberately has
+   * not got. */
+  minBody?: number
   /** With a numeric `scroll`: let the body grow to what the viewport shows
    * before it scrolls (the default). False keeps the number as the cap — for
    * a long list the reader scans rather than reads whole, like the week's
@@ -271,9 +277,25 @@ export function Widget({
         gridColumn: align && cols < 12
           ? `${align === "center" ? Math.floor((12 - cols) / 2) + 1 : 13 - cols} / span ${cols}`
           : `span ${cols} / span ${cols}`,
+        // A FLOOR THAT DOES NOT CAP (2026-09-25, #72). A string height
+        // reserves the tile's space here and always did. A tile that GROWS
+        // INTO ITS ROWS reserved nothing, so it was born at header height
+        // and shoved everything below it down as its rows landed: measured
+        // on Markets, cumulative layout shift was 1.274 against a 0.1
+        // "good" threshold, and 0.907 of that was the tiles themselves.
+        // With six movers tiles answering at different moments the board
+        // rearranged itself under the reader for several seconds — the same
+        // complaint as the chart scroll deleted in #279, that something
+        // moves out from under you.
+        //
+        // `minBody` reserves the height WITHOUT capping the body, which is
+        // what keeps "no inner scroller, the board scrolls" intact: the
+        // tile is simply born the size it is about to be.
         ...(typeof bodyHeight === "string"
           ? { minHeight: `calc(${bodyHeight} + ${HEADER_H + (toolbar ? TOOLBAR_H : 0)}px)` }
-          : {}),
+          : minBody
+            ? { minHeight: `${minBody + HEADER_H + (toolbar ? TOOLBAR_H : 0)}px` }
+            : {}),
       }}
       className={cn(
         "flex min-w-0 flex-col overflow-hidden border border-card-border bg-card shadow-card",
