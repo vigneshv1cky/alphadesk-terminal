@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { Menu, Monitor, Moon, Sun } from "lucide-react"
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom"
+import { noteRouteChange, watchNavPresses } from "@/lib/navTiming"
 import { api } from "@/lib/api"
 import { useTheme } from "@/lib/theme"
 import { SubscribePage } from "@/components/SubscribePage"
@@ -74,6 +75,12 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
 
   // Per-page document title
   useEffect(() => { document.title = TITLES[pathname] ?? "AlphaDesk" }, [pathname])
+
+  // TEMPORARY (2026-09-25, #78): how long a page press takes, measured on
+  // the machine that feels it. Remove with lib/navTiming.ts once the lag
+  // the reader reported is understood.
+  useEffect(() => { watchNavPresses() }, [])
+  useEffect(() => { noteRouteChange(pathname) }, [pathname])
 
   return (
     // dvh, not vh: on a phone the browser chrome overlaps a 100vh box and the
