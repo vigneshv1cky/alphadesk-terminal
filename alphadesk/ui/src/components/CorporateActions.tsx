@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { QueryFailure } from "@/components/KeyPrompt"
-import { api } from "@/lib/api"
+import { on } from "@/lib/api"
 import { Empty, Table, TD, TH, THead, Widget } from "@/components/terminal"
 
 /** Dividend payments and stock splits for ONE symbol — the corporate-action
@@ -23,7 +23,7 @@ const money = (v: number | null | undefined) =>
 export function useCorporateActions(symbol: string) {
   return useQuery({
     queryKey: ["corporate-actions", symbol],
-    queryFn: () => api.corporateActions(symbol),
+    queryFn: ({ signal }) => on(signal).corporateActions(symbol),
     enabled: !!symbol,
     staleTime: 60 * 60_000,   // declared once a quarter; the server holds it six hours
     retry: false,

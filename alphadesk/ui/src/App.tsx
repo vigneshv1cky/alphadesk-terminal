@@ -13,24 +13,90 @@ import { SymbolStrip } from "@/components/SymbolStrip"
 import { HeaderTips, btnCls } from "@/components/terminal"
 
 // Lazy routes — each page is its own chunk, so it loads like a real page.
-const DashboardPage = lazy(() => import("@/pages/DashboardPage"))
-const NewsPage = lazy(() => import("@/pages/NewsPage"))
-const AnalysisPage = lazy(() => import("@/pages/AnalysisPage"))
-const SectorsPage = lazy(() => import("@/pages/SectorsPage"))
-const PortfolioPage = lazy(() => import("@/pages/PortfolioPage"))
-const EarningsPage = lazy(() => import("@/pages/EarningsPage"))
-const CalendarsPage = lazy(() => import("@/pages/CalendarsPage"))
-const AccountPage = lazy(() => import("@/pages/AccountPage"))
-const AdminPage = lazy(() => import("@/pages/AdminPage"))
-const ThemePage = lazy(() => import("@/pages/ThemePage"))
-const OptionsPage = lazy(() => import("@/pages/OptionsPage"))
-const CustomViewPage = lazy(() => import("@/pages/CustomViewPage"))
-const TermsPage = lazy(() => import("@/pages/TermsPage"))
-const PrivacyPage = lazy(() => import("@/pages/PrivacyPage"))
-const DisclaimerPage = lazy(() => import("@/pages/DisclaimerPage"))
-const AboutPage = lazy(() => import("@/pages/AboutPage"))
-const CompanyPage = lazy(() => import("@/pages/CompanyPage"))
-const ChartPage = lazy(() => import("@/pages/ChartPage"))
+// Lazy routes — each page is its own chunk, so it loads like a real page.
+//
+// THE IMPORT IS NAMED SEPARATELY FROM THE ROUTE (2026-09-25, #80) so the
+// same thunk can be called ahead of time. React's lazy() keeps its loader
+// private, so a page declared only as lazy(() => import(...)) cannot be
+// fetched before somebody navigates to it — and until it arrives the router
+// holds the PREVIOUS page on screen, which is felt as a press that did
+// nothing. Measured on the reader's own machine: Options answered a first
+// press in 257ms and a second in 73ms, Profile 168ms then 81ms. The whole
+// difference is the chunk.
+const PAGE_IMPORTS = {
+  DashboardPage: () => import("@/pages/DashboardPage"),
+  NewsPage: () => import("@/pages/NewsPage"),
+  AnalysisPage: () => import("@/pages/AnalysisPage"),
+  SectorsPage: () => import("@/pages/SectorsPage"),
+  PortfolioPage: () => import("@/pages/PortfolioPage"),
+  EarningsPage: () => import("@/pages/EarningsPage"),
+  CalendarsPage: () => import("@/pages/CalendarsPage"),
+  AccountPage: () => import("@/pages/AccountPage"),
+  AdminPage: () => import("@/pages/AdminPage"),
+  ThemePage: () => import("@/pages/ThemePage"),
+  OptionsPage: () => import("@/pages/OptionsPage"),
+  CustomViewPage: () => import("@/pages/CustomViewPage"),
+  TermsPage: () => import("@/pages/TermsPage"),
+  PrivacyPage: () => import("@/pages/PrivacyPage"),
+  DisclaimerPage: () => import("@/pages/DisclaimerPage"),
+  AboutPage: () => import("@/pages/AboutPage"),
+  CompanyPage: () => import("@/pages/CompanyPage"),
+  ChartPage: () => import("@/pages/ChartPage"),
+}
+
+/** Fetched ahead in this order: the pages a reader moves between first. */
+const WARM_ORDER: (keyof typeof PAGE_IMPORTS)[] = ["DashboardPage", "NewsPage", "AnalysisPage", "SectorsPage", "ChartPage", "CompanyPage", "OptionsPage", "EarningsPage", "CalendarsPage", "PortfolioPage", "CustomViewPage", "AccountPage", "AdminPage", "ThemePage", "TermsPage", "PrivacyPage", "DisclaimerPage", "AboutPage"]
+
+const DashboardPage = lazy(PAGE_IMPORTS.DashboardPage)
+const NewsPage = lazy(PAGE_IMPORTS.NewsPage)
+const AnalysisPage = lazy(PAGE_IMPORTS.AnalysisPage)
+const SectorsPage = lazy(PAGE_IMPORTS.SectorsPage)
+const PortfolioPage = lazy(PAGE_IMPORTS.PortfolioPage)
+const EarningsPage = lazy(PAGE_IMPORTS.EarningsPage)
+const CalendarsPage = lazy(PAGE_IMPORTS.CalendarsPage)
+const AccountPage = lazy(PAGE_IMPORTS.AccountPage)
+const AdminPage = lazy(PAGE_IMPORTS.AdminPage)
+const ThemePage = lazy(PAGE_IMPORTS.ThemePage)
+const OptionsPage = lazy(PAGE_IMPORTS.OptionsPage)
+const CustomViewPage = lazy(PAGE_IMPORTS.CustomViewPage)
+const TermsPage = lazy(PAGE_IMPORTS.TermsPage)
+const PrivacyPage = lazy(PAGE_IMPORTS.PrivacyPage)
+const DisclaimerPage = lazy(PAGE_IMPORTS.DisclaimerPage)
+const AboutPage = lazy(PAGE_IMPORTS.AboutPage)
+const CompanyPage = lazy(PAGE_IMPORTS.CompanyPage)
+const ChartPage = lazy(PAGE_IMPORTS.ChartPage)
+
+/** Fetch every page's code while nothing else is happening.
+ *
+ * ONE AT A TIME, AND ONLY WHEN THE BROWSER IS IDLE. Firing eighteen imports
+ * at once would be its own small storm, on a connection that is already
+ * carrying a board's worth of data — the opposite of the point. Each import
+ * waits for an idle moment, so this costs a reader nothing they can feel and
+ * leaves navigation with nothing left to download.
+ *
+ * Failures are ignored on purpose: a chunk that cannot be fetched now is
+ * fetched again by the route itself later, where there is a Suspense
+ * boundary and an error boundary to handle it. Warming must never be able
+ * to break a page it was only trying to make faster.
+ */
+let warmed = false
+function warmPages() {
+  // Development mounts every effect twice; two warmers would double every
+  // request this is meant to remove.
+  if (warmed) return
+  warmed = true
+  const idle: (cb: () => void) => void =
+    typeof requestIdleCallback === "function"
+      ? cb => requestIdleCallback(() => cb(), { timeout: 4000 })
+      : cb => window.setTimeout(cb, 300)
+  let i = 0
+  const next = () => {
+    if (i >= WARM_ORDER.length) return
+    const load = PAGE_IMPORTS[WARM_ORDER[i++]]
+    void load().catch(() => {}).then(() => idle(next))
+  }
+  idle(next)
+}
 
 const TITLES: Record<string, string> = {
   "/markets": "Markets · AlphaDesk",
@@ -80,6 +146,10 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
   // TEMPORARY (2026-09-25, #78): how long a page press takes, measured on
   // the machine that feels it. Remove with lib/navTiming.ts once the lag
   // the reader reported is understood.
+  // Fetch every page's code in the background, so a press never waits on
+  // the network to show a page (#80).
+  useEffect(() => { warmPages() }, [])
+
   const qc = useQueryClient()
   useEffect(() => {
     // The instrument is told how to ask "is anything still loading" rather

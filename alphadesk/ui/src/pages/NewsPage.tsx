@@ -5,7 +5,7 @@ import { X } from "lucide-react"
 import { ComposedBoard } from "@/components/ComposedBoard"
 import { HeadlineTickers } from "@/components/HeadlineTickers"
 import { NewsReader } from "@/components/NewsReader"
-import { api, isNeedsKey, type NewsArticle } from "@/lib/api"
+import { on, api, isNeedsKey, type NewsArticle } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { boardStories, markSeen, readSeen } from "@/lib/newsSeen"
 import { useNews } from "@/lib/queries"
@@ -179,7 +179,7 @@ export default function NewsPage() {
   // they should. The count is what makes a switched-on source visible.
   const posts = useQuery({
     queryKey: ["social-posts"],
-    queryFn: () => api.socialPosts(50),
+    queryFn: ({ signal }) => on(signal).socialPosts(50),
     staleTime: 60_000,
     retry: false,
   })
@@ -198,7 +198,7 @@ export default function NewsPage() {
   // so "robinhood" also keeps stories tagged HOOD. A config read, cached.
   const companies = useQuery({
     queryKey: ["newsTerms", needle],
-    queryFn: () => api.newsTerms(needle),
+    queryFn: ({ signal }) => on(signal).newsTerms(needle),
     enabled: needle.length >= 2,
     staleTime: Infinity,
   }).data
@@ -212,7 +212,7 @@ export default function NewsPage() {
   }, [needle])
   const related = useQuery({
     queryKey: ["newsRelated", meant],
-    queryFn: () => api.newsRelated(meant),
+    queryFn: ({ signal }) => on(signal).newsRelated(meant),
     enabled: meant.length >= 3,
     staleTime: 60_000,
   }).data?.articles

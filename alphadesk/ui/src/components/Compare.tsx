@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { useQueries, useQuery } from "@tanstack/react-query"
-import { api, type ChartBar, type ChartRange, type CompareRow, type Peers, type Quote } from "@/lib/api"
+import { on, type ChartBar, type ChartRange, type CompareRow, type Peers, type Quote } from "@/lib/api"
 import { keys, useQuotes } from "@/lib/queries"
 import { compact } from "@/components/Treemap"
 import { Empty, fieldCls, Table, TD, TH, THead, Widget, btnCls } from "@/components/terminal"
@@ -36,7 +36,7 @@ function useDailySeries(symbols: string[], range: ChartRange) {
   return useQueries({
     queries: symbols.map(sym => ({
       queryKey: keys.chart(sym, range, "1d"),
-      queryFn: () => api.chartRange(sym, range, "1d"),
+      queryFn: ({ signal }) => on(signal).chartRange(sym, range, "1d"),
       enabled: !!sym,
       staleTime: 300_000,
     })),
@@ -384,7 +384,7 @@ export function ComparisonMetricsPanel({ symbols, active, peers, showPeers, onTo
   }, [symbols, peers, showPeers])
   const q = useQuery({
     queryKey: ["compare-metrics", lineup.join(",")],
-    queryFn: () => api.compareMetrics(lineup),
+    queryFn: ({ signal }) => on(signal).compareMetrics(lineup),
     enabled: lineup.length > 0,
     staleTime: 60 * 60_000,
   })

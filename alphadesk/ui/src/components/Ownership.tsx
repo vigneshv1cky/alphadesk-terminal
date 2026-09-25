@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { QueryFailure } from "@/components/KeyPrompt"
-import { api } from "@/lib/api"
+import { on } from "@/lib/api"
 import { compact } from "@/components/Treemap"
 import { Empty, Table, TD, TH, THead, Widget } from "@/components/terminal"
 
@@ -23,7 +23,7 @@ const dash = "—"
 export function useInstitutional(symbol: string, limit = 25) {
   return useQuery({
     queryKey: ["institutional", symbol, limit],
-    queryFn: () => api.institutional(symbol, limit),
+    queryFn: ({ signal }) => on(signal).institutional(symbol, limit),
     enabled: !!symbol,
     staleTime: 60 * 60_000,   // 13F data moves as filings land, not intraday
     retry: false,
@@ -144,7 +144,7 @@ export function StockOwnershipPanel({ symbol, span = 7, scroll = 420 }: PanelPro
 export function InsiderTradesPanel({ symbol, span = 12, scroll = 420, limit = 40 }: PanelProps & { limit?: number }) {
   const trades = useQuery({
     queryKey: ["insider", symbol],
-    queryFn: () => api.insider(symbol),
+    queryFn: ({ signal }) => on(signal).insider(symbol),
     enabled: !!symbol,
     staleTime: 30 * 60_000,   // EDGAR walks are slow; the server caches too
     retry: false,

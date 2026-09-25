@@ -732,7 +732,11 @@ export class NeedsKeyError extends ApiError {
 export const isNeedsKey = (err: unknown): err is NeedsKeyError => err instanceof NeedsKeyError
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(path)
+  // A signal left by on() immediately before this call, consumed once. See
+  // the note beside on() for why it is one-shot.
+  const signal = nextSignal
+  nextSignal = undefined
+  const res = await fetch(path, { signal })
   if (!res.ok) {
     noteUnauthorized(path, res.status)
     // The server's own sentence when it wrote one — "Your polygon plan does
@@ -1774,3 +1778,40 @@ export function etDateTime(ts: string): string {
   }).format(new Date(ts))
 }
 
+
+
+// ── Dropping a read the reader has walked away from (2026-09-25, #80) ──────
+//
+// WHY THIS EXISTS. Cycling quickly through pages left every abandoned
+// page's requests running: measured on the reader's own machine at up to
+// 60 in flight at once, with 55 still going after they had already moved
+// on. Those answers arrive for a page nobody is looking at, and each one is
+// still parsed and still wakes the data layer.
+//
+// WHAT IT DOES NOT DO, and this matters when judging whether it helped:
+// every endpoint here is a synchronous handler on a fixed pool of server
+// workers, and a client that hangs up does NOT stop the handler — it runs
+// to completion regardless. So this frees the BROWSER, not the server. If
+// the pool is what the reader is really waiting behind, the fix for that
+// is a different one and belongs on the server.
+//
+// HOW. The data layer hands each read an abort signal, and every read in
+// this file funnels through one get(). Rather than thread a parameter
+// through sixty-eight endpoint functions and sixty-seven call sites, on()
+// leaves the signal where the very next get() picks it up:
+//
+//   queryFn: ({ signal }) => on(signal).keyStats(symbol)
+//
+// IT IS DELIBERATELY ONE-SHOT, and cleared again on the next microtask.
+// An endpoint that awaits something before calling get() would otherwise
+// pick up a LATER reader's signal and be cancelled when that unrelated
+// panel closed. Clearing it means such a call is simply not cancellable —
+// the behaviour we had before — which is the right way for this to fail.
+let nextSignal: AbortSignal | undefined
+
+/** Mark the next read as belonging to a panel that may go away. */
+export function on(signal?: AbortSignal): typeof api {
+  nextSignal = signal
+  queueMicrotask(() => { nextSignal = undefined })
+  return api
+}

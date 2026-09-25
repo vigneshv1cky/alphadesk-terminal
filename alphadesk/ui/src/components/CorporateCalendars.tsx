@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { compact } from "@/components/Treemap"
-import { api, type CorporateCalendar, type DividendEvent, type IpoEvent, type SplitEvent } from "@/lib/api"
+import { api, on, type CorporateCalendar, type DividendEvent, type IpoEvent, type SplitEvent } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { vendorLabel } from "@/lib/vendors"
 import { Btn, Empty, Table, TD, TH, THead, TR, Widget } from "@/components/terminal"
@@ -50,10 +50,15 @@ function useWeek() {
   return { start, end, nav }
 }
 
-function useCalendar<T>(kind: string, start: string, end: string, fetcher: (s: string, e: string) => Promise<CorporateCalendar<T>>) {
+function useCalendar<T>(kind: string, start: string, end: string,
+                        // The fetcher is handed the api rather than being bound to
+                        // it, so the read can be dropped when the reader leaves the
+                        // page (#80): the signal has to reach the CALL, and a
+                        // ready-made function reference has nowhere to put it.
+                        fetcher: (a: typeof api, s: string, e: string) => Promise<CorporateCalendar<T>>) {
   return useQuery({
     queryKey: ["calendar", kind, start, end],
-    queryFn: () => fetcher(start, end),
+    queryFn: ({ signal }) => fetcher(on(signal), start, end),
     staleTime: 30 * 60_000,
     refetchInterval: 30 * 60_000,
     refetchIntervalInBackground: true,
@@ -82,7 +87,7 @@ function DayRow({ day, cols }: { day: string; cols: number }) {
 
 export function DividendCalendarPanel({ span = 12 }: { span?: number }) {
   const { start, end, nav } = useWeek()
-  const q = useCalendar("dividends", start, end, api.dividendCalendar)
+  const q = useCalendar("dividends", start, end, (a, s, e) => a.dividendCalendar(s, e))
   const { add } = useBoardSymbols()
   const rows = q.data?.rows ?? []
   const groups = useMemo(() => groupBy<DividendEvent>(rows, r => r.ex_date), [rows])
@@ -150,7 +155,7 @@ function singleSourceTitle(r: SplitEvent, vendors: string[]): string {
 
 export function SplitCalendarPanel({ span = 6 }: { span?: number }) {
   const { start, end, nav } = useWeek()
-  const q = useCalendar("splits", start, end, api.splitCalendar)
+  const q = useCalendar("splits", start, end, (a, s, e) => a.splitCalendar(s, e))
   const { add } = useBoardSymbols()
   // A split only one of two vendors lists is a claim, not an event: hidden
   // until the reader asks. With one vendor nothing is checked or hidden.
@@ -232,7 +237,7 @@ function IpoStatus({ r }: { r: IpoEvent }) {
 
 export function IpoCalendarPanel({ span = 6 }: { span?: number }) {
   const { start, end, nav } = useWeek()
-  const q = useCalendar("ipos", start, end, api.ipoCalendar)
+  const q = useCalendar("ipos", start, end, (a, s, e) => a.ipoCalendar(s, e))
   const { add } = useBoardSymbols()
   // ETF launches and blank-check units, rights and warrants were 112 of 162
   // rows over six weeks (2026-09-14); company IPOs show by default.

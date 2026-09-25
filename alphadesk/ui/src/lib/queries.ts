@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api, type ChartRange } from "@/lib/api"
+import { on, type ChartRange } from "@/lib/api"
 import { loadChartPrefs } from "@/lib/chartPrefs"
 import { useLiveEnabled } from "@/lib/liveState"
 import { watch } from "@/lib/liveStream"
@@ -52,14 +52,14 @@ export const keys = {
 }
 
 export const useEarnings = (enabled = true) =>
-  useQuery({ queryKey: keys.earnings, queryFn: api.earnings, refetchInterval: 300_000, enabled })
+  useQuery({ queryKey: keys.earnings, queryFn: ({ signal }) => on(signal).earnings(), refetchInterval: 300_000, enabled })
 
 /** One company's report dates — the calendar's symbol filter. Asked only
  * once a symbol is submitted; kept five minutes like the week. */
 export const useEarningsFind = (symbol: string | null) =>
   useQuery({
     queryKey: keys.earningsFind(symbol ?? ""),
-    queryFn: () => api.earningsFind(symbol!),
+    queryFn: ({ signal }) => on(signal).earningsFind(symbol!),
     enabled: !!symbol,
     staleTime: 300_000,
   })
@@ -67,7 +67,7 @@ export const useEarningsFind = (symbol: string | null) =>
 export const useEarningsWeek = (start?: string) =>
   useQuery({
     queryKey: keys.earningsWeek(start),
-    queryFn: () => api.earningsWeek(start),
+    queryFn: ({ signal }) => on(signal).earningsWeek(start),
     // A busy week comes back before its background lookups finish; it is
     // asked again every few seconds until they are in.
     refetchInterval: q => ((q.state.data?.pending?.timing ?? 0) + (q.state.data?.pending?.announcements ?? 0) > 0 ? 5_000 : 300_000),
@@ -82,7 +82,7 @@ export const useEarningsWeek = (start?: string) =>
 export const useEarningsContext = (symbol: string) =>
   useQuery({
     queryKey: keys.earningsContext(symbol),
-    queryFn: () => api.earningsContext(symbol),
+    queryFn: ({ signal }) => on(signal).earningsContext(symbol),
     enabled: !!symbol,
     staleTime: 10 * 60_000,
   })
@@ -90,7 +90,7 @@ export const useEarningsContext = (symbol: string) =>
 export const useTranscripts = (symbol: string) =>
   useQuery({
     queryKey: keys.transcripts(symbol),
-    queryFn: () => api.transcripts(symbol),
+    queryFn: ({ signal }) => on(signal).transcripts(symbol),
     enabled: !!symbol,
     staleTime: 30 * 60_000,
     retry: false,
@@ -99,7 +99,7 @@ export const useTranscripts = (symbol: string) =>
 export const useTranscript = (symbol: string, id: string | null) =>
   useQuery({
     queryKey: keys.transcript(symbol, id ?? ""),
-    queryFn: () => api.transcript(symbol, id ?? ""),
+    queryFn: ({ signal }) => on(signal).transcript(symbol, id ?? ""),
     enabled: !!symbol && !!id,
     staleTime: Infinity,    // a published document never changes
     retry: false,
@@ -108,7 +108,7 @@ export const useTranscript = (symbol: string, id: string | null) =>
 export const useEarningsHistory = (symbol: string) =>
   useQuery({
     queryKey: keys.earningsHistory(symbol),
-    queryFn: () => api.earningsHistory(symbol),
+    queryFn: ({ signal }) => on(signal).earningsHistory(symbol),
     enabled: !!symbol,
     staleTime: 10 * 60_000,
     retry: false,
@@ -117,7 +117,7 @@ export const useEarningsHistory = (symbol: string) =>
 export const useEarningsInsights = (symbol: string) =>
   useQuery({
     queryKey: keys.earningsInsights(symbol),
-    queryFn: () => api.earningsInsights(symbol),
+    queryFn: ({ signal }) => on(signal).earningsInsights(symbol),
     enabled: !!symbol,
     staleTime: 10 * 60_000,
   })
@@ -125,7 +125,7 @@ export const useEarningsInsights = (symbol: string) =>
 export const useFundamentals = (symbol: string, period: "quarterly" | "annual") =>
   useQuery({
     queryKey: keys.fundamentals(symbol, period),
-    queryFn: () => api.fundamentals(symbol, period),
+    queryFn: ({ signal }) => on(signal).fundamentals(symbol, period),
     enabled: !!symbol,
     staleTime: 5 * 60_000,
   })
@@ -136,13 +136,13 @@ export const useFundamentals = (symbol: string, period: "quarterly" | "annual") 
 export const useRail = (symbols: string[]) =>
   useQuery({
     queryKey: keys.rail(symbols),
-    queryFn: () => api.rail(symbols),
+    queryFn: ({ signal }) => on(signal).rail(symbols),
     refetchInterval: 60_000,
     staleTime: 30_000,
   })
 
 export const useScreener = () =>
-  useQuery({ queryKey: keys.screener, queryFn: api.screener, refetchInterval: 60_000 })
+  useQuery({ queryKey: keys.screener, queryFn: ({ signal }) => on(signal).screener(), refetchInterval: 60_000 })
 
 /** The reader's news window. Reread when their real-time feed stores a
  * story (the tab's live connection says so, 2026-09-15), and every minute as
@@ -154,7 +154,7 @@ export const useNews = () => {
     if (!live) return
     return watch({ news: true, onNews: () => { void qc.invalidateQueries({ queryKey: keys.news }) } })
   }, [live, qc])
-  return useQuery({ queryKey: keys.news, queryFn: api.news, refetchInterval: 60_000 })
+  return useQuery({ queryKey: keys.news, queryFn: ({ signal }) => on(signal).news(), refetchInterval: 60_000 })
 }
 
 /** One symbol's stories over the whole news window, from the server
@@ -165,25 +165,25 @@ export const useSymbolNews = (symbol: string) => {
   const { dataUpdatedAt } = useNews()
   return useQuery({
     queryKey: [...keys.news, "symbol", symbol, dataUpdatedAt],
-    queryFn: () => api.newsPage({ symbol, limit: 300 }),
+    queryFn: ({ signal }) => on(signal).newsPage({ symbol, limit: 300 }),
     placeholderData: keepPreviousData,
     enabled: !!symbol,
   })
 }
 
 export const useTape = () =>
-  useQuery({ queryKey: keys.tape, queryFn: api.tape, refetchInterval: 60_000 })
+  useQuery({ queryKey: keys.tape, queryFn: ({ signal }) => on(signal).tape(), refetchInterval: 60_000 })
 
 /** The Sectors page's funds. The server keeps them a minute. */
 export const useSectors = () =>
-  useQuery({ queryKey: keys.sectors, queryFn: api.sectors, refetchInterval: 60_000 })
+  useQuery({ queryKey: keys.sectors, queryFn: ({ signal }) => on(signal).sectors(), refetchInterval: 60_000 })
 
 /** Breadth and each sector's largest companies. The server keeps them a minute. */
 export const useSectorBreadth = () =>
-  useQuery({ queryKey: keys.sectorBreadth, queryFn: api.sectorBreadth, refetchInterval: 60_000 })
+  useQuery({ queryKey: keys.sectorBreadth, queryFn: ({ signal }) => on(signal).sectorBreadth(), refetchInterval: 60_000 })
 
 export const useMovers = () =>
-  useQuery({ queryKey: keys.movers, queryFn: () => api.movers(20), refetchInterval: 120_000 })
+  useQuery({ queryKey: keys.movers, queryFn: ({ signal }) => on(signal).movers(20), refetchInterval: 120_000 })
 
 /** Quotes for a whole basket in ONE request.
  *
@@ -198,7 +198,7 @@ export const useQuotes = (symbols: string[], fill?: string) => {
   const basket = [...new Set(symbols.map(s => s.toUpperCase()))].sort()
   return useQuery({
     queryKey: [...keys.quotes(basket), fill ?? ""],
-    queryFn: () => api.quotes(basket, fill),
+    queryFn: ({ signal }) => on(signal).quotes(basket, fill),
     enabled: basket.length > 0,
     refetchInterval: 60_000,
   })
@@ -208,7 +208,7 @@ export const useQuotes = (symbols: string[], fill?: string) => {
 export const useOptionExpirations = (symbol: string) =>
   useQuery({
     queryKey: keys.optionExpirations(symbol),
-    queryFn: () => api.optionExpirations(symbol),
+    queryFn: ({ signal }) => on(signal).optionExpirations(symbol),
     enabled: !!symbol,
     staleTime: 10 * 60_000,
   })
@@ -217,7 +217,7 @@ export const useOptionExpirations = (symbol: string) =>
 export const useOptionChain = (symbol: string, expiry: string) =>
   useQuery({
     queryKey: keys.optionChain(symbol, expiry),
-    queryFn: () => api.optionChain(symbol, expiry),
+    queryFn: ({ signal }) => on(signal).optionChain(symbol, expiry),
     enabled: !!symbol && !!expiry,
     refetchInterval: 30_000,
     // Flipping expiries keeps the last chain on screen until the next arrives.
@@ -229,7 +229,7 @@ export const useOptionChain = (symbol: string, expiry: string) =>
 export const useOptionFlow = (symbols: string[], minPremium: number, paused: boolean) =>
   useQuery({
     queryKey: keys.optionFlow(symbols, minPremium),
-    queryFn: () => api.optionFlow(symbols, minPremium),
+    queryFn: ({ signal }) => on(signal).optionFlow(symbols, minPremium),
     enabled: symbols.length > 0,
     refetchInterval: paused ? false : 10_000,
     placeholderData: keepPreviousData,
@@ -241,7 +241,7 @@ export const useOptionFlow = (symbols: string[], minPremium: number, paused: boo
 export const useExternalWidgets = () =>
   useQuery({
     queryKey: keys.externalWidgets,
-    queryFn: api.externalWidgets,
+    queryFn: ({ signal }) => on(signal).externalWidgets(),
     refetchInterval: 300_000,
     staleTime: 300_000,
   })
@@ -252,40 +252,40 @@ export const useExternalWidgets = () =>
 export const useExternalWidgetData = (uid: string, symbol: string, refreshS: number) =>
   useQuery({
     queryKey: keys.externalWidgetData(uid, symbol),
-    queryFn: () => api.externalWidgetData(uid, symbol || undefined),
+    queryFn: ({ signal }) => on(signal).externalWidgetData(uid, symbol || undefined),
     refetchInterval: refreshS * 1000,
   })
 
 /** Who is signed in, and whether this instance asks. Shared by the header
  * chip, the rail and the Account page — one request, one answer. */
 export const useAuthMe = () =>
-  useQuery({ queryKey: keys.authMe, queryFn: api.authMe, staleTime: 60_000 })
+  useQuery({ queryKey: keys.authMe, queryFn: ({ signal }) => on(signal).authMe(), staleTime: 60_000 })
 /** The reader's stored keys — hints only; the server never returns a key. */
 export const useUserKeys = () =>
-  useQuery({ queryKey: keys.userKeys, queryFn: api.keys, staleTime: 30_000 })
+  useQuery({ queryKey: keys.userKeys, queryFn: ({ signal }) => on(signal).keys(), staleTime: 30_000 })
 
 /** Server config, so it changes only on redeploy — no refetch interval. */
 export const useThemes = () =>
-  useQuery({ queryKey: keys.themes, queryFn: api.themes, staleTime: Infinity })
+  useQuery({ queryKey: keys.themes, queryFn: ({ signal }) => on(signal).themes(), staleTime: Infinity })
 
 export const useIndices = () =>
-  useQuery({ queryKey: keys.indices, queryFn: api.indices, refetchInterval: 60_000 })
+  useQuery({ queryKey: keys.indices, queryFn: ({ signal }) => on(signal).indices(), refetchInterval: 60_000 })
 
 export const useCrypto = () =>
-  useQuery({ queryKey: keys.crypto, queryFn: () => api.crypto(20), refetchInterval: 120_000 })
+  useQuery({ queryKey: keys.crypto, queryFn: ({ signal }) => on(signal).crypto(20), refetchInterval: 120_000 })
 
 /** Quote for one symbol. Disabled when there is no symbol, so a widget can
  * mount before the board has been scoped without firing a bad request. */
 export const useQuote = (symbol: string) =>
   useQuery({
     queryKey: keys.quote(symbol),
-    queryFn: () => api.quote(symbol),
+    queryFn: ({ signal }) => on(signal).quote(symbol),
     enabled: !!symbol,
     refetchInterval: 60_000,
   })
 
 export const useSystem = () =>
-  useQuery({ queryKey: keys.system, queryFn: api.system, refetchInterval: 30_000 })
+  useQuery({ queryKey: keys.system, queryFn: ({ signal }) => on(signal).system(), refetchInterval: 30_000 })
 
 /** The price series, polled like everything else on the board.
  *
@@ -307,7 +307,7 @@ export const useSystem = () =>
 export const useChartSeries = (symbol: string, range: ChartRange, interval: string | null) =>
   useQuery({
     queryKey: keys.chart(symbol, range, interval),
-    queryFn: () => api.chartRange(symbol, range, interval ?? undefined),
+    queryFn: ({ signal }) => on(signal).chartRange(symbol, range, interval ?? undefined),
     enabled: !!symbol,
     refetchInterval: range === "1D" || range === "5D" ? 30_000 : 300_000,
     placeholderData: (prev, prevQuery) =>
@@ -328,7 +328,7 @@ export function usePrefetchChart() {
     const interval = prefs.intervalByRange[prefs.range] ?? null
     void qc.prefetchQuery({
       queryKey: keys.chart(sym, prefs.range, interval),
-      queryFn: () => api.chartRange(sym, prefs.range, interval ?? undefined),
+      queryFn: ({ signal }) => on(signal).chartRange(sym, prefs.range, interval ?? undefined),
       staleTime: 30_000,
     })
   }, [qc])
@@ -339,7 +339,7 @@ export function usePrefetchChart() {
 export const useCompany = (symbol: string) =>
   useQuery({
     queryKey: keys.company(symbol),
-    queryFn: () => api.company(symbol),
+    queryFn: ({ signal }) => on(signal).company(symbol),
     enabled: !!symbol,
     staleTime: 3_600_000,
     retry: false,
@@ -348,4 +348,4 @@ export const useCompany = (symbol: string) =>
 /** The active provider's interval catalogue. Changes only when the reader
  * changes their prices key, which invalidates it explicitly. */
 export const useChartCapabilities = () =>
-  useQuery({ queryKey: keys.chartCapabilities, queryFn: api.chartCapabilities, staleTime: 3_600_000 })
+  useQuery({ queryKey: keys.chartCapabilities, queryFn: ({ signal }) => on(signal).chartCapabilities(), staleTime: 3_600_000 })

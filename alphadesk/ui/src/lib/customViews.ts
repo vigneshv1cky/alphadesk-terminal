@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { api, type ServerView } from "@/lib/api"
+import { on, api, type ServerView } from "@/lib/api"
 import { useAuthMe } from "@/lib/queries"
 
 /** My Views — reader-created boards.
@@ -82,7 +82,7 @@ export function useMyViews(): MyViewsApi {
   const local = useSyncExternalStore(subscribe, () => localViews, () => localViews)
   const server = useQuery({
     queryKey: VIEWS_QK,
-    queryFn: api.views,
+    queryFn: ({ signal }) => on(signal).views(),
     enabled: serverBacked,
     staleTime: 30_000,
   })

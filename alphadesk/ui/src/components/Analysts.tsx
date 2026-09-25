@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { KeyPrompt, QueryFailure } from "@/components/KeyPrompt"
-import { api } from "@/lib/api"
+import { on } from "@/lib/api"
 import { compact } from "@/components/Treemap"
 import { Empty, Table, TD, TH, THead, Widget } from "@/components/terminal"
 import { vendorLabel } from "@/lib/vendors"
@@ -22,7 +22,7 @@ const money = (v: number | null | undefined) => (v == null ? dash : v.toFixed(2)
 export function useAnalysts(symbol: string) {
   return useQuery({
     queryKey: ["analysts", symbol],
-    queryFn: () => api.analysts(symbol),
+    queryFn: ({ signal }) => on(signal).analysts(symbol),
     enabled: !!symbol,
     staleTime: 60 * 60_000,
     retry: false,
