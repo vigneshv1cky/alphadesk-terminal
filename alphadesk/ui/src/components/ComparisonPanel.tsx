@@ -81,7 +81,7 @@ function Side({ symbol }: { symbol: string }) {
 export function ComparisonPanel({ symbols, title = "Comparison" }: { symbols: string[]; title?: string }) {
   if (symbols.length < 2) {
     return (
-      <Widget span={12} title={title} expandable={false}>
+      <Widget span={12} title={title}>
         <Empty>Add more chips to the board to compare {symbols[0] ?? "the active symbol"} against them.</Empty>
       </Widget>
     )
@@ -101,7 +101,7 @@ export function ComparisonPanel({ symbols, title = "Comparison" }: { symbols: st
           span={12}
           title={r === 0 ? title : undefined}
           subtitle={r === 0 ? subtitle : undefined}
-          expandable={false}
+         
         >
           <div className="grid grid-cols-2 lg:grid-cols-4">
             {row.map((symbol, i) => (

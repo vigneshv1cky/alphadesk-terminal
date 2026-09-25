@@ -47,7 +47,7 @@ export function SymbolFilings({ symbol: requested }: { symbol: string }) {
   }
 
   return (
-    <Widget span={4} symbol={requested} title="Filings" subtitle="SEC EDGAR direct" scroll={560} expandable={false}>
+    <Widget span={4} symbol={requested} title="Filings" subtitle="SEC EDGAR direct" scroll={560}>
       {loading && <Empty>loading…</Empty>}
       {err && <div className="px-3 py-2 text-body text-loss">{err}</div>}
       {filings && filings.length === 0 && <Empty>No filings found for {symbol}.</Empty>}

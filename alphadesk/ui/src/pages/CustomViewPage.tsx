@@ -199,7 +199,7 @@ export default function CustomViewPage() {
   if (!view) {
     return (
       <div className="collage">
-        <Widget span={12} title="My views" expandable={false}>
+        <Widget span={12} title="My views">
           <Empty>
             This view doesn't exist{mine.serverBacked ? " on your account" : " in this browser"} —
             create one with the + beside My Views in the rail.

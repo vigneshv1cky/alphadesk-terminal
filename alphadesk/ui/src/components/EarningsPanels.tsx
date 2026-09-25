@@ -181,7 +181,7 @@ export function RevenueEarningsPanel({ symbol }: { symbol: string }) {
   return (
     <Widget span={6} symbol={symbol} title="Revenue vs. earnings"
             actions={<PeriodToggle value={period} onChange={setPeriod} />}
-            expandable={false}>
+           >
       {body()}
     </Widget>
   )
@@ -305,7 +305,7 @@ export function EpsPanel({ symbol }: { symbol: string }) {
 
   return (
     <Widget span={6} symbol={symbol} title="Earnings per share"
-            subtitle="estimate vs actual, last four quarters" expandable={false}>
+            subtitle="estimate vs actual, last four quarters">
       {body()}
     </Widget>
   )
@@ -328,7 +328,7 @@ export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: str
   return (
     <Widget span={span} symbol={symbol} title="Earnings history"
             subtitle="estimate, actual, surprise · revenue as filed" scroll={scroll ?? 420}
-            expandable={false}>
+           >
       {isPending ? <Empty>loading…</Empty>
         : isError ? <QueryFailure error={error}>the report record is unavailable right now</QueryFailure>
         : rows.length === 0 ? <Empty>no reports on record for {symbol}</Empty> : (
@@ -378,7 +378,7 @@ export function EarningsInsightsPanel({ symbol, span = 12 }: { symbol: string; s
   return (
     <Widget span={span} symbol={symbol} title="Earnings insights"
             subtitle="analyst consensus — a forecast, not the company's numbers"
-            expandable={false}>
+           >
       {isPending ? (
         <Empty>loading…</Empty>
       ) : isError ? (

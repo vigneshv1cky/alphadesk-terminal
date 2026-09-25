@@ -42,7 +42,7 @@ function ExternalTile({ def }: { def: ExternalWidgetDef }) {
       symbol={symbol || undefined}
       subtitle={def.subtitle || "external widget"}
       scroll={TILE_BODY_HEIGHT}
-      expandable={false}
+     
     >
       {isLoading && <Empty>loading…</Empty>}
       {error != null && (

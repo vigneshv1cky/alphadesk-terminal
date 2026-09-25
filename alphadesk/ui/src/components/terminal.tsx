@@ -151,12 +151,6 @@ const HEADER_H = 38
 // minimum reserves for it.
 const TOOLBAR_H = 40
 
-/** Titles are ReactNode, but an aria-label has to be a string. Anything that is
- * not plain text falls back to a generic word rather than "[object Object]". */
-function titleText(title: React.ReactNode): string {
-  return typeof title === "string" ? title : "panel"
-}
-
 /** The reader's width for a tile, provided by the board's layout around a
  * tile component (lib/boardLayout). Null everywhere else, so a Widget off
  * the composed board renders exactly the span its component declared. */
@@ -181,7 +175,6 @@ export const BODY_VIEWPORT_CAP = "calc(100vh - 190px)"
 
 export function Widget({
   title, symbol, subtitle, actions, toolbar, span = 12, className, bodyClassName, scroll, fitViewport = true, children,
-  expanded, onExpandChange, expandable = true,
 }: {
   title?: React.ReactNode
   /** Rendered in accent blue before the title, the way AlphaSpace prefixes a
@@ -217,18 +210,17 @@ export function Widget({
    * offers RSI/MACD once there is height to read them — and it must be the
    * same state its own toolbar button drives, or the two controls disagree
    * about whether the tile is open. Omit both and the tile expands on its own. */
-  expanded?: boolean
-  onExpandChange?: (next: boolean) => void
   /** Opt out for a tile the header control makes no sense on. */
-  expandable?: boolean
   children?: React.ReactNode
 }) {
-  // Uncontrolled fallback, so a tile with nothing to coordinate still opens
-  // without its parent holding state it otherwise has no use for.
-  const [selfExpanded, setSelfExpanded] = React.useState(false)
-  const isOpen = expanded ?? selfExpanded
-  const toggle = () =>
-    expanded === undefined ? setSelfExpanded(v => !v) : onExpandChange?.(!expanded)
+  // NO POPUP (2026-09-25, the owner: "remove expansion from all grids").
+  // Every tile carried a ⤢ that reopened its content in a centred dialog.
+  // It competed for the header with the tile's own controls — the news tile
+  // had five of those beside it — and a board is already the reader's own
+  // arrangement: a tile that wants more room is widened in the editor,
+  // which persists, where a popup lasted until the next click. Show all
+  // below remains, because that answers a different question (a record
+  // taller than its cap) and leaves the tile where it is.
 
   // SHOW ALL (2026-09-13). A capped body that still overflows the viewport
   // cap — a dividend record, forty rating changes, the filing list — gets a
@@ -238,7 +230,7 @@ export function Widget({
   const bodyRef = React.useRef<HTMLDivElement | null>(null)
   const [overflows, setOverflows] = React.useState(false)
   const [showAll, setShowAll] = React.useState(false)
-  const capped = typeof scroll === "number" && !isOpen
+  const capped = typeof scroll === "number"
   React.useEffect(() => {
     const el = bodyRef.current
     if (!el || !capped) { setOverflows(false); return }
@@ -251,15 +243,6 @@ export function Widget({
     return () => { ro.disconnect(); mo.disconnect() }
   }, [capped, showAll])
 
-  // Escape closes the popup — standard dialog manners.
-  React.useEffect(() => {
-    if (!isOpen) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") toggle() }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen])
-
   const overrideSpan = React.useContext(SpanOverride)
   const align = React.useContext(AlignOverride)
   // OPEN IS A POPUP, not an in-place stretch: the tile keeps its size and
@@ -271,7 +254,6 @@ export function Widget({
   return (
     <section
       data-slot="widget"
-      data-expanded={isOpen || undefined}
       // Inline gridColumn, not a Tailwind class: `col-span-${n}` is built at
       // runtime and would be purged from the stylesheet.
       // The tile's floor lives HERE, not on the body.
@@ -342,7 +324,7 @@ export function Widget({
           )}
           {subtitle && <div className="min-w-0 flex-1 sm:hidden" />}
           {!subtitle && <div className="min-w-0 flex-1" />}
-          {!isOpen && actions}
+          {actions}
           {capped && (overflows || showAll) && (
             <button
               type="button"
@@ -354,21 +336,9 @@ export function Widget({
               {showAll ? "Show less" : "Show all"}
             </button>
           )}
-          {expandable && (
-            <button
-              type="button"
-              onClick={toggle}
-              aria-expanded={isOpen}
-              aria-label={isOpen ? `Close the ${titleText(title)} popup` : `Open ${titleText(title)} in a popup`}
-              title={isOpen ? "Close the popup" : "Open in a popup"}
-              className={btnCls({ icon: true })}
-            >
-              {isOpen ? "⤡" : "⤢"}
-            </button>
-          )}
         </header>
       )}
-      {toolbar && !isOpen && (
+      {toolbar && (
         // 40px around 26px tabs: 7px of air each side, so the tab row sits
         // off the header's rule instead of touching it — a band tall enough
         // to read as a control strip rather than a line of chips.
@@ -410,14 +380,7 @@ export function Widget({
           bodyClassName,
         )}
       >
-        {isOpen ? (
-          // The content lives in the POPUP while it is open — rendering it
-          // in both places would run every chart canvas and stream reader
-          // twice for no reader benefit.
-          <div className="flex h-full items-center justify-center px-3 py-4 text-caption text-muted-foreground">
-            open in the popup
-          </div>
-        ) : typeof bodyHeight === "string" ? (
+        {typeof bodyHeight === "string" ? (
           // Absolutely positioned, which is the only thing that actually stops
           // the content sizing the tile.
           //
@@ -431,48 +394,6 @@ export function Widget({
           <div className="absolute inset-0 overflow-y-auto">{children}</div>
         ) : children}
       </div>
-      {isOpen && (
-        <ModalShell label={titleText(title)} onDismiss={toggle} initial="first">
-          <section
-            data-slot="widget-popup"
-            className="relative flex w-full max-w-[1240px] flex-col border border-card-border bg-card shadow-card"
-            style={{ height: "min(88vh, 900px)" }}
-          >
-            <header className="flex h-[40px] shrink-0 items-center gap-2 border-b border-card-rule bg-card px-3">
-              {symbol && (
-                <span className="shrink-0 text-body font-bold tracking-ticker text-accent">{symbol}</span>
-              )}
-              {title && (
-                <h2 className="shrink-0 whitespace-nowrap text-body font-bold uppercase tracking-caps text-foreground">
-                  {title}
-                </h2>
-              )}
-              <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
-                {subtitle}
-              </span>
-              {actions}
-              <button
-                type="button"
-                onClick={toggle}
-                aria-label={`Close the ${titleText(title)} popup`}
-                title="Close (Esc)"
-                className={btnCls({ icon: true })}
-              >
-                ✕
-              </button>
-            </header>
-            {toolbar && (
-              <div data-slot="widget-toolbar"
-                   className="scrollbar-none flex h-[32px] shrink-0 items-center gap-1 overflow-x-auto border-b border-row-rule bg-panel px-2">
-                {toolbar}
-              </div>
-            )}
-            <div className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto", bodyClassName)}>
-              {children}
-            </div>
-          </section>
-        </ModalShell>
-      )}
     </section>
   )
 }

@@ -31,7 +31,7 @@ const pct = (v: number | null | undefined) => (v == null ? dash : `${(v * 100).t
 
 function NeedsSymbol({ title, span = 4 }: { title: string; span?: number }) {
   return (
-    <Widget span={span} title={title} expandable={false}>
+    <Widget span={span} title={title}>
       <Empty>mark a symbol on the strip</Empty>
     </Widget>
   )

@@ -108,7 +108,7 @@ function FundIdentity({ c }: { c: CompanyProfile }) {
   const yieldPct = stats?.dividend_rate != null && stats?.price ? (stats.dividend_rate / stats.price) * 100 : null
   const subtitle = [kind.label, fund?.category, fund?.family].filter(Boolean).join(" · ") || undefined
   return (
-    <Widget span={12} title={c.name} symbol={c.symbol} subtitle={subtitle} expandable={false}>
+    <Widget span={12} title={c.name} symbol={c.symbol} subtitle={subtitle}>
       <div className="grid grid-cols-2 sm:grid-cols-4">
         <Stat wrap label="Issuer" value={<span className={W}>{fund?.family ?? "—"}</span>} sub={fund?.legal_type ?? p?.quote_type ?? undefined} />
         <Stat wrap label="Listed" value={<span className={W}>{p?.exchange ?? "—"}</span>} sub={c.symbol} />
@@ -142,7 +142,7 @@ function Identity({ c }: { c: CompanyProfile }) {
   const subtitle = [kind.label, p?.sector, p?.industry].filter(Boolean).join(" · ") || undefined
   const W = "text-body font-semibold"
   return (
-    <Widget span={12} title={c.name} symbol={c.symbol} subtitle={subtitle} expandable={false}>
+    <Widget span={12} title={c.name} symbol={c.symbol} subtitle={subtitle}>
       {/* Four to a row: eight cells on one row truncated every phrase. A
           thing with no SEC record — a cryptocurrency, an index — shows only
           the cells that have something in them rather than a row of dashes. */}
@@ -196,7 +196,7 @@ function WhatItIs({ c }: { c: CompanyProfile }) {
   const text = p?.description || p?.summary || null
   const ref = c.reference
   return (
-    <Widget span={7} title={`What the ${kind.noun} is`} subtitle={ref ? "reference note, with its sources" : "from the profile feed"} expandable={false}>
+    <Widget span={7} title={`What the ${kind.noun} is`} subtitle={ref ? "reference note, with its sources" : "from the profile feed"}>
       {text && (
         <div className="border-b border-row-rule px-3 py-3">
           <p className="text-body leading-[1.6] text-foreground/90">{text}</p>
@@ -244,7 +244,7 @@ export function Financials({ c, span = 7 }: { c: CompanyProfile; span?: number }
   if (!f || (!Object.keys(f.items).length && !f.shares_outstanding)) return null
   const rows = FIN_ROWS.filter(r => f.items[r.key])
   return (
-    <Widget span={span} title="Financials, as filed" subtitle={f.as_of ? `latest full year · period ended ${f.as_of}` : undefined} expandable={false}>
+    <Widget span={span} title="Financials, as filed" subtitle={f.as_of ? `latest full year · period ended ${f.as_of}` : undefined}>
       <Table>
         <THead>
           <TH className="w-[44%]" title="The financial line as the company tagged it in its annual report">Line</TH>
@@ -291,7 +291,7 @@ function CoinPanel({ c, span = 7 }: { c: CompanyProfile; span?: number }) {
     ...k.explorers.map((u, i) => ({ label: i === 0 ? "Explorer" : `Explorer ${i + 1}`, url: u })),
   ].filter((x): x is { label: string; url: string } => !!x)
   return (
-    <Widget span={span} title={`What ${k.name ?? k.symbol} is`} subtitle={k.categories.join(" · ") || undefined} expandable={false}>
+    <Widget span={span} title={`What ${k.name ?? k.symbol} is`} subtitle={k.categories.join(" · ") || undefined}>
       {k.description && (
         <div className="border-b border-row-rule px-3 py-3">
           <p className="text-body leading-[1.6] text-foreground/90">{k.description}</p>
@@ -316,7 +316,7 @@ function CoinPanel({ c, span = 7 }: { c: CompanyProfile; span?: number }) {
 
 function Business({ c }: { c: CompanyProfile }) {
   return (
-    <Widget span={7} title={`What the ${kindOf(c).noun} does`} subtitle="the profile feed's summary, and where the filing says it" expandable={false}>
+    <Widget span={7} title={`What the ${kindOf(c).noun} does`} subtitle="the profile feed's summary, and where the filing says it">
       {c.profile?.summary && (
         <div className="border-b border-row-rule px-3 py-3">
           <p className="text-body leading-[1.6] text-foreground/90">{c.profile.summary}</p>
@@ -333,7 +333,7 @@ function Locations({ c }: { c: CompanyProfile }) {
   const mail = addr(c.edgar?.mailing_address)
   return (
     <Widget span={5} title={`Where the ${kindOf(c).noun} is`}
-            subtitle={`headquarters on record, and the ${c.tenk?.form ?? "10-K"}'s properties`} expandable={false}>
+            subtitle={`headquarters on record, and the ${c.tenk?.form ?? "10-K"}'s properties`}>
       <div className="border-b border-row-rule px-3 py-3 text-body">
         <div className="text-label font-medium uppercase tracking-caps text-muted-foreground">Headquarters</div>
         <div className="mt-0.5 font-semibold">{hq ?? "—"}</div>
@@ -350,7 +350,7 @@ function Locations({ c }: { c: CompanyProfile }) {
 function Officers({ c }: { c: CompanyProfile }) {
   if (!c.officers.length) return null
   return (
-    <Widget span={12} title="Who runs it" subtitle="officers as listed by the profile feed" scroll={360} expandable={false}>
+    <Widget span={12} title="Who runs it" subtitle="officers as listed by the profile feed" scroll={360}>
       <Table>
         <THead>
           <TH className="w-[36%]" title="The officer's name">Name</TH>
@@ -381,7 +381,7 @@ function Officers({ c }: { c: CompanyProfile }) {
 export function CoinRecordPanel({ symbol, span = 12 }: { symbol: string; span?: number }) {
   const { data, error } = useCompany(symbol)
   if (isNeedsKey(error)) {
-    return <Widget span={span} title={symbol} expandable={false}><KeyPrompt prompt={error.prompt} /></Widget>
+    return <Widget span={span} title={symbol}><KeyPrompt prompt={error.prompt} /></Widget>
   }
   if (!data?.coin) return null
   return <CoinPanel c={data} span={span} />
@@ -401,14 +401,14 @@ export default function CompanyPage() {
   const { data, isPending, error } = useCompany(symbol)
 
   if (isPending) {
-    return <div className="p-3"><Widget span={12} title={symbol} expandable={false}><Empty>reading the registrant record and the latest 10-K…</Empty></Widget></div>
+    return <div className="p-3"><Widget span={12} title={symbol}><Empty>reading the registrant record and the latest 10-K…</Empty></Widget></div>
   }
   // A COIN has no registrant anywhere; what it needs is a vendor that
   // carries coins, and the server says which (2026-09-15).
   if (isNeedsKey(error)) {
     return (
       <div className="p-3">
-        <Widget span={12} title={symbol} expandable={false}>
+        <Widget span={12} title={symbol}>
           <KeyPrompt prompt={error.prompt} />
         </Widget>
       </div>
@@ -417,7 +417,7 @@ export default function CompanyPage() {
   if (error || !data) {
     return (
       <div className="p-3">
-        <Widget span={12} title={symbol} expandable={false}>
+        <Widget span={12} title={symbol}>
           <Empty>No registrant record for {symbol} — it may be an index or a foreign listing without an SEC registrant. See its <Link to={`/analysis?symbol=${symbol}`} className="underline">filings</Link>.</Empty>
         </Widget>
       </div>
