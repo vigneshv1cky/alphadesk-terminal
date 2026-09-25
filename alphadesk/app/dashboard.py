@@ -1164,6 +1164,80 @@ def api_trading_halts(limit: int = 100):
     return _scraped_read("trading_halts", "trading_halts", "halts", limit=max(1, min(limit, 500)))
 
 
+class NavSamples(BaseModel):
+    samples: list[dict] = []
+
+
+# TEMPORARY (2026-09-25, #78). How long a page press takes, kept in memory
+# per reader so the question "why does switching tabs feel slow" can be
+# answered with the reader's own numbers instead of the agent's — the
+# automation browser reports its tab hidden, which throttles timers to a
+# flat ~1000ms and makes every reading there worthless.
+#
+# In memory, never the database: this is scaffolding for one question, it
+# must not survive a restart, and it must not become a table somebody later
+# treats as telemetry. Capped per reader. REMOVE with lib/navTiming.ts.
+_NAV_TIMES: dict[str, list[dict]] = {}
+_NAV_KEEP = 60
+
+
+@app.post("/api/perf/nav")
+def api_perf_nav(body: NavSamples, request: Request):
+    """Record page-press timings from the reader's own browser."""
+    from datetime import datetime, timezone
+
+    from alphadesk.identity import request_user
+    uid = request_user() or "local"
+    rows = _NAV_TIMES.setdefault(uid, [])
+    for raw in body.samples[:20]:
+        # Read only the four fields; anything else the page sent is ignored.
+        try:
+            rows.append({"to": str(raw.get("to") or "")[:40],
+                         "click_to_route_ms": int(raw.get("clickToRoute") or 0),
+                         "route_to_paint_ms": int(raw.get("routeToPaint") or 0),
+                         "total_ms": int(raw.get("total") or 0),
+                         "at": datetime.now(timezone.utc).isoformat()})
+        except (TypeError, ValueError):
+            continue
+    if len(rows) > _NAV_KEEP:
+        del rows[:len(rows) - _NAV_KEEP]
+    return {"ok": True, "held": len(rows)}
+
+
+@app.get("/api/perf/nav")
+def api_perf_nav_read(request: Request):
+    """What this reader's browser measured. Reader-scoped, in memory, and
+    the same summary the agent tool returns — so the reader can look without
+    an agent, and the two can never disagree."""
+    from alphadesk.identity import request_user
+    return nav_timings(request_user() or "local")
+
+
+def nav_timings(uid: str) -> dict:
+    """What this reader's browser measured, and the shape of it."""
+    rows = list(_NAV_TIMES.get(uid) or [])
+    if not rows:
+        return {"samples": 0, "note": "no page presses recorded yet — click through the rail first"}
+    totals = sorted(r["total_ms"] for r in rows)
+    by_page: dict[str, list[int]] = {}
+    for r in rows:
+        by_page.setdefault(r["to"], []).append(r["total_ms"])
+    return {
+        "samples": len(rows),
+        "median_ms": totals[len(totals) // 2],
+        "worst_ms": totals[-1],
+        "best_ms": totals[0],
+        # Which half of the wait is routing and which is painting: the first
+        # is React Router and whatever the press handler does, the second is
+        # the new page mounting its tiles.
+        "median_click_to_route_ms": sorted(r["click_to_route_ms"] for r in rows)[len(rows) // 2],
+        "median_route_to_paint_ms": sorted(r["route_to_paint_ms"] for r in rows)[len(rows) // 2],
+        "by_page": {k: {"presses": len(v), "median_ms": sorted(v)[len(v) // 2], "worst_ms": max(v)}
+                    for k, v in sorted(by_page.items())},
+        "recent": rows[-12:],
+    }
+
+
 @app.get("/api/sectors")
 def api_sectors():
     """The Sectors page: the eleven S&P sector funds and a set of industry

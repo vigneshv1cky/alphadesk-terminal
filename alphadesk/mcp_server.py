@@ -1344,6 +1344,34 @@ def data_sources() -> dict:
             "connected": connected}
 
 
+@mcp.tool()
+def page_timings() -> dict:
+    """HOW LONG THIS READER'S OWN BROWSER TAKES TO CHANGE PAGE (temporary).
+
+    Diagnostic scaffolding for one question — "why does switching tabs feel
+    slow" — measured where the lag is actually felt. It exists because the
+    measurement could not be taken from this side at all: an automation
+    browser reports its tab hidden, which throttles timers to a flat ~1000ms
+    and pauses frame callbacks, so every reading taken there was the
+    throttle rather than the app.
+
+    Each press of an internal link is timed from the press, to the route
+    changing, to the next two animation frames — the first moment the new
+    page is actually painted. `median_click_to_route_ms` is React Router and
+    the press handler; `median_route_to_paint_ms` is the new page mounting
+    its tiles. Which of the two is larger is the whole answer.
+
+    Held in memory only and never stored, so a restart empties it and
+    nothing here outlives the question. Empty until the reader has clicked
+    through the rail."""
+    from alphadesk.app.dashboard import nav_timings
+    from alphadesk.providers import registry
+    uid = registry._request_uid()
+    if not uid:
+        return {"samples": 0, "note": "no reader identity on this call"}
+    return nav_timings(uid)
+
+
 def stdio_main() -> None:
     """Console-script entry point (`alphadesk-mcp`), for MCP clients that
     start a server by command. stdio carries the protocol on stdout, so
