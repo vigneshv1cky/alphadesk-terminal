@@ -151,7 +151,23 @@ def test_only_weekdays_are_asked_for():
     assert days == ["2026-09-18", "2026-09-21", "2026-09-22"]
 
 
-def test_the_splits_route_is_asked_once_because_it_ignores_the_date():
+def _fill_now(monkeypatch):
+    """Run the background fill INLINE (2026-09-24, #67).
+
+    The calendars defer their reads to a pool thread now, so a test that
+    stubs the fetch and calls the method straight through would assert
+    nothing. This keeps every assertion about SHAPE — one request for
+    splits, the parse of a day's rows — and runs the same fill path the
+    server uses, which makes these stronger than when they blocked."""
+    from alphadesk.ingest import background_fill
+    from alphadesk.providers import scraped
+
+    scraped._day_cache.clear()
+    monkeypatch.setattr(background_fill, "submit",
+                        lambda kind, owner, symbols, job, pool=None: (job(sorted(symbols)), 0)[1])
+
+
+def test_the_splits_route_is_asked_once_because_it_ignores_the_date(monkeypatch):
     """MEASURED 2026-09-22: this route answers the same upcoming list
     whatever date it is given. Asking per day put every split in the calendar
     once per day of the window — thirteen splits returned as sixty-five rows
@@ -163,24 +179,28 @@ def test_the_splits_route_is_asked_once_because_it_ignores_the_date():
         {"symbol": "DXJ", "ratio": "2 : 1", "executionDate": "10/9/2026"},   # past the window
         {"symbol": "ZCSH", "ratio": "3 : 1", "executionDate": "9/30/2026"},  # and repeated
     ]
+    _fill_now(monkeypatch)
     n = NasdaqCalendars()
     n._rows = lambda path, holder="rows": (calls.append(path), same_list_every_time)[1]
+    n.split_calendar("2026-09-23", "2026-09-30")     # queues and, here, fills
     rows = n.split_calendar("2026-09-23", "2026-09-30")
     assert len(calls) == 1, "one request, not one per day"
     assert rows == [{"symbol": "ZCSH", "date": "2026-09-30", "to": 3.0, "from": 1.0,
                      "kind": None, "source": "nasdaq"}]
 
 
-def test_a_stated_session_is_carried_and_a_missing_one_stays_silent():
+def test_a_stated_session_is_carried_and_a_missing_one_stays_silent(monkeypatch):
     """The session is the one fact no free key states, and the reason this
     source is worth having. A company that states none must not be given
     one — the calendar predicts it from filing history instead."""
+    _fill_now(monkeypatch)
     n = NasdaqCalendars()
     n._rows = lambda path, holder="rows": [
         {"symbol": "CTAS", "time": "time-pre-market", "epsForecast": "$1.35", "marketCap": "$78,656,864,000"},
         {"symbol": "XXXX", "time": "time-after-hours", "epsForecast": "N/A", "marketCap": "N/A"},
         {"symbol": "YYYY", "time": "time-not-supplied", "epsForecast": "$0.10", "marketCap": "$1,000"},
     ]
+    n.earnings_calendar("2026-09-23", "2026-09-23")   # queues and, here, fills
     rows = {r["symbol"]: r for r in n.earnings_calendar("2026-09-23", "2026-09-23")}
     assert rows["CTAS"]["session"] == "BMO" and rows["CTAS"]["confirmed"] is True
     assert rows["CTAS"]["eps_estimate"] == 1.35 and rows["CTAS"]["market_cap"] == 78_656_864_000.0
@@ -687,3 +707,109 @@ def test_a_unioned_surface_is_not_reported_as_covered(client, store, monkeypatch
     assert not (alongside & covered), "a surface is one or the other, never both"
     # And the one thing nobody sells stays its own.
     assert "Trading halts and resumptions" in cover["only_source_for"]
+
+
+# ---------------------------------------------------------------------------
+# A DAY-AT-A-TIME ROUTE IS NOT READ ON THE REQUEST THREAD (2026-09-24, #67)
+#
+# MEASURED on the owner's board: the earnings calendar took 20.17s from this
+# source against 0.21s (FMP), 0.18s (Finnhub) and 0.14s (Alpha Vantage), and
+# the whole earnings-week build was 44.57s with it against 5.62s without —
+# for thirteen extra rows. The route serves ONE DAY per request, so a 28-day
+# window is twenty weekday requests, each waiting out the process-wide
+# pacing gate. After the change the same build was 6.54s cold and 1.5s
+# steady, with 172 rows against 171.
+# ---------------------------------------------------------------------------
+
+def test_a_day_already_read_costs_no_request(monkeypatch):
+    from alphadesk.providers import scraped
+
+    scraped._day_cache.clear()
+    calls: list[str] = []
+    monkeypatch.setattr(scraped.NasdaqCalendars, "_rows",
+                        lambda self, path, holder="rows": calls.append(path) or
+                        [{"symbol": "AAA", "time": "time-pre-market", "epsForecast": "$1.00"}])
+    # Queue nothing: hand the cache the days up front, as a completed fill does.
+    v = scraped.NasdaqCalendars()
+    days = v._days("2026-09-21", "2026-09-22")
+    for d in days:
+        scraped.store_day(scraped._owner(), "earnings", d,
+                          [{"symbol": "AAA", "time": "time-pre-market", "epsForecast": "$1.00"}])
+    rows = v.earnings_calendar("2026-09-21", "2026-09-22")
+    assert calls == [], "a cached day must not be fetched again"
+    assert len(rows) == len(days)
+    assert rows[0]["session"] == "BMO" and rows[0]["confirmed"] is True
+
+
+def test_an_unread_day_defers_instead_of_blocking(monkeypatch):
+    """The request answers with what is stored and queues the rest. It must
+    NOT wait: the rail badge rebuilds this week behind a 3-second deadline
+    and a one-at-a-time lock, which is what made a 44-second build show up
+    as the whole site lagging."""
+    from alphadesk.providers import scraped
+
+    scraped._day_cache.clear()
+    queued: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(scraped.NasdaqCalendars, "_fill_days",
+                        lambda self, owner, kind, days: queued.append((kind, list(days))))
+    monkeypatch.setattr(scraped.NasdaqCalendars, "_rows",
+                        lambda self, path, holder="rows": pytest.fail("fetched on the request thread"))
+
+    v = scraped.NasdaqCalendars()
+    assert v.earnings_calendar("2026-09-21", "2026-09-25") is None
+    assert queued and queued[0][0] == "earnings"
+    assert queued[0][1] == v._days("2026-09-21", "2026-09-25")
+
+    # One day already read: that day answers now, the rest are queued.
+    queued.clear()
+    scraped.store_day(scraped._owner(), "earnings", "2026-09-22",
+                      [{"symbol": "BBB", "time": "time-after-hours"}])
+    rows = v.earnings_calendar("2026-09-21", "2026-09-25")
+    assert [r["symbol"] for r in rows] == ["BBB"]
+    assert "2026-09-22" not in queued[0][1]
+
+
+def test_a_past_day_is_kept_and_a_live_one_expires(monkeypatch):
+    """A past day's list of reporters does not change, so it is kept for a
+    week; today and forward are re-read every fifteen minutes."""
+    import time as _time
+
+    from alphadesk.providers import scraped
+
+    scraped._day_cache.clear()
+    monkeypatch.setattr(scraped, "_today_ny", lambda: "2026-09-24")
+    owner = scraped._owner()
+    old = _time.time() - 3600                      # an hour ago
+    scraped._day_cache[(owner, "earnings", "2026-09-10")] = (old, [{"symbol": "PAST"}])
+    scraped._day_cache[(owner, "earnings", "2026-09-30")] = (old, [{"symbol": "SOON"}])
+
+    assert scraped.cached_day(owner, "earnings", "2026-09-10") == [{"symbol": "PAST"}]
+    assert scraped.cached_day(owner, "earnings", "2026-09-30") is None
+
+
+def test_the_splits_window_is_cached_whole(monkeypatch):
+    """One request rather than twenty, but 3.27s against Alpaca's 0.07s — so
+    nobody sits through it on a page load either."""
+    from alphadesk.providers import scraped
+
+    scraped._day_cache.clear()
+    queued: list[str] = []
+    monkeypatch.setattr(scraped.NasdaqCalendars, "_fill_days",
+                        lambda self, owner, kind, days: queued.extend(days))
+    v = scraped.NasdaqCalendars()
+    assert v.split_calendar("2026-09-21", "2026-09-26") is None
+    # ONE KEY, NOT THE WINDOW. Keyed by the window this never hit: the
+    # calendar asks "today forward", so the key moved with the clock and
+    # every request queued a fill whose answer the next could not find.
+    assert queued == [scraped._SPLITS_KEY]
+    assert len(queued) == 1
+
+    # A DIFFERENT window finds the SAME stored answer, which is the whole
+    # point — and the filtering still cuts it to what was asked for.
+    scraped.store_day(scraped._owner(), "splits", scraped._SPLITS_KEY,
+                      [{"symbol": "ZZZ", "ratio": "2 : 1", "executionDate": "9/30/2026"}])
+    # Nothing in that window: None, the seam's word for "I carry nothing
+    # here", not an empty list.
+    assert v.split_calendar("2026-10-05", "2026-10-09") is None
+    inside = v.split_calendar("2026-09-25", "2026-10-02")
+    assert [r["symbol"] for r in inside] == ["ZZZ"]

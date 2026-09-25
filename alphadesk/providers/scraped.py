@@ -35,6 +35,7 @@ import logging
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -48,6 +49,85 @@ log = logging.getLogger("alphadesk.providers.scraped")
 #: keyed vendor rather than faster: one request every 0.4s is a pace a person
 #: with a browser could plausibly produce, and it keeps a board full of tiles
 #: from arriving as a burst.
+# ----------------------------------------------------------------------------
+# A DAY-AT-A-TIME ROUTE MUST NOT BE READ ON THE REQUEST THREAD
+# (2026-09-24, #67, the reader: "The website lags because of different
+# sources i think" — measured, and right about the cause though not the
+# number of sources).
+#
+# MEASURED on the owner's six-vendor board, the earnings calendar for one
+# window: Financial Modeling Prep 0.21s for 1,086 rows, Finnhub 0.18s for
+# 172, Alpha Vantage 0.14s for 57 — and THIS SOURCE 20.17s for 142. The
+# whole earnings-week build was 44.57s with it and 5.62s without, for
+# THIRTEEN extra rows. Splits: FMP 0.25s, Alpaca 0.07s, this source 3.27s.
+#
+# The cause is structural, not a slow server: Nasdaq's earnings route serves
+# ONE DAY per request, so a 21-day window is 21 requests, each waiting out
+# the pacing gate above. That gate is process-wide on purpose — it is what
+# keeps us polite to a site that never agreed to serve us — so the answer is
+# NOT to parallelise around it.
+#
+# It compounds where it hurts most: the rail badge rebuilds the earnings
+# week, which is the endpoint behind the 504 outage of #40/#41, and it has a
+# 3-second deadline and a one-rebuild-at-a-time lock. A 44-second build means
+# the badge times out on every poll while holding that lock.
+#
+# So: a day already read is KEPT, and a day not yet read is FETCHED IN THE
+# BACKGROUND under the reader who asked (ingest/background_fill.py, the same
+# pattern release timings use). The request returns with what is stored and
+# never waits; the background fill warms this cache, so the next build reads
+# it at once. A PAST DAY IS KEPT FOR A WEEK because its list of reporters
+# does not change; today and forward are re-read every 15 minutes.
+#
+# Kept PER READER (invariant 8): a scraped source is the least licensed data
+# here, not the most, so a global cache serving the next reader would be the
+# plainest case of redistribution rather than an exception to it.
+# The splits list is one answer whatever date is asked for, so it is kept
+# under one name — see split_calendar. Treated as a LIVE day (15 minutes),
+# because it is always about what is still to come.
+_SPLITS_KEY = "9999-12-31"
+_DAY_CACHE_MAX = 4_000
+_PAST_DAY_TTL_S = 7 * 86_400
+_LIVE_DAY_TTL_S = 900.0
+# ITS OWN WORKER, not the shared fill pool: that one has two threads and is
+# held for most of a minute by EDGAR release-timing lookups, so these day
+# fetches queued behind them and never ran — the fill silently never landed
+# and this source looked broken rather than merely slow. One thread is the
+# right number, because the pacing gate serialises these anyway.
+_fill_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scraped-fill")
+_day_cache: dict[tuple[str, str, str], tuple[float, list[dict]]] = {}
+_day_lock = threading.Lock()
+
+
+def _owner() -> str:
+    """The reader this call runs for, or the open instance's single account."""
+    from alphadesk.providers.registry import _request_uid
+    return _request_uid() or "local"
+
+
+def _today_ny() -> str:
+    from alphadesk.config import session_label            # noqa: F401 — tz set there
+    return datetime.now(timezone(timedelta(hours=-5))).date().isoformat()
+
+
+def cached_day(owner: str, kind: str, day: str) -> list[dict] | None:
+    """Rows already read for this day, or None when it must be fetched."""
+    with _day_lock:
+        hit = _day_cache.get((owner, kind, day))
+    if hit is None:
+        return None
+    at, rows = hit
+    ttl = _PAST_DAY_TTL_S if day < _today_ny() else _LIVE_DAY_TTL_S
+    return rows if time.time() - at < ttl else None
+
+
+def store_day(owner: str, kind: str, day: str, rows: list[dict]) -> None:
+    with _day_lock:
+        if len(_day_cache) > _DAY_CACHE_MAX:
+            _day_cache.clear()
+        _day_cache[(owner, kind, day)] = (time.time(), rows)
+
+
 _MIN_GAP_S = 0.4
 _gate = threading.Lock()
 _last_at = 0.0
@@ -392,6 +472,9 @@ class NasdaqCalendars:
     #: calendar asks for (-14/+7); beyond that the cost is the reader's
     #: patience rather than a vendor's bill, and it is still too long.
     _MAX_DAYS = 31
+    # Its calendars answer None while a background fill runs, so the router
+    # must not hold that None for the method's full term (registry.py).
+    DEFERS_FIRST_READ = True
 
     def __init__(self, api_key: str | None = None, api_secret: str | None = None) -> None:
         self.reader_id: str | None = None
@@ -447,6 +530,34 @@ class NasdaqCalendars:
 
     # ── the calendars ──────────────────────────────────────────────────────
 
+    def _fill_days(self, owner: str, kind: str, days: list[str]) -> None:
+        """Read these days in the background, under the reader who asked.
+
+        Queued through ingest/background_fill.py, which already stamps the
+        reader on the thread (identity is a context variable and a bare pool
+        thread does NOT inherit it), queues each key at most once at a time,
+        and backs off a key that keeps failing — so a page polling every
+        minute does not start the same twenty-one requests every minute.
+
+        A failure here stores nothing, so the day is simply tried again
+        later; it must never raise into the caller, whose job is to answer
+        now with what is already stored."""
+        from alphadesk.ingest import background_fill
+
+        def job(keys: list[str]) -> None:
+            for key in keys:
+                try:
+                    if kind == "earnings":
+                        rows = self._rows(f"calendar/earnings?date={key}")
+                    else:
+                        rows = self._rows("calendar/splits?date=" + _today_ny())
+                except ProviderError as exc:
+                    log.debug("nasdaq %s %s: %s", kind, key, exc)
+                    continue
+                store_day(owner, kind, key, rows)
+
+        background_fill.submit(f"nasdaq-{kind}", owner, days, job, pool=_fill_pool)
+
     def earnings_calendar(self, start: str, end: str, symbol: str | None = None) -> list[dict] | None:
         """The market's reporters, day by day, WITH the session each states.
 
@@ -459,12 +570,16 @@ class NasdaqCalendars:
         # "time-pre-market" / "time-after-hours" / "time-not-supplied".
         session = {"time-pre-market": "BMO", "time-after-hours": "AMC"}
         want = (symbol or "").upper()
+        owner = _owner()
         out: list[dict] = []
+        missing = [d for d in days if cached_day(owner, "earnings", d) is None]
+        if missing:
+            # The request does not wait for these; the next build reads them
+            # from the cache this fill warms.
+            self._fill_days(owner, "earnings", missing)
         for day in days:
-            try:
-                rows = self._rows(f"calendar/earnings?date={day}")
-            except ProviderError as exc:
-                log.debug("nasdaq earnings %s: %s", day, exc)
+            rows = cached_day(owner, "earnings", day)
+            if rows is None:
                 continue
             for r in rows:
                 sym = str(r.get("symbol") or "").upper()
@@ -524,10 +639,21 @@ class NasdaqCalendars:
         and cheaper — the shape of the answer decides the shape of the ask."""
         if self._days(start, end) is None:          # the same width guard
             return None
-        try:
-            rows = self._rows("calendar/splits?date=" + start[:10])
-        except ProviderError as exc:
-            log.debug("nasdaq splits: %s", exc)
+        # 3.27s against Alpaca's 0.07s for the same surface, so this waits on
+        # the background fill too — one request, but one nobody should sit
+        # through on a page load.
+        owner = _owner()
+        # ONE KEY, NOT THE WINDOW (2026-09-24, #67). Keying this by the
+        # window looked right and never hit: the calendar asks for "today
+        # forward" padded by the match window, so the key moved with the
+        # clock and every request queued a fresh fill whose answer the next
+        # request could not find. The route IGNORES the date it is given and
+        # returns the same upcoming list either way — which is exactly why it
+        # is asked once — so one key is both correct and stable, and the
+        # filtering below already cuts it to the window asked for.
+        rows = cached_day(owner, "splits", _SPLITS_KEY)
+        if rows is None:
+            self._fill_days(owner, "splits", [_SPLITS_KEY])
             return None
         out: list[dict] = []
         seen: set[tuple[str, str]] = set()
