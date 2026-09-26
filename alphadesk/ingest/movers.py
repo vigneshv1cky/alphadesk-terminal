@@ -749,12 +749,20 @@ def session_movers(category: str, day: str, top: int = 20,
     # — one batched request for the twenty rows on screen, and a name does
     # not change with the session being viewed.
     nameless = sorted({r["symbol"] for t in tabs for r in t["rows"] if not r.get("name")})
-    if nameless:
+    quotes: dict = {}
+    # ASK FOR ALL OF THEM, IN CHUNKS — never a slice of a sorted list. The
+    # first version capped at 120 symbols taken from an ALPHABETICAL set, so
+    # with three tabs of fifty rows everything past the letter T was simply
+    # never asked about: TSLG, TSLL, USHY, VTEB, XLE, XLF and XLU all showed
+    # a dash while the vendor knew every one of them. A cap that silently
+    # drops the end of the alphabet is worse than no cap, because it looks
+    # like missing data rather than an unasked question.
+    for i in range(0, len(nameless), 100):
         try:
-            quotes = router.get("quotes", nameless[:120]) or {}
+            quotes.update(router.get("quotes", nameless[i:i + 100]) or {})
         except Exception as exc:
             log.debug("session movers: no names from quotes (%s)", exc)
-            quotes = {}
+            break
         for t in tabs:
             for r in t["rows"]:
                 if not r.get("name"):

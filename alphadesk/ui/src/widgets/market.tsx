@@ -571,6 +571,18 @@ const MOVERS_TOP = 50
 const MOVERS_ROW_H = 32
 const MOVERS_RESERVE = MOVERS_TOP * MOVERS_ROW_H + MOVERS_ROW_H
 
+/** HOW FAR BACK THE STEPPER GOES (2026-09-26, the owner: "so lets stop at
+ * last 2"). Not a technical ceiling — a deliberate one. A session view costs
+ * two whole-market requests, one of which the previous step already fetched,
+ * against a vendor plan that allows five a minute. Two sessions sit well
+ * inside that; offering fifteen let the reader walk into a rate limit that
+ * had nothing to do with what they wanted. The limit is honest either way
+ * now, but the better fix is not to offer a wall to walk into.
+ *
+ * Raising this means paying for the requests: a deeper history wants either
+ * a paid vendor plan or the sessions cached once for everyone. */
+const SESSIONS_BACK = 2
+
 function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title: string }) {
   const category = initial
   const [tab, setTab] = useState<string | null>(null)
@@ -583,8 +595,8 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   const canStep = category === "stocks" || category === "etfs"
   const [session, setSession] = useState<string | null>(null)
   const sessions = useQuery({
-    queryKey: ["mover-sessions", category],
-    queryFn: ({ signal }) => on(signal).moverSessions(category, 15),
+    queryKey: ["mover-sessions", category, SESSIONS_BACK],
+    queryFn: ({ signal }) => on(signal).moverSessions(category, SESSIONS_BACK),
     enabled: canStep,
     staleTime: 60 * 60_000,
   })
