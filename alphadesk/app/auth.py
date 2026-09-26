@@ -467,8 +467,16 @@ def sso_callback(provider: str, request: Request, code: str = "", state: str = "
     # A reader who left an agent app's consent page to sign in goes back to it.
     from alphadesk.app.agent_oauth import RETURN_COOKIE, return_path
     back = return_path(request)
-    # Into the app, not "/": the root is the landing page (2026-09-18).
-    response = Response(status_code=307, headers={"Location": back or "/markets"})
+    # INTO THE ACCOUNT PAGE, NOT THE MARKETS BOARD (2026-09-26, the owner's
+    # call, replacing "/markets" from 2026-09-18). Every figure in this
+    # terminal comes from a vendor key the reader supplies, so a new account
+    # arriving at Markets meets a board of key prompts and has to work out
+    # for itself that the answer is somewhere else. The Account page IS the
+    # answer: it is the coverage matrix of what is connected and what each
+    # remaining vendor would fill.
+    # The agent-consent return still wins — a reader who left that page to
+    # sign in is in the middle of something.
+    response = Response(status_code=307, headers={"Location": back or "/account"})
     response.delete_cookie(_STATE_COOKIE)
     if back:
         response.delete_cookie(RETURN_COOKIE)

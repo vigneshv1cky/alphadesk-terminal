@@ -167,7 +167,10 @@ class TestGoogle:
         self._configure(monkeypatch)
         store.create_user("u1", "reader@example.com", "sso-only")
         r = self._callback(client, monkeypatch, "reader@example.com")
-        assert r.status_code == 307 and r.headers["location"] == "/markets"
+        # Sign-in lands on the Account page (2026-09-26): every figure here
+        # comes from a vendor key the reader supplies, so that is the page
+        # a new account needs first.
+        assert r.status_code == 307 and r.headers["location"] == "/account"
         assert client.get("/api/system").status_code == 200      # session landed
 
     def test_unknown_google_account_provisions_itself(self, client, store, monkeypatch):
@@ -175,7 +178,10 @@ class TestGoogle:
         sign-in and lands signed in."""
         self._configure(monkeypatch)
         r = self._callback(client, monkeypatch, "stranger@example.com")
-        assert r.status_code == 307 and r.headers["location"] == "/markets"
+        # Sign-in lands on the Account page (2026-09-26): every figure here
+        # comes from a vendor key the reader supplies, so that is the page
+        # a new account needs first.
+        assert r.status_code == 307 and r.headers["location"] == "/account"
         assert client.get("/api/system").status_code == 200
         assert store.get_user_by_email("stranger@example.com") is not None
 
@@ -217,7 +223,10 @@ class TestGoogle:
         monkeypatch.setenv("GITHUB_CLIENT_ID", "ghcid")
         monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
         r = self._callback(client, monkeypatch, "reader@example.com", provider="github")
-        assert r.status_code == 307 and r.headers["location"] == "/markets"
+        # Sign-in lands on the Account page (2026-09-26): every figure here
+        # comes from a vendor key the reader supplies, so that is the page
+        # a new account needs first.
+        assert r.status_code == 307 and r.headers["location"] == "/account"
         assert client.get("/api/system").status_code == 200
         u = store.get_user_by_email("reader@example.com")
         r2 = self._callback(client, monkeypatch, "reader@example.com", provider="google")
