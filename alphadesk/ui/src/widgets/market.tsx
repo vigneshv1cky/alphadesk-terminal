@@ -677,10 +677,19 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         </Menu>
       ) : undefined}
       toolbar={(tabs.length > 1 || canStep) ? (
-        <div className="flex min-w-0 items-center gap-2">
+        // w-full so the stepper's ml-auto has a right edge to reach, and the
+        // stepper STICKS to it (2026-09-26, the reader: "put these in right
+        // most, cause the options changes and its a hassle to move the
+        // arrow"). The tab strip is a different width per category — stocks
+        // carry Dollar volume and Halts, ETFs carry neither — so a stepper
+        // that simply follows the tabs lands somewhere new on every tile,
+        // and moves again the moment you step back and Halts disappears.
+        // Pinned right it is in one place on every tile, and stays put when
+        // the tabs beside it change or scroll under it.
+        <div className="flex w-full min-w-0 items-center gap-2">
           {tabs.length > 1 && <TabStrip tabs={tabs.map(t => ({ id: t.id, label: t.label }))} value={active?.id ?? ""} onChange={setTab} />}
           {canStep && days.length > 0 && (
-            <div className="ml-auto flex shrink-0 items-center gap-1">
+            <div className="sticky right-0 ml-auto flex shrink-0 items-center gap-1 bg-card pl-1.5">
               <button type="button" title="An earlier session"
                       onClick={() => setSession(days[at + 1] ?? days[0])}
                       disabled={at >= days.length - 1}
