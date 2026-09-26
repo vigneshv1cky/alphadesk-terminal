@@ -436,7 +436,12 @@ class PolygonPrices:
                 continue
             out[sym] = {"open": r.get("o"), "high": r.get("h"), "low": r.get("l"),
                         "close": close, "volume": r.get("v") or 0}
-        return out or None
+        # AN EMPTY DICT, NOT None. To the router None means "I do not carry
+        # this surface", so returning it for a public holiday would put a
+        # closed market and an unconnected vendor at the same 428 — the
+        # fault #63 fixed for the scraped sources. An empty answer is still
+        # an answer.
+        return out
 
     def movers(self, top: int = 20) -> dict:
         self._need_key()

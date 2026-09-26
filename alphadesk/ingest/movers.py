@@ -583,29 +583,84 @@ SESSION_TTL_S = 21600
 _SESSION_LOOKBACK = 6
 
 
-def _market_day(router, day: str) -> Optional[dict]:
-    """One session's whole market, or None when the market did not open."""
+class VendorRefused(Exception):
+    """The vendor was asked and would not answer — NOT an absence.
+
+    Polygon's free plan allows five requests a minute and answers the sixth
+    with 429. That arrived here as a None, which the router reads as "this
+    vendor does not carry the surface", which became a NeedsKey, which this
+    module printed as "the market did not open on 2026-09-23" — a Wednesday.
+    A rate limit dressed as a public holiday is the same fault as a switched
+    -on source reported as off (#63), and it is worse here because the
+    reader concluded there was a limit on how far back the data went.
+    """
+
+
+def _market_day(router, day: str) -> dict:
+    """One session's whole market. Empty dict when the market did not open.
+
+    Raises VendorRefused when the vendor was asked and failed, and NeedsKey
+    when no connected vendor carries a whole-market day at all. A FAILURE IS
+    NEVER CACHED: a minute's rate limit must not turn into six hours of a
+    day that looks shut.
+    """
+    from alphadesk.providers.base import NeedsKey
     key = f"marketday|{router.owner}|{day}"
     with _lock:
         hit = _cache.get(key)
     if hit and time.time() - hit[0] < SESSION_TTL_S:
         return hit[1]
-    got = router.get("market_day", day)
+    try:
+        got = router.ask("market_day", day)
+    except NeedsKey as exc:
+        if getattr(exc, "failed", None):
+            raise VendorRefused("; ".join(exc.failed.values())) from exc
+        raise
+    got = got if isinstance(got, dict) else {}
     with _lock:
         _cache[key] = (time.time(), got)
     return got
 
 
+#: One symbol liquid enough to have traded on every session there is. Its
+#: bars ARE the trading calendar.
+_CALENDAR_SYMBOL = "SPY"
+
+
+def trading_sessions(router, count: int = 15) -> list[str]:
+    """The last `count` sessions that actually opened, newest first.
+
+    READ FROM A SYMBOL'S OWN BARS, not by asking the vendor day by day. The
+    first version probed the whole-market endpoint once per candidate day,
+    so offering fifteen sessions cost fifteen requests against a plan that
+    allows five a minute — the stepper exhausted the budget before the
+    reader pressed anything. A daily bar exists only on a session, so one
+    request for one liquid symbol is the same answer for one five-hundredth
+    of the cost.
+    """
+    key = f"sessions|{router.owner}|{count}"
+    with _lock:
+        hit = _cache.get(key)
+    if hit and time.time() - hit[0] < SESSION_TTL_S:
+        return hit[1]
+    try:
+        bars = router.get("daily_history", [_CALENDAR_SYMBOL], max(count + 5, 20)) or {}
+    except Exception as exc:
+        log.debug("trading sessions: %s", exc)
+        return hit[1] if hit else []
+    days = sorted({b["ts"].date().isoformat() for b in (bars.get(_CALENDAR_SYMBOL) or [])}, reverse=True)
+    out = days[:count]
+    if out:
+        with _lock:
+            _cache[key] = (time.time(), out)
+    return out
+
+
 def previous_session(router, before: str) -> Optional[str]:
     """The last session that actually opened before `before`."""
-    from datetime import date as _date, timedelta as _td
-    d = _date.fromisoformat(before)
-    for _ in range(_SESSION_LOOKBACK):
-        d -= _td(days=1)
-        if d.weekday() >= 5:            # a weekend is never a session; do not spend a request on it
-            continue
-        if _market_day(router, d.isoformat()):
-            return d.isoformat()
+    for d in trading_sessions(router, 40):
+        if d < before:
+            return d
     return None
 
 
@@ -644,13 +699,17 @@ def session_movers(category: str, day: str, top: int = 20,
     # that needs a key prompt would get "the market was shut" instead.
     if not router.vendor_for("market_day", "market_day"):
         raise NeedsKey("market_day")
-    today = _market_day(router, day)
-    if not today:
+    try:
+        today = _market_day(router, day)
+        prev_day = previous_session(router, day)
+        prev = _market_day(router, prev_day) if prev_day else {}
+    except VendorRefused as exc:
+        # SAID PLAINLY, and never cached. "The market did not open" would be
+        # a lie about a Wednesday, and the reader would conclude the history
+        # simply stops there.
+        return _unavailable(cat, day, str(exc))
+    if not today or not prev:
         # Not an error and not an empty list: the market was shut that day.
-        return _closed(cat, day)
-    prev_day = previous_session(router, day)
-    prev = _market_day(router, prev_day) if prev_day else None
-    if not prev:
         return _closed(cat, day)
 
     funds = fund_list(router) or frozenset()
@@ -684,6 +743,22 @@ def session_movers(category: str, day: str, top: int = 20,
     for t in tabs:
         for r in t["rows"]:
             r["name"] = edgar.company_title(r["symbol"])
+    # THE SEC'S LIST DOES NOT CARRY MOST FUNDS. SOXS, HYG, QQQ and TQQQ all
+    # come back with nothing from it, so an ETF list showed a column of
+    # dashes where the names should be. A quote carries the fund's own name
+    # — one batched request for the twenty rows on screen, and a name does
+    # not change with the session being viewed.
+    nameless = sorted({r["symbol"] for t in tabs for r in t["rows"] if not r.get("name")})
+    if nameless:
+        try:
+            quotes = router.get("quotes", nameless[:120]) or {}
+        except Exception as exc:
+            log.debug("session movers: no names from quotes (%s)", exc)
+            quotes = {}
+        for t in tabs:
+            for r in t["rows"]:
+                if not r.get("name"):
+                    r["name"] = (quotes.get(r["symbol"]) or {}).get("name")
 
     result = {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
               "session": day, "previous_session": prev_day, "historical": True,
@@ -772,3 +847,24 @@ def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple
             r = {**r, "price": now["close"], "change_pct": round(truth, 2)}
         out.append(r)
     return out, dropped
+
+
+def _unavailable(cat: str, day: str, why: str) -> dict:
+    """The vendor was asked and refused. Not a closed market, not an empty
+    day, and not a key prompt — all three would be lies."""
+    return {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
+            "session": day, "previous_session": None, "historical": True,
+            "unavailable": True,
+            "extended": False, "session_label": None, "official": True, "source": "polygon",
+            "filling": False,
+            # Said in words. "HTTP 429 Too Many Requests" is true and tells a
+            # reader nothing about what to do, and the answer here is simply
+            # to wait — Polygon's free plan allows five requests a minute.
+            "note": (f"{day} is a trading session, but the data vendor's rate limit was reached. "
+                     f"It answers a few requests a minute; try again shortly."
+                     if ("429" in why or "too many requests" in why.lower())
+                     else f"the data vendor would not answer for {day}: {why}"),
+            "rate_limited": "429" in why or "too many requests" in why.lower(),
+            "floors": {"min_price": 0.0, "min_turnover": 0.0, "min_liquidity": 0.0, "min_volatility": 0.0,
+                       "default_min_price": 0.0, "default_min_turnover": 0.0},
+            "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": []}
