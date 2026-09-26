@@ -1631,6 +1631,11 @@ class KeyIn(BaseModel):
     api_secret: str | None = None   # news seam only: Alpaca auths with a pair
     base_url: str | None = None
     model: str | None = None
+    #: What plan the reader says this key is on: "paid" or "free". Only
+    #: Tiingo reads it, and only because its terms forbid a free or trial
+    #: plan's data being written to durable storage at all. Tiingo publishes
+    #: no way to ask a token which plan it is on, so the account holder says.
+    plan: str | None = None
 
 
 def _key_user(request: Request) -> str:
@@ -1666,6 +1671,18 @@ def api_keys_list(request: Request):
                 # How its stories arrive: over a held socket in seconds, or on
                 # the poll. The page says so per feed (2026-09-18).
                 k["delivery"] = "stream" if k["provider"] in STREAMING_NEWS else "poll"
+                # WHETHER ITS STORIES ARE KEPT AT ALL. A feed whose terms
+                # forbid storage on the plan the reader declared contributes
+                # nothing to the window, because the window is served from
+                # the store. Said here rather than left to be discovered as
+                # a feed that is connected, polling, and permanently empty.
+                from alphadesk.ingest.news import _PLAN_GATED
+                gated = k["provider"] in _PLAN_GATED and (k.get("vendor_plan") or "") != "paid"
+                k["stores"] = not gated
+                if gated:
+                    k["not_stored_reason"] = (
+                        "a Starter or trial plan may not have its data written to durable "
+                        "storage, so these stories are not kept and do not reach the window")
     # STORIES FROM A FEED THE READER NO LONGER HAS (2026-09-22). Removing a
     # key purges what it delivered, but that purge only landed on 2026-09-18,
     # so a feed removed before it left its stories behind — and they show up
@@ -1865,8 +1882,17 @@ def api_keys_set(seam: str, body: KeyIn, request: Request):
                             "api_secret": (body.api_secret or "").strip(),
                             "base_url": (body.base_url or "").strip(),
                             "model": (body.model or "").strip()})
-    store.set_user_key(user_id, seam, body.provider, sealed, api_key[-4:])
+    # Anything that is not the word "paid" is read as the restrictive case,
+    # including a missing declaration and a typo.
+    plan = "paid" if (body.plan or "").strip().lower() == "paid" else "free"
+    store.set_user_key(user_id, seam, body.provider, sealed, api_key[-4:], vendor_plan=plan)
     registry.forget_user_keys(user_id)
+    # DECLARING A KEY FREE ALSO REMOVES WHAT IT ALREADY WROTE. Stopping new
+    # writes would leave the breach standing — a reader who upgrades this
+    # instance, or who corrects a wrong declaration, has stories on disk that
+    # the vendor's terms say may not be there. Same call a key removal makes.
+    if seam == "news" and plan != "paid":
+        store.purge_vendor_data(user_id, "news", body.provider)
     # A replaced key must serve the very next ask: the per-user LRU keys on
     # created_at, which the upsert refreshed, so no explicit invalidation.
     return {"ok": True, "seam": seam, "provider": body.provider, "key_hint": api_key[-4:]}
