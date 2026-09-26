@@ -162,20 +162,6 @@ CREATE TABLE IF NOT EXISTS annual_report_sections (
     extracted_at TEXT NOT NULL
 );
 
--- THE COMPANY'S OWN SHARE COUNT, from the SEC (2026-09-26, #83). Vendors
--- get this wrong exactly where it matters most: WHLR's float came back as
--- 2,420 shares against 89 million traded that day. The SEC's dei fact is
--- the company's own filed number, it is keyless public data, so one row
--- serves everyone. Re-read weekly, because it changes with each filing.
-CREATE TABLE IF NOT EXISTS sec_share_counts (
-    symbol     TEXT PRIMARY KEY,
-    shares     REAL,
-    as_of      TEXT,   -- the cover date the filing states, which can be wrong
-    filed_at   TEXT,   -- when it was filed, which cannot be in the future
-    accession  TEXT,
-    fetched_at TEXT NOT NULL
-);
-
 -- Each stored story's MEANING, for search by meaning (alphadesk/semantic.py,
 -- 2026-09-19): a normalised float16 vector from the self-hosted embedding
 -- model, base64 text so SQLite and Postgres read it alike. One per story per
@@ -1876,37 +1862,6 @@ def save_annual_report_sections(accession: str, payload: dict) -> None:
         conn.execute("DELETE FROM annual_report_sections WHERE accession=?", (accession,))
         conn.execute("INSERT INTO annual_report_sections (accession, payload, extracted_at) VALUES (?,?,?)",
                      (accession, json.dumps(payload), datetime.now(timezone.utc).isoformat()))
-
-
-def get_sec_shares(symbols: list[str]) -> dict[str, dict]:
-    """What the SEC holds for these symbols, by ticker. Rows older than a
-    week are left out so the caller re-reads them."""
-    if not symbols:
-        return {}
-    cut = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-    out: dict[str, dict] = {}
-    syms = [s.upper() for s in symbols]
-    with _connect() as conn:
-        for i in range(0, len(syms), 400):
-            chunk = syms[i:i + 400]
-            marks = ",".join("?" for _ in chunk)
-            for row in conn.execute(
-                    f"SELECT symbol, shares, as_of, filed_at, accession FROM sec_share_counts "
-                    f"WHERE symbol IN ({marks}) AND fetched_at >= ?", (*chunk, cut)):
-                out[row["symbol"]] = {"shares": row["shares"], "as_of": row["as_of"],
-                                      "filed_at": row["filed_at"], "accession": row["accession"]}
-    return out
-
-
-def save_sec_shares(symbol: str, shares: float | None, as_of: str | None,
-                    filed_at: str | None, accession: str | None) -> None:
-    """Kept even when the SEC has no number — a company with none should not
-    be asked again on every poll."""
-    sym = symbol.upper()
-    with _lock, _connect() as conn:
-        conn.execute("DELETE FROM sec_share_counts WHERE symbol=?", (sym,))
-        conn.execute("INSERT INTO sec_share_counts (symbol, shares, as_of, filed_at, accession, fetched_at) "
-                     "VALUES (?,?,?,?,?,?)", (sym, shares, as_of, filed_at, accession, _now()))
 
 
 def enabled_providers(seam: str = "prices") -> set[str]:

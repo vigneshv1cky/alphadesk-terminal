@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { on, type Quote } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
-import { useEarnings, useFundamentals, useQuote, useQuotes, useScreener, useThemes } from "@/lib/queries"
+import { useEarnings, useFundamentals, useQuote, useQuotes, useThemes } from "@/lib/queries"
 import { ComparisonPanel } from "@/components/ComparisonPanel"
 import { DividendsPanel, SplitsPanel } from "@/components/CorporateActions"
 import { InsiderTradesPanel, InstitutionalOwnershipPanel, StockOwnershipPanel } from "@/components/Ownership"
@@ -12,7 +12,6 @@ import { EarningsTranscriptPanel } from "@/components/EarningsTranscript"
 import { compact } from "@/components/Treemap"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { Empty, Widget, btnCls } from "@/components/terminal"
-import { useKeptState } from "@/lib/keptState"
 import { TabStrip } from "@/widgets/market"
 import { registerWidget } from "@/widgets/registry"
 import { TILE_BODY_HEIGHT } from "@/widgets/tile"
@@ -246,62 +245,6 @@ function FundamentalsTile() {
           </div>
           {spec && <div className="shrink-0 px-4 pb-2 text-label uppercase tracking-caps text-muted-foreground">{spec.label}</div>}
         </div>
-      )}
-    </Widget>
-  )
-}
-
-/* ── The window ───────────────────────────────────────────────────────── */
-
-/** TWO MEASURES, OFF BY DEFAULT (2026-09-26, #83). They cost vendor bars and
- * SEC reads, so the tile that polls every minute does not pay for them until
- * the reader asks. Neither sorts the list: the window stays alphabetical,
- * which is invariant 3 — a column is the reader choosing, a default order is
- * the app deciding. */
-function WindowTile() {
-  const [measures, setMeasures] = useKeptState("window-measures", false)
-  const { data } = useScreener(measures ? "split,turnover" : "")
-  const rows = (data?.symbols ?? []).filter(s => s.article_count > 0).slice(0, 20)
-  return (
-    <Widget span={4} title="The window" subtitle="unranked, alphabetical" scroll={TILE_BODY_HEIGHT}
-      toolbar={
-        <button type="button" onClick={() => setMeasures(!measures)}
-                title="Days since a corroborated split, and the session's volume over the company's own SEC share count"
-                className={btnCls({ variant: "ghost", size: "sm", active: measures })}>
-          Measures
-        </button>
-      }>
-      {!data ? <Empty>loading…</Empty>
-        : rows.length === 0 ? <Empty>no news in the window</Empty> : (
-        <ul>
-          {rows.map(s => (
-            <li key={s.symbol} className="row-rule">
-              <Link to={`/analysis?symbol=${encodeURIComponent(s.symbol)}`}
-                    className="flex items-center gap-2 px-3 py-2.5 hover:bg-foreground/5">
-                <span className="num w-[64px] shrink-0 text-body font-extrabold">{s.symbol}</span>
-                <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
-                  {measures && s.days_since_split != null
-                    ? `${s.days_since_split}d since ${s.split_ratio}${s.split_reverse ? " reverse" : ""}`
-                    : s.report_date ? `reports ${s.report_date.slice(5)}` : ""}
-                </span>
-                {measures && (
-                  // A withheld ratio shows an em dash with the reason on
-                  // hover, never a blank and never a zero: the count is real
-                  // and dated, it simply cannot describe today's float.
-                  <span className="num w-[54px] shrink-0 text-right text-caption tabular-nums text-muted-foreground"
-                        title={s.turnover != null
-                          ? `${s.shares_outstanding?.toLocaleString()} shares per the SEC, as of ${s.shares_as_of}`
-                          : s.turnover_withheld ? `no ratio: ${s.turnover_withheld}`
-                          : s.turnover_pending ? "reading the SEC's share count…" : "no SEC share count"}>
-                    {s.turnover != null ? `${s.turnover < 10 ? s.turnover.toFixed(2) : Math.round(s.turnover)}×`
-                      : s.turnover_pending ? "…" : "—"}
-                  </span>
-                )}
-                <span className="num shrink-0 text-caption text-muted-foreground">{s.article_count}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
       )}
     </Widget>
   )
@@ -592,7 +535,6 @@ registerWidget({ id: "earnings-context", label: "Earnings context", order: 22, c
 registerWidget({ id: "comparison", label: "Comparison", order: 23, component: ComparisonTile, optIn: true })
 registerWidget({ id: "fundamentals", label: "Fundamentals", order: 24, component: FundamentalsTile, optIn: true })
 registerWidget({ id: "basket", label: "Basket", order: 25, component: BasketTile, optIn: true })
-registerWidget({ id: "window", label: "The window", order: 29, component: WindowTile, optIn: true })
 registerWidget({ id: "filings", label: "Recent filings", order: 32, component: FilingsTile, optIn: true })
 registerWidget({ id: "insider-trades", label: "Insider trades", order: 33, component: InsiderTile, optIn: true })
 registerWidget({ id: "ownership", label: "Ownership", order: 34, component: OwnershipTile, optIn: true })

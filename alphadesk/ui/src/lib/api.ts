@@ -944,13 +944,6 @@ export interface ScreenerCitation {
   source: string
 }
 
-export interface ScreenerHeadline {
-  title: string
-  url: string
-  source: string
-  published_at: string | null
-}
-
 /** One row of the window inventory. Deliberately carries NO score and NO
  * digest: the list is unranked and un-narrated — nothing here writes about
  * it (2026-09-17: no model runs in AlphaDesk at all). */
@@ -983,30 +976,6 @@ export interface NewsArticle {
   /** Which of the reader's feeds delivered it ("alpaca", "polygon") — empty
    * on articles stored before 2026-09-14. */
   feeds?: string[]
-}
-
-export interface ScreenerRow {
-  symbol: string
-  report_date: string | null
-  session: string | null
-  article_count: number
-  headlines: ScreenerHeadline[]
-  /** Only with ?fill=split — from splits TWO vendors agree on. */
-  days_since_split?: number
-  split_date?: string
-  split_ratio?: string
-  split_reverse?: boolean
-  /** Only with ?fill=turnover. The session's volume over the company's own
-   * SEC share count, never a vendor's — which is wrong by orders of
-   * magnitude on companies fresh from a reverse split. */
-  turnover?: number
-  shares_outstanding?: number
-  shares_as_of?: string
-  /** Why the ratio is not shown although the count is: a count that predates
-   * a split, or is too old, cannot describe today's float. */
-  turnover_withheld?: string
-  /** The SEC read is still running. NOT a zero. */
-  turnover_pending?: boolean
 }
 
 
@@ -1476,8 +1445,6 @@ export const api = {
       // The server reaches further back until one page covers it, so a
       // zoomed-out chart fills in a step rather than creeping.
       (before && need ? `&need=${Math.round(need)}` : "")),
-  screener: (fill = "") =>
-    get<{ symbols: ScreenerRow[]; filled: string[] }>(`/api/screener${fill ? `?fill=${encodeURIComponent(fill)}` : ""}`),
   rail: (symbols: string[]) =>
     get<Rail>(`/api/rail${symbols.length ? `?symbols=${encodeURIComponent(symbols.join(","))}` : ""}`),
   news: () => get<{ articles: NewsArticle[] }>("/api/news"),
