@@ -26,8 +26,12 @@ Two ways to use it — the [managed cloud](#option-a--managed-cloud) or
 under the **GNU AGPL-3.0**, with a **commercial licence** for anyone who
 cannot meet its terms. See [Licence](#licence).
 
-![AlphaDesk — the Markets board: a live chart, the basket rail, equity
-overview and the funds built on a stock](alphadesk/ui/public/landing/markets.jpg)
+![AlphaDesk — "Research the market." A dense, fast terminal for reading
+quotes, charts, news, SEC filings and earnings, on the data providers you
+connect](alphadesk/ui/public/landing/home.jpg)
+
+![The Markets board: a live chart, the basket rail, equity overview and the
+funds built on a stock](alphadesk/ui/public/landing/markets.jpg)
 
 <sub>Figures in every screenshot are blurred on purpose: they came from a
 reader's own vendor keys, and vendors restrict public display of their
@@ -225,7 +229,7 @@ and why. Bring evidence and open an issue.
 | Page | What it shows |
 |---|---|
 | **Landing** (`/`) | Product overview with blurred screenshots; sign-in and sign-up |
-| **Markets** | A composable board: chart, equity overview, funds built on the stock, stock/ETF/crypto/currency/option movers, Treasury yields, heatmap, news |
+| **Markets** | A composable board: chart, equity overview, funds built on the stock, stock/ETF/crypto/currency/option movers, Treasury yields, heatmap, news. Stock and ETF movers **step back to a past session**, computed from the whole market that day against the session before it |
 | **Chart** | Full workspace: candles, line, area, step and other styles; 1-minute to multi-year intervals; indicators and templates; drawing tools (desktop, per visit); multi-chart layouts; overnight, pre-market, after-hours and weekend session shading |
 | **Analysis** | One name end to end: chart, filings, price performance, key statistics, earnings history and consensus, analysts, rating changes, financials as filed, splits, dividends, institutional and insider ownership, news. Funds add holdings and breakdown; coins get their CoinGecko record instead of stock-only panels |
 | **Profile** | Who a company is: EDGAR registrant facts, the latest 10-K/20-F business and properties sections verbatim, locations, officers; a coin's CoinGecko record |
@@ -279,6 +283,34 @@ Alpaca (Benzinga), Polygon, Finnhub, Benzinga, Tiingo, Alpha Vantage,
 Marketaux and FMP. Several feeds merge into one window per reader,
 de-duplicated by URL. Alpaca's news streams live; the rest poll every five
 minutes.
+
+A feed whose terms forbid keeping what it sends is not kept: Tiingo's Starter
+and trial plans may not have their data written to durable storage, so a key
+declared as one has its stories fetched and dropped, and the Account page
+says "Not kept" rather than showing a feed that polls and produces nothing.
+
+### Sources with no key — read, not licensed
+
+Three sources need no key because there is nothing to buy: the reader turns
+each on with a button on the Account page.
+
+| Source | Carries |
+|---|---|
+| **Nasdaq** | Earnings, dividend, split and listing calendars — and **today's trading halts**, which no vendor in the catalogue carries at all |
+| **Yahoo** | Charts, quotes and daily history from the public chart endpoint |
+| **Social** | A mirror of one public account's posts |
+
+Two rules keep them honest. **A keyed vendor is always asked first** — every
+licensed vendor is ordered ahead of every scraped one, so a scraped source
+answers only where none does. And **provenance travels with the answer**:
+the catalogue marks the source unofficial, each payload carries it, the tile
+subtitle reads "scraped", and the `data_sources` agent tool resolves any
+vendor name back to licensed-or-read. The marker protects the reader's
+reasoning; it is not consent from the site.
+
+No ticker is ever read out of a social post: a ticker inside a post is the
+author's claim, and attaching it would route an unverified assertion into
+that symbol's context.
 
 ### Public data — no key
 
@@ -341,7 +373,7 @@ rate-limited to 120 requests a minute per token.
 
 | For | Tools |
 |---|---|
-| Today | `market_today`, `market_tape`, `movers`, `sector_performance`, `sector_breadth` |
+| Today | `market_today`, `market_tape`, `movers` (stocks, ETFs, indices, crypto, currencies, options, bonds), `sector_performance`, `sector_breadth` |
 | The reader's names | `my_board`, `quotes`, `screener_window`, `baskets`, `find_symbol` |
 | One company | `quote`, `key_stats`, `company_profile`, `fund_profile`, `analyst_view`, `financial_statements`, `earnings_history`, `ownership`, `insider_activity`, `peers`, `compare_metrics` |
 | Prices | `price_history`, `price_chart` |
@@ -349,13 +381,18 @@ rate-limited to 120 requests a minute per token.
 | Filings and calls | `list_filings`, `filing_text`, `transcripts`, `transcript_text` |
 | Calendars | `earnings_calendar`, `recently_reported`, `economic_calendar`, `corporate_calendar` |
 | Options | `option_expirations`, `option_chain`, `options_flow` |
+| What just happened | `catalysts` (filings, halts, government action and social posts on one tape), `filing_feed`, `trading_halts`, `government_actions`, `social_posts` |
+| A past session | `movers(session=…)` for stocks and ETFs, with `market_sessions` for the days the market actually opened |
+| Provenance | `data_sources` — whether a figure came from a licensed vendor or a scraped page |
 
 The tools are written for an agent that cannot see the screen: `find_symbol`
 resolves a name to a ticker from the SEC list rather than letting an agent
 guess; `price_chart` returns a thinned series carrying each point's RSI and
 MACD; `filing_text` and `transcript_text` return whole documents in pages;
 `news_search` marks each story as a word or meaning match. Tools that return
-publisher or filer text say that it is untrusted input.
+publisher or filer text say that it is untrusted input. Every tool carries
+`readOnlyHint`, so a client can call them without asking permission for each
+read.
 
 ---
 
