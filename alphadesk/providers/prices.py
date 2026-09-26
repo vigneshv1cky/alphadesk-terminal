@@ -410,6 +410,34 @@ class PolygonPrices:
             "source": "Polygon",
         }
 
+    def market_day(self, day: str) -> dict[str, dict] | None:
+        """EVERY US symbol's bar for ONE past session, keyed by ticker.
+
+        The movers endpoints every vendor publishes are TODAY only — they
+        answer "what is moving", not "what moved on the 24th". This is the
+        one primitive that makes a past session answerable: the whole market
+        in a single request, which is also why it is cheap enough to ask for
+        two days at once (a session's change needs the session before it).
+
+        Measured on a live key: 12,591 symbols in 0.3-0.5s. A day the market
+        did not open answers with nothing, which the caller reads as "not a
+        session" rather than as a failure.
+        """
+        self._need_key()
+        data = _get_json(
+            f"{self._BASE}/v2/aggs/grouped/locale/us/market/stocks/{day}?adjusted=true",
+            {"Authorization": f"Bearer {self.api_key}"}, timeout=45)
+        rows = data.get("results") or []
+        out: dict[str, dict] = {}
+        for r in rows:
+            sym = str(r.get("T") or "").upper()
+            close = r.get("c")
+            if not sym or close is None:
+                continue
+            out[sym] = {"open": r.get("o"), "high": r.get("h"), "low": r.get("l"),
+                        "close": close, "volume": r.get("v") or 0}
+        return out or None
+
     def movers(self, top: int = 20) -> dict:
         self._need_key()
         out: dict = {"most_active": [], "gainers": [], "losers": []}

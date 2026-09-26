@@ -575,9 +575,23 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   const [tab, setTab] = useState<string | null>(null)
   const [floors, setFloorsState] = useState<Floors | null>(() => readFloors(initial, initial))
   const setFloors = (f: Floors | null) => { setFloorsState(f); writeFloors(initial, category, f) }
+  // LOOKING BACK A SESSION (2026-09-26, #87). Stocks and ETFs only: every
+  // other category's movers come from a today-only vendor endpoint, so
+  // there is nothing to step back to. Not kept across visits — a tile
+  // silently showing last Tuesday would be the worst kind of stale.
+  const canStep = category === "stocks" || category === "etfs"
+  const [session, setSession] = useState<string | null>(null)
+  const sessions = useQuery({
+    queryKey: ["mover-sessions", category],
+    queryFn: ({ signal }) => on(signal).moverSessions(category, 15),
+    enabled: canStep,
+    staleTime: 60 * 60_000,
+  })
+  const days = sessions.data?.sessions ?? []
+  const at = session ? days.indexOf(session) : -1
   const q = useQuery({
-    queryKey: ["movers", category, floors?.min_price ?? "d", floors?.min_turnover ?? "d"],
-    queryFn: ({ signal }) => on(signal).categoryMovers(category, MOVERS_TOP, floors),
+    queryKey: ["movers", category, floors?.min_price ?? "d", floors?.min_turnover ?? "d", session ?? "live"],
+    queryFn: ({ signal }) => on(signal).categoryMovers(category, MOVERS_TOP, floors, session),
     staleTime: 20_000,
     // The server rebuilds behind a cached payload every 30s for stocks,
     // crypto and indices, so the tile asks on the same cycle; the listed
@@ -585,7 +599,10 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
     // (the curve is published once a day).
     // While the server says the lists are still filling in, every few
     // seconds until the full lists arrive (2026-09-17).
-    refetchInterval: query => query.state.data?.filling ? 3_000
+    // A FINISHED SESSION DOES NOT CHANGE. Polling one every thirty seconds
+    // would spend the reader's vendor calls re-reading a settled fact.
+    refetchInterval: query => session ? false
+      : query.state.data?.filling ? 3_000
       : category === "bonds" ? 900_000
       : category === "stocks" || category === "crypto" || category === "indices" ? 30_000 : 120_000,
     refetchIntervalInBackground: true,
@@ -595,7 +612,10 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   // thing here no vendor sells, so the tab is always offered and says how to
   // switch the source on rather than hiding when it is off.
   const vendorTabs = q.data?.tabs ?? []
-  const tabs = category === "stocks"
+  // NOT WHILE LOOKING BACK: the halts source reads TODAY's halted symbols
+  // off a public page and has no history, so offering the tab under a past
+  // session's heading would put today's halts on the 25th.
+  const tabs = category === "stocks" && !session
     ? [...vendorTabs, { id: "halts", label: "Halts", rows: [] as CategoryMoverRow[] }]
     : vendorTabs
   const halted = tab === "halts" && category === "stocks"
@@ -607,11 +627,15 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   // and the change is re-read against it from the live price. The rank
   // stays the server's until its next cycle — rows never reshuffle under
   // the cursor on a tick.
-  const streamable = category === "stocks" || category === "etfs"
+  // NOT WHILE LOOKING BACK. The live overlay rewrites each row's price from
+  // the stream and re-derives its change from it — correct for today, and a
+  // lie on a past session, where it would quietly replace the 24th's close
+  // with this second's tick and leave the volume beside it untouched.
+  const streamable = (category === "stocks" || category === "etfs") && !session
   const symbols = useMemo(() => (streamable ? rows.map(r => r.symbol) : []), [rows, streamable])
   const live = useLiveQuotes(symbols)
   // The coins on screen, and none for any other category.
-  const coins = useMemo(() => (category === "crypto" ? rows.map(r => r.symbol) : []), [rows, category])
+  const coins = useMemo(() => (category === "crypto" && !session ? rows.map(r => r.symbol) : []), [rows, category, session])
   const cryptoTicks = useCryptoTicks(coins)
   const priced = useMemo(() => rows.map(r => {
     const livePrice = streamable
@@ -624,7 +648,12 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
     return { ...r, price: livePrice,
       change_pct: prev ? Math.round((livePrice / prev - 1) * 10000) / 100 : r.change_pct }
   }), [rows, live, cryptoTicks, streamable, category])
-  const subtitle = q.data?.source
+  // The subtitle carries the session when one is picked, because every
+  // figure below changes meaning with it — and a tile that looks live while
+  // showing Tuesday is the fault this repo has shipped four times.
+  const subtitle = session
+    ? `${session}${q.data?.closed ? " · market closed" : q.data?.previous_session ? ` · against ${q.data.previous_session}` : ""} · past session`
+    : q.data?.source
     ? `${q.data.change_label === "24h" ? "rolling 24h" : q.data.change_label === "1D bp" ? "daily curve · change in bp"
         : category === "currencies" ? "since 5pm New York"
         : q.data.session_label ? `${q.data.session_label.toLowerCase()} · since the last close` : "session"} · ${SOURCE_LABELS[q.data.source] ?? q.data.source}${q.data.official === false ? " · scraped" : ""}${q.data.filling ? " · filling in…" : ""}`
@@ -647,7 +676,31 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
           )}
         </Menu>
       ) : undefined}
-      toolbar={tabs.length > 1 ? <TabStrip tabs={tabs.map(t => ({ id: t.id, label: t.label }))} value={active?.id ?? ""} onChange={setTab} /> : undefined}
+      toolbar={(tabs.length > 1 || canStep) ? (
+        <div className="flex min-w-0 items-center gap-2">
+          {tabs.length > 1 && <TabStrip tabs={tabs.map(t => ({ id: t.id, label: t.label }))} value={active?.id ?? ""} onChange={setTab} />}
+          {canStep && days.length > 0 && (
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <button type="button" title="An earlier session"
+                      onClick={() => setSession(days[at + 1] ?? days[0])}
+                      disabled={at >= days.length - 1}
+                      className={btnCls({ variant: "ghost", size: "sm", icon: true })}>‹</button>
+              {/* "Live" is a button, not a label: it is how you come back,
+                  and a reader who has stepped back three sessions should not
+                  have to press the arrow three times to return. */}
+              <button type="button" onClick={() => setSession(null)}
+                      title={session ? "Back to the live list" : "Showing the live list"}
+                      className={btnCls({ variant: "ghost", size: "sm", active: !session })}>
+                {session ? session.slice(5) : "Live"}
+              </button>
+              <button type="button" title="A later session"
+                      onClick={() => setSession(at <= 0 ? null : days[at - 1])}
+                      disabled={!session}
+                      className={btnCls({ variant: "ghost", size: "sm", icon: true })}>›</button>
+            </div>
+          )}
+        </div>
+      ) : undefined}
       minBody={q.isPending ? MOVERS_RESERVE : undefined}
     >
       {q.isPending ? <Empty>loading…</Empty>

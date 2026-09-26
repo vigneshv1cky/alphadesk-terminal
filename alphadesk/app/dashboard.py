@@ -1188,18 +1188,62 @@ def api_category_movers(category: str, top: int = 20,
                         min_price: float | None = Query(None, ge=0),
                         min_turnover: float | None = Query(None, ge=0),
                         min_liquidity: float | None = Query(None, ge=0),
-                        min_volatility: float | None = Query(None, ge=0)):
+                        min_volatility: float | None = Query(None, ge=0),
+                        session: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$")):
     """Movers by category — stocks, crypto, etfs, mutual_funds, options,
     indices, futures, bonds, currencies — one shape for one tile
     (ingest/movers.py). The floors are the reader's when given, the
-    category's defaults otherwise. 404 for a category that does not exist."""
+    category's defaults otherwise. 404 for a category that does not exist.
+
+    `session` asks for a PAST session instead of now, computed from the
+    whole market that day against the session before it. Stocks and ETFs
+    only: every other category's movers come from a today-only vendor
+    endpoint, and a crypto or options list for the 24th cannot be built
+    from anything we can reach. 404 names the ones that can."""
     from alphadesk.ingest import movers
+    if session:
+        if category not in movers.SESSION_CATEGORIES:
+            raise HTTPException(404, f"a past session is only available for "
+                                     f"{' and '.join(movers.SESSION_CATEGORIES)}")
+        try:
+            return movers.session_movers(category, session, top=max(1, min(top, 50)),
+                                         min_price=min_price, min_turnover=min_turnover)
+        except KeyError:
+            raise HTTPException(404, f"no such category: {category}")
     try:
         return movers.category_movers(category, top=max(1, min(top, 50)),
                                       min_price=min_price, min_turnover=min_turnover,
                                       min_liquidity=min_liquidity, min_volatility=min_volatility)
     except KeyError:
         raise HTTPException(404, f"no such category: {category}")
+
+
+@app.get("/api/movers/{category}/sessions")
+def api_movers_sessions(category: str, before: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                        count: int = 10):
+    """The last few sessions that actually opened, newest first.
+
+    The stepper needs to know which days exist before it can offer them: a
+    weekend or a holiday is not a session, and stepping back one calendar
+    day at a time would land the reader on an empty market and make them
+    press again. Asking the vendor day by day is what this avoids."""
+    from datetime import timedelta
+    from alphadesk.config import now_et
+    from alphadesk.ingest import movers
+    from alphadesk.providers import get_prices
+    if category not in movers.SESSION_CATEGORIES:
+        raise HTTPException(404, f"a past session is only available for "
+                                 f"{' and '.join(movers.SESSION_CATEGORIES)}")
+    router = get_prices()
+    out: list[str] = []
+    cursor = before or (now_et().date() + timedelta(days=1)).isoformat()
+    for _ in range(max(1, min(count, 30))):
+        got = movers.previous_session(router, cursor)
+        if not got:
+            break
+        out.append(got)
+        cursor = got
+    return {"sessions": out}
 
 
 @app.get("/api/tape")

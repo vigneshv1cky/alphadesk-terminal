@@ -106,6 +106,9 @@ SURFACES: dict[str, Surface] = {
         Surface("quote", "Quote", (("alpaca", FREE), ("finnhub", FREE), ("polygon", PAID), ("alphavantage", FREE))),
         Surface("stream", "Live prices", (("alpaca", FREE),)),
         Surface("stock_movers", "Stock movers", (("alpaca", FREE), ("polygon", PAID))),
+        # A PAST SESSION'S MOVERS need the whole market for one day, which the
+        # today-only movers endpoints cannot answer. Only Polygon publishes it.
+        Surface("market_day", "A past session's whole market", (("polygon", FREE),)),
         Surface("etf_movers", "ETF movers", (("alpaca", FREE), ("polygon", PAID))),
         Surface("index_board", "Market tape", (("alpaca", FREE), ("polygon", PAID))),
         Surface("crypto", "Crypto", (("coingecko", FREE), ("alpaca", FREE))),
@@ -203,7 +206,8 @@ UNIONED_SURFACES = frozenset({"earnings_calendar", "split_calendar"})
 METHOD_SURFACE: dict[str, str] = {
     "chart_series": "chart", "chart_intervals": "chart", "daily_history": "chart",
     "quote": "quote", "quotes": "quote", "context": "quote",
-    "movers": "stock_movers", "market_tape": "index_board", "index_board": "index_board",
+    "movers": "stock_movers", "market_day": "market_day",
+    "market_tape": "index_board", "index_board": "index_board",
     "crypto_movers": "crypto", "crypto_bars": "crypto", "crypto_daily_history": "crypto", "crypto_symbols": "crypto", "fx_daily_history": "currencies",
     "option_expirations": "options", "option_chain": "options", "option_active_contracts": "options",
     "option_trades": "options", "option_latest_quotes": "options", "option_movers": "option_movers",
