@@ -318,6 +318,47 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
 /** Readable before sign-in: what AlphaDesk is, and what you agree to. */
 const PUBLIC_PAGES = ["/terms", "/privacy", "/disclaimer", "/about"]
 
+/** THE CHROME A PUBLIC PAGE HAD NONE OF (2026-09-26, the reader: "about page
+ * doesnt look good if not signed in").
+ *
+ * Signed IN these pages render inside Shell and carry its header. Signed out
+ * they were returned in a bare div: no wordmark, no navigation, and NO WAY
+ * BACK — a reader arriving from the landing page's own About link reached a
+ * wall of text in a black void with nothing to click. The page a stranger is
+ * most likely to see first was the only one with no way out of it.
+ *
+ * The same ink bar the app uses (`.chrome`), so it reads as the same
+ * product, and the mark returns to the landing page rather than into the
+ * app, because there is no session to go into.
+ */
+function PublicHeader({ here }: { here: string }) {
+  const pages: [string, string][] = [
+    ["/about", "About"], ["/terms", "Terms"],
+    ["/privacy", "Privacy"], ["/disclaimer", "Disclaimer"],
+  ]
+  return (
+    <header className="chrome z-30 flex h-[52px] shrink-0 items-center gap-3 px-3 sm:px-4">
+      <Link to="/" aria-label="AlphaDesk — back to the front page"
+            className="flex shrink-0 items-center gap-2.5 rounded-xs hover:opacity-80">
+        <span aria-hidden="true" className="h-[14px] w-[14px] rounded-xs bg-accent" />
+        <span className="text-figure font-extrabold tracking-tight">ALPHADESK</span>
+      </Link>
+      <div className="min-w-0 flex-1" />
+      {/* The siblings, so a reader who came for one can find the others
+          without going back to the landing page to look. Hidden on a phone
+          below the mark's own width; the current page is not a link. */}
+      <nav className="hidden items-center gap-4 sm:flex">
+        {pages.map(([to, label]) => (
+          here === to
+            ? <span key={to} aria-current="page" className="text-body font-semibold text-foreground">{label}</span>
+            : <Link key={to} to={to} className="text-body font-semibold text-muted-foreground no-underline hover:text-foreground">{label}</Link>
+        ))}
+      </nav>
+    </header>
+  )
+}
+
+
 function Gate() {
   const { pathname } = useLocation()
   const [state, setState] = useState<"checking" | "open" | "login" | "subscribe">("checking")
@@ -371,6 +412,7 @@ function Gate() {
   if ((state === "login" || state === "subscribe") && PUBLIC_PAGES.includes(pathname)) {
     return (
       <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
+        <PublicHeader here={pathname} />
         <Suspense fallback={null}>
           {pathname === "/about" ? <AboutPage />
             : pathname === "/privacy" ? <PrivacyPage />

@@ -4,26 +4,19 @@
  * verifies and presents, on the reader's own keys, and does not trade.
  */
 
-const H = ({ children }: { children: React.ReactNode }) => (
-  <h2 className="mb-1.5 mt-7 text-body font-bold uppercase tracking-caps">{children}</h2>
-)
-const P = ({ children }: { children: React.ReactNode }) => (
-  <p className="mb-2.5 text-body leading-[1.65] text-foreground/90">{children}</p>
-)
-const L = ({ items }: { items: React.ReactNode[] }) => (
-  <ul className="mb-2.5 list-disc space-y-1 pl-5 text-body leading-[1.6] text-foreground/90">
-    {items.map((it, i) => <li key={i}>{it}</li>)}
-  </ul>
-)
+// THE SAME HEADINGS, PARAGRAPHS AND LISTS THE LEGAL PAGES USE (2026-09-26).
+// About had its own copies that had already drifted — a bold heading where
+// the others are extra-bold, a 28px top margin where the others use 24 — so
+// the four pages did not read as one set even before you noticed the
+// navigation was missing.
+import { H, L, P, PublicPage } from "@/components/legal"
 
 export default function AboutPage() {
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-[720px] px-5 py-8">
-        <h1 className="text-display font-extrabold tracking-tight">About AlphaDesk</h1>
-        <p className="mt-1 text-caption text-muted-foreground">
-          A market research workspace that connects your own data providers, checks what they return, and presents it for reading — and hands the records to your own AI agent.
-        </p>
+    <PublicPage
+      title="About AlphaDesk"
+      subtitle="A market research workspace that connects your own data providers, checks what they return, and presents it for reading — and hands the records to your own AI agent."
+    >
 
         <H>What it is</H>
         <P>
@@ -132,12 +125,6 @@ export default function AboutPage() {
           licence.
         </P>
 
-        <p className="mt-8 border-t border-row-rule pt-4 text-caption text-muted-foreground">
-          Research, not advice. Nothing on this service is a recommendation to
-          buy, sell or hold anything. See the{" "}
-          <a href="/terms" className="underline decoration-dotted hover:text-foreground">Terms of Service</a>.
-        </p>
-      </div>
-    </div>
+    </PublicPage>
   )
 }
