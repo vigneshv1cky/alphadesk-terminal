@@ -689,19 +689,23 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         <div className="flex w-full min-w-0 items-center gap-2">
           {tabs.length > 1 && <TabStrip tabs={tabs.map(t => ({ id: t.id, label: t.label }))} value={active?.id ?? ""} onChange={setTab} />}
           {canStep && days.length > 0 && (
+            // THE LABEL SITS OUTSIDE THE ARROWS (2026-09-26, the reader:
+            // "dont keep this middle of arrows, cause the center piece
+            // changes troo"). It is the same fault one level down: "Live" is
+            // 39px and "09-25" is 44px, so a label between the arrows pushes
+            // them apart the moment you step back, and the arrow under the
+            // cursor moves. With both arrows against the right edge they are
+            // fixed, and the label grows leftwards instead.
             <div className="sticky right-0 ml-auto flex shrink-0 items-center gap-1 bg-card pl-1.5">
+              <button type="button" onClick={() => setSession(null)}
+                      title={session ? "Back to the live list" : "Showing the live list"}
+                      className={btnCls({ variant: "ghost", size: "sm", active: !session }, "min-w-[46px]")}>
+                {session ? session.slice(5) : "Live"}
+              </button>
               <button type="button" title="An earlier session"
                       onClick={() => setSession(days[at + 1] ?? days[0])}
                       disabled={at >= days.length - 1}
                       className={btnCls({ variant: "ghost", size: "sm", icon: true })}>‹</button>
-              {/* "Live" is a button, not a label: it is how you come back,
-                  and a reader who has stepped back three sessions should not
-                  have to press the arrow three times to return. */}
-              <button type="button" onClick={() => setSession(null)}
-                      title={session ? "Back to the live list" : "Showing the live list"}
-                      className={btnCls({ variant: "ghost", size: "sm", active: !session })}>
-                {session ? session.slice(5) : "Live"}
-              </button>
               <button type="button" title="A later session"
                       onClick={() => setSession(at <= 0 ? null : days[at - 1])}
                       disabled={!session}
