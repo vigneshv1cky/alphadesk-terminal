@@ -353,7 +353,18 @@ export function Sidebar() {
           edge (2026-09-18, the owner's "too low"): a hairline above and
           room below, so the last row is not a target against the card's
           edge. */}
-      {me?.user && (
+      {/* SHOWN ON A SELF-HOSTED INSTANCE TOO (2026-09-26, the reader: "no way
+          to comeback to account"). This was gated on a signed-in user, and an
+          open instance has none — ALPHADESK_AUTH=off runs as one local
+          account. So the page that holds the reader's vendor keys, which is
+          the whole point of bring-your-own-keys and the first thing a
+          self-hoster needs, had no link anywhere in the interface. Measured
+          on such an instance: ten keys stored, the vault on, the page
+          working, and nothing pointing at it.
+          Hidden only where it would be useless: auth required and nobody
+          signed in, which is a state the Gate replaces with the landing
+          page anyway. */}
+      {me && (me.user || !me.auth_required) && (
         <div className="shrink-0 border-t border-row-rule pb-2 pt-1">
           <NavLink
             to="/account"
