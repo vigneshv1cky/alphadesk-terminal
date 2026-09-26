@@ -271,6 +271,11 @@ class PriceProvider(Protocol):
         multiples, analyst targets. None if the source cannot price it."""
         ...
 
+    def market_day(self, day: str) -> dict[str, dict] | None:
+        """Every US symbol's bar for one past session, keyed by ticker, or
+        None where the vendor does not carry a whole-market day."""
+        return None
+
     def movers(self, top: int = 20) -> dict:
         """{most_active, gainers, losers}. Implementations should filter out
         instruments that are arithmetically large movers but informationally

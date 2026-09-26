@@ -1159,6 +1159,12 @@ export interface SectorBreadth {
   as_of: string
 }
 export interface CategoryMovers {
+  /** Set when this list is a PAST session rather than now. */
+  session?: string
+  previous_session?: string | null
+  historical?: boolean
+  /** True when the day asked for was not a trading session. */
+  closed?: boolean
   category: MoverCategory
   label: string
   change_label: string
@@ -1517,9 +1523,15 @@ export const api = {
   movers: (top = 20) => get<Movers>(`/api/movers?top=${top}`),
   sectors: () => get<Sectors>("/api/sectors"),
   sectorBreadth: () => get<SectorBreadth>("/api/sectors/breadth"),
-  categoryMovers: (category: MoverCategory, top = 20, floors?: { min_price: number; min_turnover: number; min_liquidity: number; min_volatility: number } | null) =>
+  categoryMovers: (category: MoverCategory, top = 20, floors?: { min_price: number; min_turnover: number; min_liquidity: number; min_volatility: number } | null, session?: string | null) =>
     get<CategoryMovers>(`/api/movers/${category}?top=${top}${floors
-      ? `&min_price=${floors.min_price}&min_turnover=${floors.min_turnover}&min_liquidity=${floors.min_liquidity}&min_volatility=${floors.min_volatility}` : ""}`),
+      ? `&min_price=${floors.min_price}&min_turnover=${floors.min_turnover}&min_liquidity=${floors.min_liquidity}&min_volatility=${floors.min_volatility}` : ""}${
+      session ? `&session=${session}` : ""}`),
+  /** The last sessions that actually opened, newest first. A weekend or a
+   * holiday is not a session, so the stepper needs the real list rather
+   * than stepping back a calendar day at a time. */
+  moverSessions: (category: MoverCategory, count = 10) =>
+    get<{ sessions: string[] }>(`/api/movers/${category}/sessions?count=${count}`),
   earnings: () =>
     get<{ upcoming: EarningsRow[]; reported: EarningsRow[] }>("/api/earnings"),
   insider: (symbol: string) =>

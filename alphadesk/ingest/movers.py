@@ -546,3 +546,229 @@ def reset_cache() -> None:
 
 __all__ = ["CATEGORIES", "DEFAULT_FLOORS", "NeedsKey", "apply_floors", "category_movers", "floors_note",
            "stats_from_bars", "tabs_from_list", "treasury_rows"]
+
+
+# ── a past session's movers (2026-09-26, #87) ─────────────────────────────
+#
+# WHY THIS IS A SEPARATE PATH. Every vendor's movers endpoint answers "what
+# is moving", present tense — Alpaca's screener and Polygon's snapshot both
+# describe today and cannot be asked about the 24th. A past session has to
+# be COMPUTED, from the whole market on that day against the session before
+# it, which is why it needs `market_day` and why only a vendor that
+# publishes a whole-market day can serve it at all.
+#
+# It is deliberately NOT threaded through category_movers(): that path is
+# built for a 30-second cache and an async refresh because today's list
+# changes under you. A past session cannot change, so it wants the opposite
+# — fetch once, keep it for a long time, and never refresh in the
+# background.
+SESSION_CATEGORIES = ("stocks", "etfs")
+
+# EXCHANGE TEST SYMBOLS. They print real prices and real volume and are not
+# securities: ZVZZT closed at 25.12 with a 89% "gain" in the first list this
+# produced, sitting third among the day's gainers. Nasdaq's test tickers all
+# take the form Z?ZZT; the rest are named because they do not follow a rule.
+_TEST_SYMBOL = re.compile(r"^Z[A-Z]ZZT$|^(ZEXIT|ZIEXT|ZTEST|ATEST|CTEST|CBO|CBX|IGZZT|LZZZT|NTEST)$")
+
+# A move this big is either real or a basis error, and the difference is
+# worth one market-wide lookup. Below it, nothing is fetched — the same
+# rule keystats.py follows: pay for the explanation only where the
+# arithmetic found a conflict.
+_SPLIT_CHECK_PCT = 50.0
+#: A finished session is finished. The only reason to re-read one is a
+#: vendor restating it, which is rare enough to wait a day for.
+SESSION_TTL_S = 21600
+#: How many calendar days back to step looking for an open session before
+#: giving up — a long weekend with a holiday either side is four.
+_SESSION_LOOKBACK = 6
+
+
+def _market_day(router, day: str) -> Optional[dict]:
+    """One session's whole market, or None when the market did not open."""
+    key = f"marketday|{router.owner}|{day}"
+    with _lock:
+        hit = _cache.get(key)
+    if hit and time.time() - hit[0] < SESSION_TTL_S:
+        return hit[1]
+    got = router.get("market_day", day)
+    with _lock:
+        _cache[key] = (time.time(), got)
+    return got
+
+
+def previous_session(router, before: str) -> Optional[str]:
+    """The last session that actually opened before `before`."""
+    from datetime import date as _date, timedelta as _td
+    d = _date.fromisoformat(before)
+    for _ in range(_SESSION_LOOKBACK):
+        d -= _td(days=1)
+        if d.weekday() >= 5:            # a weekend is never a session; do not spend a request on it
+            continue
+        if _market_day(router, d.isoformat()):
+            return d.isoformat()
+    return None
+
+
+def session_movers(category: str, day: str, top: int = 20,
+                   min_price: Optional[float] = None,
+                   min_turnover: Optional[float] = None) -> dict:
+    """One PAST session's movers, computed from the whole market.
+
+    The change is measured close-to-close against the session before it,
+    which is what a vendor's own gainer list means by "change" — not the
+    day's open-to-close, which would call a stock that gapped up and drifted
+    down a loser.
+    """
+    from alphadesk.providers import get_prices
+    from alphadesk.providers.alpaca import common_stock_symbol
+    from alphadesk.providers.base import NeedsKey
+    cat = (category or "").strip().lower()
+    if cat not in SESSION_CATEGORIES:
+        raise KeyError(cat)
+    router = get_prices()
+    top = max(1, min(int(top), 50))
+    d_price, d_turn = DEFAULT_FLOORS.get(cat, (0.0, 0.0))
+    mp = max(0.0, float(min_price)) if min_price is not None else d_price
+    mt = max(0.0, float(min_turnover)) if min_turnover is not None else d_turn
+
+    key = f"session|{router.owner}|{','.join(router.connected)}|{cat}:{day}:{top}:{mp:g}:{mt:g}"
+    with _lock:
+        hit = _cache.get(key)
+    if hit and time.time() - hit[0] < SESSION_TTL_S:
+        return hit[1]
+
+    # WHETHER ANYONE CARRIES THIS IS A DIFFERENT QUESTION FROM WHETHER THE
+    # MARKET OPENED. A provider returning nothing means "I do not carry this
+    # surface" to the router, so without asking first, a public holiday and
+    # a reader with no Polygon key would give the same answer — and the one
+    # that needs a key prompt would get "the market was shut" instead.
+    if not router.vendor_for("market_day", "market_day"):
+        raise NeedsKey("market_day")
+    today = _market_day(router, day)
+    if not today:
+        # Not an error and not an empty list: the market was shut that day.
+        return _closed(cat, day)
+    prev_day = previous_session(router, day)
+    prev = _market_day(router, prev_day) if prev_day else None
+    if not prev:
+        return _closed(cat, day)
+
+    funds = fund_list(router) or frozenset()
+    rows: list[dict] = []
+    for sym, bar in today.items():
+        if not common_stock_symbol(sym) or _TEST_SYMBOL.match(sym):
+            continue
+        is_fund = sym in funds or bool(_FUND_NAME.search(sym))
+        if (cat == "etfs") != is_fund:
+            continue
+        was = (prev.get(sym) or {}).get("close")
+        close, vol = bar.get("close"), bar.get("volume") or 0
+        if not was or not close:
+            continue
+        rows.append(_row(sym, close, (close - was) / was * 100.0, vol))
+
+    rows, unverified = _verify_extremes(router, rows, prev_day, day)
+    # NO "ALL" TAB HERE, deliberately. On the live list that tab is the
+    # VENDOR'S curated set of what is moving; here the input is every symbol
+    # that traded — twelve thousand of them — so "All" would be an arbitrary
+    # slice of the market in dictionary order, presented as though someone
+    # chose it. The three the reader asked for are the three that mean
+    # something: active, gainers, losers.
+    tabs = [t for t in tabs_from_list(rows) if t["id"] != "all"]
+    apply_floors(tabs, mp, mt)
+    for t in tabs:
+        t["rows"] = t["rows"][:top]
+    # Names only for the rows that survived — the SEC's ticker file is one
+    # cached lookup, so twenty of them cost nothing, and ten thousand would.
+    from alphadesk.ingest import edgar
+    for t in tabs:
+        for r in t["rows"]:
+            r["name"] = edgar.company_title(r["symbol"])
+
+    result = {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
+              "session": day, "previous_session": prev_day, "historical": True,
+              "extended": False, "session_label": None,
+              "official": True, "source": "polygon",
+              "filling": False,
+              "note": (f"{day} close against {prev_day}. Volatility and liquidity are not "
+                       f"shown for a past session — they describe today's twenty days, not that day's."
+                       + (f" {unverified} large move{'s' if unverified != 1 else ''} left out: "
+                          f"no second source to check it against." if unverified else "")),
+              "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": 0.0, "min_volatility": 0.0,
+                         "default_min_price": d_price, "default_min_turnover": d_turn},
+              "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": tabs}
+    with _lock:
+        if len(_cache) > 2048:
+            _cache.clear()
+        _cache[key] = (time.time(), result)
+    return result
+
+
+def _closed(cat: str, day: str) -> dict:
+    """A day the market did not open, said plainly."""
+    return {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
+            "session": day, "previous_session": None, "historical": True, "closed": True,
+            "extended": False, "session_label": None, "official": True, "source": "polygon",
+            "filling": False, "note": f"the market did not open on {day}",
+            "floors": {"min_price": 0.0, "min_turnover": 0.0, "min_liquidity": 0.0, "min_volatility": 0.0,
+                       "default_min_price": 0.0, "default_min_turnover": 0.0},
+            "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": []}
+
+
+def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple[list[dict], int]:
+    """Check the biggest moves against a SECOND source, and correct them.
+
+    MEASURED, not assumed (2026-09-26): asked for 2026-09-25, this list put
+    Tutor Perini top of the gainers at +406.45% on 224,651 shares. Its real
+    move was +0.78% — 83.32 to 83.97. Polygon's whole-market day does not
+    restate the session BEFORE a split the way its own per-symbol bars do,
+    so a stock that split between the two sessions shows a move that never
+    happened, and it lands at the top of the list where it does the most
+    damage.
+
+    THE CORROBORATED SPLIT CALENDAR WAS TRIED FIRST AND DID NOT CATCH IT —
+    the split was not listed by two vendors for that window. Dropping every
+    large move instead would have deleted the day's real ones: WidePoint
+    genuinely fell 50.6% and Masonglory genuinely rose 309.6%, both
+    confirmed against per-symbol bars.
+
+    So the extremes are re-measured from the reader's own daily bars, which
+    are split-adjusted per symbol. Only rows past the threshold are checked,
+    so a normal session costs nothing, and a row that cannot be checked at
+    all is dropped: an unverifiable 400% belongs nowhere near the top of a
+    list someone reads for what moved.
+    """
+    suspicious = [r for r in rows if abs(r.get("change_pct") or 0) >= _SPLIT_CHECK_PCT]
+    if not suspicious:
+        return rows, 0
+    syms = [r["symbol"] for r in suspicious][:60]
+    # Enough sessions to reach back to the day asked for, with room for
+    # holidays. Roughly five sessions a week, plus a week of slack.
+    try:
+        back = (date.today() - date.fromisoformat(day)).days
+    except ValueError:
+        back = 0
+    want = min(260, int(back * 0.72) + 8)
+    try:
+        bars = router.get("daily_history", syms, want) or {}
+    except Exception as exc:                  # no second vendor is not a verdict
+        log.debug("session movers: cannot verify extremes (%s)", exc)
+        return rows, 0
+    if not bars:
+        return rows, 0
+    dropped = 0
+    out: list[dict] = []
+    for r in rows:
+        if abs(r.get("change_pct") or 0) < _SPLIT_CHECK_PCT:
+            out.append(r)
+            continue
+        series = {b["ts"].date().isoformat(): b for b in (bars.get(r["symbol"]) or [])}
+        was, now = series.get(prev_day), series.get(day)
+        if not was or not now or not was.get("close"):
+            dropped += 1
+            continue
+        truth = (now["close"] - was["close"]) / was["close"] * 100.0
+        if abs(truth - (r["change_pct"] or 0)) > 5.0:
+            r = {**r, "price": now["close"], "change_pct": round(truth, 2)}
+        out.append(r)
+    return out, dropped
