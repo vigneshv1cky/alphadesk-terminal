@@ -234,22 +234,23 @@ def test_bounded_params_are_clamped(monkeypatch):
     """An agent asking for 10000 movers must not become a 10000-row request."""
     seen = {}
 
-    class FakePrices:
-        name = "fake"
+    # The tool learned about the other asset classes on 2026-09-26, so it
+    # builds through the per-category path now. The clamp is what is being
+    # tested and it is unchanged.
+    from alphadesk.ingest import movers as mv
 
-        def movers(self, top=20):
-            seen["top"] = top
-            return {"most_active": [], "gainers": [], "losers": []}
+    def fake(cat, top=20):
+        seen["top"] = top
+        return {"category": cat, "tabs": [{"id": "gainers", "rows": []}]}
 
-    from alphadesk.providers import registry
-    import alphadesk.providers as pkg
-    router = registry.DataRouter("u", {"alpaca": FakePrices()})
-    monkeypatch.setattr(pkg, "get_prices", lambda: router)
+    monkeypatch.setattr(mv, "category_movers", fake)
 
     mcp_server.movers(top=10_000)
     assert seen["top"] == 50
     mcp_server.movers(top=-1)
     assert seen["top"] == 1
+    # And the shape callers already had survives the change.
+    assert "gainers" in mcp_server.movers(top=5)
 
 
 # ── news for agents: a small window and one symbol's stories ──────────────
@@ -468,3 +469,38 @@ def test_every_news_tool_says_the_two_fields_apart(tools):
     for name in ("symbol_news", "news_search", "news_story", "market_today"):
         d = tools[name].description
         assert "feeds" in d and "publisher" in d.lower(), name
+
+
+def test_every_mover_category_is_reachable_from_an_agent(monkeypatch):
+    """Four of the seven had no tool at all (2026-09-26): an agent could see
+    the stock list and nothing else, while the app showed ETFs, currencies,
+    options and Treasury yields."""
+    from alphadesk.ingest import movers as mv
+    import alphadesk.mcp_server as m
+
+    asked: list[str] = []
+    monkeypatch.setattr(mv, "category_movers",
+                        lambda cat, top=20: asked.append(cat) or {"category": cat, "tabs": []})
+    call = m.movers.fn if hasattr(m.movers, "fn") else m.movers
+    for cat in mv.CATEGORIES:
+        call(category=cat, top=3)
+    assert sorted(asked) == sorted(mv.CATEGORIES)
+
+
+def test_an_unknown_category_says_which_exist():
+    import alphadesk.mcp_server as m
+    call = m.movers.fn if hasattr(m.movers, "fn") else m.movers
+    out = call(category="tulips")
+    assert "no such category" in out["error"]
+    assert "stocks" in out["categories"]
+
+
+def test_a_past_session_is_refused_where_it_cannot_be_built():
+    """Only stocks and ETFs can be looked back at — every other category's
+    movers come from a vendor endpoint that answers only for the present."""
+    import alphadesk.mcp_server as m
+    from alphadesk.ingest import movers as mv
+    call = m.movers.fn if hasattr(m.movers, "fn") else m.movers
+    for cat in set(mv.CATEGORIES) - set(mv.SESSION_CATEGORIES):
+        out = call(category=cat, session="2026-09-24")
+        assert "only available for" in out["error"], cat
