@@ -991,6 +991,22 @@ export interface ScreenerRow {
   session: string | null
   article_count: number
   headlines: ScreenerHeadline[]
+  /** Only with ?fill=split — from splits TWO vendors agree on. */
+  days_since_split?: number
+  split_date?: string
+  split_ratio?: string
+  split_reverse?: boolean
+  /** Only with ?fill=turnover. The session's volume over the company's own
+   * SEC share count, never a vendor's — which is wrong by orders of
+   * magnitude on companies fresh from a reverse split. */
+  turnover?: number
+  shares_outstanding?: number
+  shares_as_of?: string
+  /** Why the ratio is not shown although the count is: a count that predates
+   * a split, or is too old, cannot describe today's float. */
+  turnover_withheld?: string
+  /** The SEC read is still running. NOT a zero. */
+  turnover_pending?: boolean
 }
 
 
@@ -1460,7 +1476,8 @@ export const api = {
       // The server reaches further back until one page covers it, so a
       // zoomed-out chart fills in a step rather than creeping.
       (before && need ? `&need=${Math.round(need)}` : "")),
-  screener: () => get<{ symbols: ScreenerRow[] }>("/api/screener"),
+  screener: (fill = "") =>
+    get<{ symbols: ScreenerRow[]; filled: string[] }>(`/api/screener${fill ? `?fill=${encodeURIComponent(fill)}` : ""}`),
   rail: (symbols: string[]) =>
     get<Rail>(`/api/rail${symbols.length ? `?symbols=${encodeURIComponent(symbols.join(","))}` : ""}`),
   news: () => get<{ articles: NewsArticle[] }>("/api/news"),

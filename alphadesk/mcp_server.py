@@ -255,7 +255,7 @@ def market_today(top: int = 10) -> dict:
 # ── The window ─────────────────────────────────────────────────────────────
 
 @mcp.tool()
-def screener_window(limit: int = 200, after: str = "") -> dict:
+def screener_window(limit: int = 200, after: str = "", fill: str = "") -> dict:
     """The symbols currently in view — those with fresh news or a report due
     inside the horizon — alphabetically, in pages. Each row is
     {symbol, report_date, session, article_count}; headlines are NOT here —
@@ -267,17 +267,46 @@ def screener_window(limit: int = 200, after: str = "") -> dict:
     Paging: up to `limit` rows (max 500) of symbols after `after`; pass the
     returned `next_after` to continue, until it is null. `total` is the whole
     window's size.
+
+    `fill` asks for two extra measures, comma-joined, and they cost vendor
+    and SEC reads so ask only for what you will use:
+
+      "split"     days_since_split, split_date, split_ratio, split_reverse —
+                  from splits TWO vendors agree on. A split only one lists is
+                  left out: those are the ones that never take effect.
+      "turnover"  turnover = the session's volume over shares_outstanding,
+                  which is the company's OWN count from its SEC cover page
+                  rather than a vendor's. On companies fresh from a reverse
+                  split the vendor number is wrong by orders of magnitude.
+                  `shares_as_of` dates it, and `shares_rescaled_for_split` is
+                  true when a corroborated split after that date was applied.
+                  `turnover_pending` means the SEC read is still running and
+                  the figure will be there shortly — it is NOT a zero.
+
+    NEITHER IS A SIGNAL. They are facts to filter and sort on yourself. The
+    measurement behind them found no edge: across 77 corroborated reverse
+    splits over 90 days the median was -20.9% at twenty sessions, only 23%
+    were up, and a single name carried the whole positive average. Do not
+    present a recent split or a high turnover as predictive.
     """
     from alphadesk.desk import screener
-    rows = screener.inventory()
+    want = tuple(x.strip() for x in fill.split(",") if x.strip() in ("split", "turnover"))
+    rows = screener.inventory(want)
     start = (after or "").strip().upper()
     size = max(1, min(int(limit), 500))
     rest = [r for r in rows if r["symbol"] > start] if start else rows
     page = rest[:size]
     return {
         "total": len(rows),
+        # Headlines are deliberately left out (the whole window with them was
+        # ~535 KB); the filled measures are named one by one so a future
+        # field cannot widen every connector's reply by accident.
         "symbols": [{"symbol": r["symbol"], "report_date": r["report_date"],
-                     "session": r["session"], "article_count": r["article_count"]}
+                     "session": r["session"], "article_count": r["article_count"],
+                     **{k: r[k] for k in ("days_since_split", "split_date", "split_ratio",
+                                          "split_reverse", "turnover", "shares_outstanding",
+                                          "shares_as_of", "shares_rescaled_for_split",
+                                          "turnover_pending") if k in r}}
                     for r in page],
         "next_after": page[-1]["symbol"] if len(rest) > size else None,
     }
