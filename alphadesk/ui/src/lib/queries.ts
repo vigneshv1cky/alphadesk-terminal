@@ -141,8 +141,8 @@ export const useRail = (symbols: string[]) =>
     staleTime: 30_000,
   })
 
-export const useScreener = () =>
-  useQuery({ queryKey: keys.screener, queryFn: ({ signal }) => on(signal).screener(), refetchInterval: 60_000 })
+export const useScreener = (fill = "") =>
+  useQuery({ queryKey: [...keys.screener, fill], queryFn: ({ signal }) => on(signal).screener(fill), refetchInterval: 60_000 })
 
 /** The reader's news window. Reread when their real-time feed stores a
  * story (the tab's live connection says so, 2026-09-15), and every minute as
