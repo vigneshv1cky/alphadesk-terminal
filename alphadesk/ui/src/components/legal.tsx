@@ -50,14 +50,20 @@ export const L = ({ items }: { items: React.ReactNode[] }) => (
 )
 
 /** The DRAFT banner. Every legal page carries it until counsel has reviewed
- * the text and the bracketed placeholders are filled. */
+ * the text.
+ *
+ * IT USED TO PROMISE BRACKETED PLACEHOLDERS (2026-09-26). Those are now all
+ * filled or removed, so a banner naming "[OPERATOR LEGAL NAME]" pointed at
+ * something no longer on the page — a notice that is itself wrong is worse
+ * than none. What remains true is the part that matters: this text was
+ * written in-house and no lawyer has read it. */
 export const Draft = () => (
   // 24px under it, on the 4px grid: the banner had a top margin and no
   // bottom one, so the document's first paragraph sat flush against a
   // bordered box and read as part of it.
   <p className="mb-6 mt-3 rounded-sm border border-warn/60 px-3 py-2 text-caption leading-[1.5] text-warn">
-    Draft for legal review. Bracketed items such as [OPERATOR LEGAL NAME] are placeholders to be
-    completed before this service accepts payment.
+    Draft for legal review — written in-house and not yet checked by a lawyer. AlphaDesk is free
+    and takes no payments; this text should be reviewed before that changes.
   </p>
 )
 

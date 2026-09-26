@@ -16,7 +16,7 @@ export default function TermsPage() {
   return (
     <LegalPage title="AlphaDesk Terms of Service" updated="2026-09-18">
       <P>
-        These terms are an agreement between you and [OPERATOR LEGAL NAME] ("we", "us"), the
+        These terms are an agreement between you and Vignesh Murugan ("we", "us"), the
         operator of AlphaDesk. By creating an account or using the service you agree to them, to
         the <a href="/privacy" className="underline">Privacy Policy</a> and to
         the <a href="/disclaimer" className="underline">investment disclaimer</a>. If you do not
@@ -109,7 +109,7 @@ export default function TermsPage() {
       <H>9. Closing your account</H>
       <P>
         You may stop using the service at any time. To close your account and have its data
-        deleted, contact us at [CONTACT ADDRESS]; we will confirm the request from the email address
+        deleted, contact us at muruganvignesh0810@gmail.com; we will confirm the request from the email address
         on the account and complete it as described in the Privacy Policy. You can also delete it
         yourself on the Account page.
       </P>
@@ -159,10 +159,11 @@ export default function TermsPage() {
 
       <H>14. Governing law, disputes and contact</H>
       <P>
-        These terms are governed by the laws of [JURISDICTION], without regard to conflict-of-law
-        rules, and disputes will be resolved in the courts of [VENUE], except where the law of your
+        These terms are governed by the laws of the Commonwealth of Virginia, United States,
+        without regard to conflict-of-law rules, and disputes will be resolved in the state and
+        federal courts located in the Commonwealth of Virginia, except where the law of your
         place of residence gives you a right to bring proceedings elsewhere. Questions about these
-        terms: [CONTACT ADDRESS].
+        terms: muruganvignesh0810@gmail.com.
       </P>
 
       <p className="mt-6 text-caption leading-[1.5] text-muted-foreground">

@@ -18,7 +18,7 @@ export default function DisclaimerPage() {
 
       <H>We are not your adviser</H>
       <P>
-        [OPERATOR LEGAL NAME] is not a registered investment adviser, broker-dealer, research
+        Vignesh Murugan is not a registered investment adviser, broker-dealer, research
         analyst or financial planner in any jurisdiction, and is not registered with the US
         Securities and Exchange Commission, the Securities and Exchange Board of India or any
         other regulator as any of these. Using AlphaDesk creates no adviser, fiduciary or client

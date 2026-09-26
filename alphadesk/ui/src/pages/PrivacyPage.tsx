@@ -23,9 +23,8 @@ export default function PrivacyPage() {
     <LegalPage title="AlphaDesk Privacy Policy" updated="2026-09-18">
       <P>
         This policy explains what personal information AlphaDesk collects, why, who it is shared
-        with, and the choices you have. AlphaDesk is operated by [OPERATOR LEGAL NAME],
-        [REGISTERED ADDRESS] ("we", "us"), which is responsible for your information. Contact us
-        about privacy at [PRIVACY CONTACT ADDRESS].
+        with, and the choices you have. AlphaDesk is operated by Vignesh Murugan ("we", "us"), who is
+        responsible for your information. Contact us about privacy at muruganvignesh0810@gmail.com.
       </P>
 
       <H>1. What we collect</H>
@@ -100,10 +99,9 @@ export default function PrivacyPage() {
 
       <H>5. Where it is stored</H>
       <P>
-        Your information is stored in the United States. If you use the service from elsewhere, it
-        is transferred there. [OPERATOR LEGAL NAME] is based in [COUNTRY]. Where the law requires
-        safeguards for such transfers, we use [TRANSFER MECHANISM, e.g. standard contractual
-        clauses].
+        Your information is stored in the United States, on Google Cloud in the us-east4 region.
+        Vignesh Murugan is based in the United States. If you use the service from elsewhere, your
+        information is transferred to the United States and held under this policy.
       </P>
 
       <H>6. How long we keep it</H>
@@ -114,8 +112,8 @@ export default function PrivacyPage() {
           window), calendar and earnings records for up to 120 days, and working lookups for a day
           or a few days. It is deleted automatically every hour.</>,
         "When you remove a provider key, the data fetched with it is deleted at once.",
-        "After you ask us to close your account: deleted within 30 days, and removed from backups as they expire within [BACKUP RETENTION].",
-        "Server logs: [LOG RETENTION, e.g. 30 days].",
+        "After you ask us to close your account: deleted within 30 days, and removed from backups as those backups expire on their normal schedule.",
+        "Server logs: 30 days, the default retention of the hosting provider's logging service.",
       ]} />
 
       <H>7. How we protect it</H>
@@ -132,7 +130,7 @@ export default function PrivacyPage() {
         Depending on where you live, you may have the right to access your information, correct it,
         delete it, receive a copy of it, object to or restrict certain uses, and withdraw consent.
         You can remove keys, tokens and connected applications yourself on the Account page. For
-        anything else, contact [PRIVACY CONTACT ADDRESS]; we will verify the request from the email
+        anything else, contact muruganvignesh0810@gmail.com; we will verify the request from the email
         address on your account and respond within 30 days.
       </P>
       <L items={[
@@ -141,9 +139,6 @@ export default function PrivacyPage() {
         <><strong>California:</strong> we do not sell or share personal information as those terms
           are defined in California law, and we will not treat you differently for exercising your
           rights.</>,
-        <><strong>India:</strong> you may raise a grievance with our Grievance Officer,
-          [GRIEVANCE OFFICER NAME AND CONTACT], and, if unresolved, with the Data Protection Board
-          of India.</>,
       ]} />
 
       <H>9. Children</H>
