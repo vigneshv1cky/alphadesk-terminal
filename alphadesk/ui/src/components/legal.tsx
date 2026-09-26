@@ -52,7 +52,10 @@ export const L = ({ items }: { items: React.ReactNode[] }) => (
 /** The DRAFT banner. Every legal page carries it until counsel has reviewed
  * the text and the bracketed placeholders are filled. */
 export const Draft = () => (
-  <p className="mt-3 rounded-sm border border-warn/60 px-3 py-2 text-caption leading-[1.5] text-warn">
+  // 24px under it, on the 4px grid: the banner had a top margin and no
+  // bottom one, so the document's first paragraph sat flush against a
+  // bordered box and read as part of it.
+  <p className="mb-6 mt-3 rounded-sm border border-warn/60 px-3 py-2 text-caption leading-[1.5] text-warn">
     Draft for legal review. Bracketed items such as [OPERATOR LEGAL NAME] are placeholders to be
     completed before this service accepts payment.
   </p>
