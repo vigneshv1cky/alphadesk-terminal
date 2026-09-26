@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { on, type CategoryMoverRow, type MoverCategory } from "@/lib/api"
@@ -697,19 +698,28 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
             // cursor moves. With both arrows against the right edge they are
             // fixed, and the label grows leftwards instead.
             <div className="sticky right-0 ml-auto flex shrink-0 items-center gap-1 bg-card pl-1.5">
+              {/* Sized to the TAB STRIP beside it, not smaller (the reader:
+                  "the arrows are very small"). The tabs are 28px; these were
+                  20px with an 11px typographic character inside, which is a
+                  thin glyph in a small square — hard to see and harder to
+                  hit. Real chevrons at the same height as their neighbours. */}
               <button type="button" onClick={() => setSession(null)}
                       title={session ? "Back to the live list" : "Showing the live list"}
-                      className={btnCls({ variant: "ghost", size: "sm", active: !session }, "min-w-[46px]")}>
+                      className={btnCls({ variant: "ghost", size: "lg", active: !session }, "min-w-[56px]")}>
                 {session ? session.slice(5) : "Live"}
               </button>
-              <button type="button" title="An earlier session"
+              <button type="button" title="An earlier session" aria-label="An earlier session"
                       onClick={() => setSession(days[at + 1] ?? days[0])}
                       disabled={at >= days.length - 1}
-                      className={btnCls({ variant: "ghost", size: "sm", icon: true })}>‹</button>
-              <button type="button" title="A later session"
+                      className={btnCls({ variant: "ghost", size: "lg", icon: true })}>
+                <ChevronLeft size={16} strokeWidth={2.25} />
+              </button>
+              <button type="button" title="A later session" aria-label="A later session"
                       onClick={() => setSession(at <= 0 ? null : days[at - 1])}
                       disabled={!session}
-                      className={btnCls({ variant: "ghost", size: "sm", icon: true })}>›</button>
+                      className={btnCls({ variant: "ghost", size: "lg", icon: true })}>
+                <ChevronRight size={16} strokeWidth={2.25} />
+              </button>
             </div>
           )}
         </div>
