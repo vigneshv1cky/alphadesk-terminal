@@ -179,6 +179,46 @@ def fetch_articles(since: datetime, limit: int = 200, provider=None,
     return out
 
 
+# FEEDS WHOSE TERMS FORBID KEEPING WHAT THEY SEND (2026-09-26, #85).
+#
+# Tiingo's Terms of Use: "If you use a Starter Plan or any free or paid trial
+# plan, you may not write, save, archive, back up, or otherwise retain Tiingo
+# Data in any persistent or durable storage." It goes further than storage —
+# even a transient cache must be cleared before the session ends. Paid plans
+# are unrestricted on this point.
+#
+# Tiingo documents no endpoint that reports which plan a token is on: not in
+# the API overview, not on the pricing page, not in the Developer Program
+# appendix. So the account holder declares it when they connect the key. It
+# is their agreement with Tiingo, and an undeclared key is read the
+# restrictive way.
+_PLAN_GATED = {"tiingo"}
+
+
+def drop_unstorable(articles: list[dict], key_rows: list[dict]) -> list[dict]:
+    """Strip a plan-gated feed's name from every story, and drop the stories
+    left with no feed at all.
+
+    A story ANOTHER feed also delivered is kept on that feed's authority —
+    the same rule store.purge_vendor_data follows when a key is removed. One
+    only the gated feed carried is dropped entirely, which means it never
+    reaches the window: the window is served from the store, and Tiingo has
+    no stream. That is the honest consequence of the terms and the Account
+    page says so rather than letting the feed look alive.
+    """
+    gated = {r["provider"] for r in key_rows
+             if r["provider"] in _PLAN_GATED and (r.get("vendor_plan") or "") != "paid"}
+    if not gated:
+        return articles
+    out = []
+    for a in articles:
+        feeds = [f for f in (a.get("feeds") or []) if f not in gated]
+        if not feeds:
+            continue
+        out.append({**a, "feeds": feeds})
+    return out
+
+
 def poll_user(user_id: str, since: datetime, limit: int | None = None) -> int:
     """One reader's feed cycle: their vaulted news key fetches and their rows
     are owned by them. Nothing is labelled or summarised — no model runs here
@@ -207,6 +247,7 @@ def poll_user(user_id: str, since: datetime, limit: int | None = None) -> int:
             served.append(row["provider"])
         batches.append(batch)
     articles = _merge_feeds(batches)
+    articles = drop_unstorable(articles, rows)
     if not articles:
         return 0
     store.save_articles(articles, owner=user_id)

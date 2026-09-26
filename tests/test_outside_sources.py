@@ -75,7 +75,7 @@ def test_keys_api_accepts_the_crypto_seam(monkeypatch):
     monkeypatch.setattr(vault, "enabled", lambda: True)
     monkeypatch.setattr(vault, "encrypt", lambda cfg: "sealed")
     saved = {}
-    monkeypatch.setattr(store, "set_user_key", lambda uid, seam, provider, sealed, hint: saved.update(seam=seam, provider=provider))
+    monkeypatch.setattr(store, "set_user_key", lambda uid, seam, provider, sealed, hint, vendor_plan=None: saved.update(seam=seam, provider=provider))
     client = TestClient(dashboard.app)
     r = client.put("/api/keys/crypto", json={"provider": "coingecko", "api_key": "CG-abcdefgh"})
     # The crypto seam folded into market data (2026-09-13): the same route

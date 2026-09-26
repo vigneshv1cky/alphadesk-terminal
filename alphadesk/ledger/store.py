@@ -297,6 +297,15 @@ CREATE TABLE IF NOT EXISTS user_api_keys (
     key_hint     TEXT NOT NULL,      -- last 4 characters, for display ONLY
     created_at   TEXT NOT NULL,
     last_used_at TEXT,
+    -- WHAT PLAN THE READER SAYS THIS KEY IS ON (2026-09-26, #85). Only
+    -- Tiingo needs it so far, and only because its terms turn on the
+    -- answer: a Starter or trial plan may not have its data written to
+    -- durable storage at all. Tiingo documents no endpoint that reports a
+    -- token's plan, so the account holder declares it — it is their
+    -- agreement with Tiingo, and an unanswered declaration defaults to the
+    -- restrictive reading. Not a secret, so it sits beside the sealed
+    -- config rather than inside it, where the Account page can show it back.
+    vendor_plan  TEXT,
     PRIMARY KEY (user_id, seam, provider)
 );
 
@@ -557,6 +566,7 @@ def init() -> None:
         "ALTER TABLE earnings ADD COLUMN sources TEXT",            # retired 2026-09-13: the calendar is built per user
         "ALTER TABLE earnings ADD COLUMN actual_at TEXT",          # when the actual EPS was FIRST seen here — its age
         "ALTER TABLE earnings ADD COLUMN released_at TEXT",        # EDGAR's acceptance of the earnings 8-K
+        "ALTER TABLE user_api_keys ADD COLUMN vendor_plan TEXT",    # the plan the reader declares (Tiingo)
         "ALTER TABLE users ADD COLUMN last_seen_at TEXT",          # activity gate for per-user polling
         "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE users ADD COLUMN trial_ends_at TEXT",          # access: the free trial's end
@@ -1143,19 +1153,19 @@ def remove_user(email: str) -> bool:
 
 
 def set_user_key(user_id: str, seam: str, provider: str, config_sealed: str,
-                 key_hint: str) -> None:
+                 key_hint: str, vendor_plan: str | None = None) -> None:
     """Store (or replace) one user's key for one seam+provider. `config_sealed`
     is the vault envelope — this function never sees plaintext. Keys
     ACCUMULATE across providers on every seam: the news feed merges every one,
     and no one market-data vendor carries every surface."""
     with _lock, _connect() as conn:
         conn.execute(
-            "INSERT INTO user_api_keys (user_id, seam, provider, config, key_hint, created_at)"
-            " VALUES (?,?,?,?,?,?)"
+            "INSERT INTO user_api_keys (user_id, seam, provider, config, key_hint, created_at, vendor_plan)"
+            " VALUES (?,?,?,?,?,?,?)"
             " ON CONFLICT (user_id, seam, provider) DO UPDATE SET"
             " config=excluded.config, key_hint=excluded.key_hint, created_at=excluded.created_at,"
-            " last_used_at=NULL",
-            (user_id, seam, provider, config_sealed, key_hint, _now()))
+            " vendor_plan=excluded.vendor_plan, last_used_at=NULL",
+            (user_id, seam, provider, config_sealed, key_hint, _now(), vendor_plan))
 
 
 def get_user_key(user_id: str, seam: str) -> dict | None:
@@ -1174,7 +1184,7 @@ def get_user_keys(user_id: str, seam: str) -> list[dict]:
     builds one provider per row."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT user_id, seam, provider, config, key_hint, created_at, last_used_at"
+            "SELECT user_id, seam, provider, config, key_hint, created_at, last_used_at, vendor_plan"
             " FROM user_api_keys WHERE user_id=? AND seam=? ORDER BY provider",
             (user_id, seam)).fetchall()
     return [dict(r) for r in rows]
@@ -1185,7 +1195,7 @@ def list_user_keys(user_id: str) -> list[dict]:
     listing carries is what ends up on screens and in scrollback."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT seam, provider, key_hint, created_at, last_used_at"
+            "SELECT seam, provider, key_hint, created_at, last_used_at, vendor_plan"
             " FROM user_api_keys WHERE user_id=? ORDER BY seam", (user_id,)).fetchall()
     return [dict(r) for r in rows]
 

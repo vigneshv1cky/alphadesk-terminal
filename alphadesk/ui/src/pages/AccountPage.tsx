@@ -159,6 +159,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
   const [provider, setProvider] = useState("")
   const [apiKey, setApiKey] = useState("")
   const [apiSecret, setApiSecret] = useState("")
+  const [paidPlan, setPaidPlan] = useState(false)
   const [baseUrl, setBaseUrl] = useState("")
   const [model, setModel] = useState("")
   const [busy, setBusy] = useState(false)
@@ -180,7 +181,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
     setProvider(preset ?? (seam === "prices" ? vendorList[0]?.name ?? "alpaca"
                 : seam === "transcripts" ? transcriptProviders[0] ?? "finnhub"
                 : newsProviders[0] ?? "polygon"))
-    setApiKey(""); setApiSecret(""); setBaseUrl(""); setModel(""); setError(null)
+    setApiKey(""); setApiSecret(""); setBaseUrl(""); setModel(""); setPaidPlan(false); setError(null)
   }
 
   const save = async (e: React.FormEvent) => {
@@ -192,6 +193,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
         provider, api_key: apiKey,
         api_secret: apiSecret || undefined,
         base_url: baseUrl || undefined, model: model || undefined,
+        plan: paidPlan ? "paid" : "free",
       })
       done()
     } catch (err) {
@@ -513,7 +515,14 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                       {row.stories_24h == null ? "—" : row.stories_24h.toLocaleString()}
                     </TD>
                     <TD>
-                      {row.delivery === "stream"
+                      {/* A FEED THAT KEEPS NOTHING IS NOT A WORKING FEED. It
+                          polls, it answers, and the window stays empty because
+                          the window is built from stored stories. Saying
+                          "Poll · every 5 min" beside it would be the interface
+                          asserting a state the system is not in. */}
+                      {row.stores === false
+                        ? <span title={row.not_stored_reason}><Pill tone="warn">Not kept</Pill></span>
+                        : row.delivery === "stream"
                         ? <Pill tone="gain">Stream · seconds</Pill>
                         : <Pill tone="muted">Poll{pollMinutes ? ` · every ${pollMinutes} min` : ""}</Pill>}
                     </TD>
@@ -574,6 +583,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
               </>}>
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="num text-foreground">····{row.key_hint}</span>
+                  {row.stores === false && <span className="text-warn">not kept — {row.not_stored_reason}</span>}
                   {row.stories_24h != null && <span>{row.stories_24h.toLocaleString()} stories · 24h</span>}
                   {row.delivery === "stream"
                     ? <Pill tone="gain">Stream · seconds</Pill>
@@ -643,6 +653,26 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
               <span className={labelCls}>API secret</span>
               <input type="password" value={apiSecret} onChange={e => setApiSecret(e.target.value)}
                      autoComplete="off" required className={`${fieldCls} w-full`} />
+            </label>
+          )}
+          {/* TIINGO'S TERMS TURN ON THE PLAN (2026-09-26, #85): a Starter or
+              trial plan may not have its data written to durable storage at
+              all, and Tiingo publishes no way to ask a token which plan it
+              is on. So the account holder says, and says it knowing what
+              each answer costs — an undeclared key is read the restrictive
+              way, which is the only safe default when the failure is
+              silent. */}
+          {editing === "news" && provider === "tiingo" && (
+            <label className="flex items-start gap-2 border border-border bg-card p-2.5">
+              <input type="checkbox" checked={paidPlan} onChange={e => setPaidPlan(e.target.checked)}
+                     className="mt-[3px] h-[14px] w-[14px] shrink-0 accent-[var(--accent)]" />
+              <span className="min-w-0 text-caption text-muted-foreground">
+                <span className="block font-semibold text-foreground">This token is on a paid Tiingo plan</span>
+                Tiingo&rsquo;s terms forbid keeping data from a Starter or trial plan, so its
+                stories are fetched and then dropped rather than stored — and the news window is
+                built from stored stories, so they never appear. Leave this unticked unless you
+                are on Power or Commercial.
+              </span>
             </label>
           )}
           {error && <p className="text-caption text-loss">{error}</p>}
