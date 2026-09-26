@@ -91,7 +91,11 @@ function PasswordForm({ onSignedIn }: { onSignedIn: () => void }) {
     setError(null)
     try {
       await api.login(email, password)
+      // The SSO callback redirects server-side; this route answers JSON, so
+      // the same landing has to happen here or a password instance would
+      // stay on the front page looking at "Open your terminal".
       onSignedIn()
+      window.location.assign("/account")
     } catch (err) {
       setError(String((err as Error).message ?? err))
     } finally {
