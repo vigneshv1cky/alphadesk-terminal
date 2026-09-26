@@ -16,7 +16,6 @@ import { watch } from "@/lib/liveStream"
  */
 export const keys = {
   earnings: ["earnings"] as const,
-  screener: ["screener"] as const,
   rail: (symbols: string[]) => ["rail", symbols.join(",")] as const,
   news: ["news"] as const,
   system: ["system"] as const,
@@ -140,9 +139,6 @@ export const useRail = (symbols: string[]) =>
     refetchInterval: 60_000,
     staleTime: 30_000,
   })
-
-export const useScreener = () =>
-  useQuery({ queryKey: keys.screener, queryFn: ({ signal }) => on(signal).screener(), refetchInterval: 60_000 })
 
 /** The reader's news window. Reread when their real-time feed stores a
  * story (the tab's live connection says so, 2026-09-15), and every minute as
