@@ -653,7 +653,12 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   // figure below changes meaning with it — and a tile that looks live while
   // showing Tuesday is the fault this repo has shipped four times.
   const subtitle = session
-    ? `${session}${q.data?.closed ? " · market closed" : q.data?.previous_session ? ` · against ${q.data.previous_session}` : ""} · past session`
+    ? q.data?.unavailable
+      // NOT "market closed". The vendor was asked and refused — usually its
+      // rate limit — and calling that a closed market told the reader the
+      // history stops there.
+      ? `${session} · ${q.data.rate_limited ? "vendor rate limit — try again shortly" : "vendor would not answer"}`
+      : `${session}${q.data?.closed ? " · market closed" : q.data?.previous_session ? ` · against ${q.data.previous_session}` : ""} · past session`
     : q.data?.source
     ? `${q.data.change_label === "24h" ? "rolling 24h" : q.data.change_label === "1D bp" ? "daily curve · change in bp"
         : category === "currencies" ? "since 5pm New York"

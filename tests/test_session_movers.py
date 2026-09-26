@@ -107,3 +107,77 @@ def test_only_stocks_and_etfs_can_be_asked_about_a_past_session():
     assert movers.SESSION_CATEGORIES == ("stocks", "etfs")
     with pytest.raises(KeyError):
         movers.session_movers("crypto", (date.today() - timedelta(days=1)).isoformat())
+
+
+def test_a_refused_request_is_never_a_closed_market():
+    """The reader's actual bug: Polygon's free plan allows five requests a
+    minute and answers the sixth with 429. That arrived as a None, which the
+    router reads as "does not carry this surface", which this module printed
+    as "the market did not open on 2026-09-23" — a Wednesday. The reader
+    concluded the history stopped there."""
+    from alphadesk.providers.base import NeedsKey
+
+    class _RateLimited:
+        owner = "test"
+        connected = ["polygon"]
+
+        def ask(self, method, *a, **k):
+            raise NeedsKey("market_day", failed={"polygon": "HTTP 429 Too Many Requests"})
+
+    movers._cache.clear()
+    with pytest.raises(movers.VendorRefused) as exc:
+        movers._market_day(_RateLimited(), "2026-09-23")
+    assert "429" in str(exc.value)
+
+
+def test_a_refusal_is_not_cached():
+    """A minute's rate limit must not become six hours of a day that looks
+    shut, so the failure path must never write to the cache."""
+    from alphadesk.providers.base import NeedsKey
+
+    class _Flaky:
+        owner = "test"
+        connected = ["polygon"]
+
+        def __init__(self):
+            self.calls = 0
+
+        def ask(self, method, *a, **k):
+            self.calls += 1
+            if self.calls == 1:
+                raise NeedsKey("market_day", failed={"polygon": "HTTP 429"})
+            return {"AAPL": {"close": 1.0, "volume": 1}}
+
+    movers._cache.clear()
+    r = _Flaky()
+    with pytest.raises(movers.VendorRefused):
+        movers._market_day(r, "2026-09-23")
+    assert movers._market_day(r, "2026-09-23") == {"AAPL": {"close": 1.0, "volume": 1}}
+
+
+def test_no_vendor_at_all_still_asks_for_a_key():
+    """A refusal and an absence are different, and so are their answers."""
+    from alphadesk.providers.base import NeedsKey
+
+    class _Unkeyed:
+        owner = "test"
+        connected = []
+
+        def ask(self, method, *a, **k):
+            raise NeedsKey("market_day")
+
+    movers._cache.clear()
+    with pytest.raises(NeedsKey):
+        movers._market_day(_Unkeyed(), "2026-09-23")
+
+
+def test_a_shut_market_is_an_empty_answer_not_a_missing_one():
+    class _Holiday:
+        owner = "test"
+        connected = ["polygon"]
+
+        def ask(self, method, *a, **k):
+            return {}
+
+    movers._cache.clear()
+    assert movers._market_day(_Holiday(), "2026-12-25") == {}

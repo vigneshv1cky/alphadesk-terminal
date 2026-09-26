@@ -1165,6 +1165,10 @@ export interface CategoryMovers {
   historical?: boolean
   /** True when the day asked for was not a trading session. */
   closed?: boolean
+  /** True when the vendor was ASKED and refused — a different thing from a
+   * closed market, and from having no key for it. */
+  unavailable?: boolean
+  rate_limited?: boolean
   category: MoverCategory
   label: string
   change_label: string

@@ -1235,15 +1235,10 @@ def api_movers_sessions(category: str, before: str | None = Query(None, pattern=
         raise HTTPException(404, f"a past session is only available for "
                                  f"{' and '.join(movers.SESSION_CATEGORIES)}")
     router = get_prices()
-    out: list[str] = []
-    cursor = before or (now_et().date() + timedelta(days=1)).isoformat()
-    for _ in range(max(1, min(count, 30))):
-        got = movers.previous_session(router, cursor)
-        if not got:
-            break
-        out.append(got)
-        cursor = got
-    return {"sessions": out}
+    want = max(1, min(count, 30))
+    days = movers.trading_sessions(router, want + 5)
+    cut = before or (now_et().date() + timedelta(days=1)).isoformat()
+    return {"sessions": [d for d in days if d < cut][:want]}
 
 
 @app.get("/api/tape")
