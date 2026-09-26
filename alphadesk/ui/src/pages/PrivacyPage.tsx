@@ -10,7 +10,9 @@ import { H, L, LegalPage, P } from "@/components/legal"
  * - three cookies, all necessary: the session, the sign-in state guard and
  *   the agent-consent return (app/auth.py, app/agent_oauth.py);
  * - browser storage holds preferences only (theme, display choices);
- * - no analytics, advertising or third-party scripts; fonts are bundled;
+ * - no analytics of our own; fonts are bundled; no third-party scripts in
+ *   the terminal — the hosted front page alone carries X's ad pixel, which
+ *   section 2 describes (lib/adPixel.ts);
  * - provider keys are vault-sealed; agent tokens are stored as SHA-256;
  * - vendor data is pruned hourly to what features read (store.prune_vendor_
  *   data: stories 7 days, text 72 hours, calendar records up to 120 days)
@@ -62,10 +64,18 @@ export default function PrivacyPage() {
         "a short-lived cookie that returns you to an AI agent's approval page after you sign in.",
       ]} />
       <P>
-        Your browser's local storage keeps display preferences such as the theme. We use no
-        analytics, advertising or tracking cookies, and the service loads no third-party scripts or
-        fonts, so your browser contacts no one but AlphaDesk (and the sign-in page you
-        choose to open).
+        Your browser's local storage keeps display preferences such as the theme. We run no
+        analytics of our own, and the terminal itself — every page you see once you are signed in —
+        loads no third-party scripts or fonts, so your browser contacts no one but AlphaDesk
+        (and the sign-in page you choose to open).
+      </P>
+      <P>
+        The one exception is the front page at the address above, and only on the version we host:
+        it loads X's advertising pixel, which sets its own cookies and tells X that a visit
+        happened, so we can see whether an advertisement brought anyone here. It loads on that page
+        alone — not on this one, not on the Terms or About, and never inside the terminal — and it
+        does not load at all if your browser sends a Do Not Track signal, or on a copy of AlphaDesk
+        that someone else hosts. What X does with it is governed by X's own privacy policy.
       </P>
 
       <H>3. How we use it</H>

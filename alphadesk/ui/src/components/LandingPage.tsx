@@ -3,6 +3,7 @@ import { api } from "@/lib/api"
 import { btnCls, fieldCls } from "@/components/terminal"
 import { cn } from "@/lib/utils"
 import { PROVIDER_MARKS } from "@/components/providerMarks"
+import { loadAdPixel } from "@/lib/adPixel"
 
 /** The front page a signed-out visitor sees (2026-09-18, the owner's pick
  * of four directions drafted on a design canvas: "B2", the ink hero with the
@@ -58,7 +59,12 @@ const PROMISES = [
   { title: "Charts you can trust", text: "One tape per chart, never stitched. RSI and MACD hide when the feed is too thin to support them, instead of drawing a confident line on sparse data." },
   { title: "Earnings, dated by the company", text: "Report dates come from the company's own release and its SEC filing, with the session predicted from its history." },
   { title: "Nothing ranked for you", text: "Lists are ordered by the figure on each row, or alphabetically. No scores, no picks: the judgement stays yours." },
-  { title: "Your data stays yours", text: "No analytics, no ads, no tracking. Provider data is kept only as long as a feature needs it; delete your account and everything goes." },
+  // NARROWED, BECAUSE THIS PAGE NOW CARRIES AN AD PIXEL (2026-09-26). It
+  // said "no analytics, no ads, no tracking" while an advertising script sat
+  // on the very page making the claim — to an audience that opens devtools.
+  // What is still true, and is the part that matters, is that the TERMINAL
+  // carries none of it.
+  { title: "Your data stays yours", text: "The terminal runs no analytics and loads no third-party scripts; this front page carries an ad pixel, and the Privacy Policy says so. Provider data is kept only as long as a feature needs it; delete your account and everything goes." },
 ]
 
 /** The sign-in errors an SSO callback bounces back with, in words. */
@@ -158,6 +164,10 @@ export function LandingPage({ providers, signedIn = false, onPasswordSignIn }: {
   const ask = !signedIn && providers.length > 0
   // The gate renders this outside the shell, whose effect sets page titles.
   useEffect(() => { document.title = "AlphaDesk — research the market" }, [])
+  // The ad pixel loads HERE and nowhere else — this is the page an
+  // advertisement lands on, and confining it here is what keeps "the
+  // terminal loads no third-party scripts" true (lib/adPixel.ts).
+  useEffect(() => { loadAdPixel() }, [])
   const error = (() => {
     const code = new URLSearchParams(window.location.search).get("auth_error")
     return code ? OAUTH_ERRORS[code] ?? "Sign-in failed — try again." : null
