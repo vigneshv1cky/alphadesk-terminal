@@ -256,20 +256,13 @@ def api_filings_list(symbol: str):
 
 
 @app.get("/api/screener")
-def api_screener(fill: str = ""):
+def api_screener():
     """Everything in the current window, UNRANKED and alphabetical — symbols
     with fresh news or a report inside SCREENER_HORIZON_DAYS, each with its
-    raw headlines. Pure database read: no score, no top-N. The order of this
-    list is not a recommendation (see desk/screener.py).
-
-    `fill` asks for measures the plain window does not carry, comma-joined —
-    "split" for how long ago a corroborated split was, "turnover" for the
-    session's volume over the company's own SEC share count. Asked for
-    only by a caller that will show them, because each one costs vendor and
-    EDGAR reads the polling window must not pay."""
+    raw headlines. Pure database read: no LLM call, no score, no top-N. The
+    order of this list is not a recommendation (see desk/screener.py)."""
     from alphadesk.desk import screener
-    want = tuple(x.strip() for x in fill.split(",") if x.strip() in ("split", "turnover"))
-    return {"symbols": screener.inventory(want), "filled": list(want)}
+    return {"symbols": screener.inventory()}
 
 
 _rail_counts: dict[str, tuple[float, tuple[int, int | None]]] = {}

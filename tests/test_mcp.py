@@ -363,7 +363,7 @@ def test_the_window_is_small_and_pages(reader, monkeypatch):
     from alphadesk.desk import screener
     rows = [{"symbol": s, "report_date": None, "session": None, "article_count": 1,
              "headlines": [{"title": "t", "url": "u"}] * 5} for s in ("AAPL", "AMD", "MSFT", "NVDA", "TSLA")]
-    monkeypatch.setattr(screener, "inventory", lambda fill=(): rows)
+    monkeypatch.setattr(screener, "inventory", lambda: rows)
     first = mcp_server.screener_window(limit=2)
     assert first["total"] == 5
     assert [r["symbol"] for r in first["symbols"]] == ["AAPL", "AMD"]
