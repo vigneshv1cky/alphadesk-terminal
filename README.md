@@ -7,14 +7,14 @@
 [![Commercial licence available](https://img.shields.io/badge/Commercial-licence_available-black.svg)](#licence)
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)
 ![React 19](https://img.shields.io/badge/React-19-61DAFB.svg)
-![MCP tools: 37](https://img.shields.io/badge/MCP_tools-37_read--only-6E56CF.svg)
+![MCP tools: 50](https://img.shields.io/badge/MCP_tools-50_read--only-6E56CF.svg)
 
 **A dense, fast market-research terminal and integration platform.** Readers
 connect their own market-data and news providers; AlphaDesk is the workspace
 that connects, checks and presents what those providers — and the public
 record at SEC EDGAR and the US Treasury — actually say. Questions are asked
 in the reader's **own AI agent** (Claude, ChatGPT, Codex, Cursor, opencode),
-which reads the same records through **43 read-only agent tools** (MCP).
+which reads the same records through **50 read-only agent tools** (MCP).
 
 AlphaDesk **reads**: quotes and charts, news, SEC filings, financial
 statements, ownership and insider activity, earnings and corporate
@@ -25,6 +25,20 @@ Two ways to use it — the [managed cloud](#option-a--managed-cloud) or
 [your own server](#option-b--self-hosted-agpl-30). The code is open source
 under the **GNU AGPL-3.0**, with a **commercial licence** for anyone who
 cannot meet its terms. See [Licence](#licence).
+
+![AlphaDesk — the Markets board: a live chart, the basket rail, equity
+overview and the funds built on a stock](alphadesk/ui/public/landing/markets.jpg)
+
+<sub>Figures in every screenshot are blurred on purpose: they came from a
+reader's own vendor keys, and vendors restrict public display of their
+data. The layout is the real thing.</sub>
+
+| | |
+|---|---|
+| ![The chart workspace](alphadesk/ui/public/landing/chart.jpg) | ![The earnings week](alphadesk/ui/public/landing/earnings.jpg) |
+| **Chart** — your own SVG engine, session bands, drawings | **Earnings week** — dated by the company's own release and its SEC filing |
+| ![The news window](alphadesk/ui/public/landing/news.jpg) | ![The options chain](alphadesk/ui/public/landing/options.jpg) |
+| **News** — your feeds in one three-day window, searched by word or meaning | **Options** — chains by expiry, calls and puts either side of the price |
 
 ---
 
@@ -310,7 +324,7 @@ each marked with the reason it is there.
 
 ## Agent access (MCP)
 
-AlphaDesk exposes the same records the interface shows as **43 read-only
+AlphaDesk exposes the same records the interface shows as **50 read-only
 tools** over the [Model Context Protocol](https://modelcontextprotocol.io),
 at `/api/agent/tools/mcp`. Every call runs **as the reader**, on their keys,
 rate-limited to 120 requests a minute per token.
@@ -380,7 +394,7 @@ The full account, session, key-vault and agent-credential design is in
   Browser (React SPA) ─┤  FastAPI · one process · one port            │
   Reader's agent (MCP) ┤                                              │
                        │  /api/*  ── panels, composed per request     │
-                       │  /api/agent/tools/mcp ── 43 read-only tools  │
+                       │  /api/agent/tools/mcp ── 50 read-only tools  │
                        │  OAuth 2.1 at the root (/authorize, /token…) │
                        │                                              │
                        │  Per-reader DataRouter ──► reader's vendors  │──► Alpaca · FMP · Polygon
