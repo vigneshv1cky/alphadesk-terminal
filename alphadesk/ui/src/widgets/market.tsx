@@ -761,6 +761,13 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
                        } : category === "bonds" ? {
                          volTip: "How much the yield moves in a year, in basis points: the standard deviation of its last twenty daily changes, annualised",
                          liquidity: false,
+                       // A PAST SESSION'S TWO STATISTICS COLUMNS END ON THAT
+                       // DAY, not today, so the header tips must not go on
+                       // claiming "the last twenty sessions" — that would date
+                       // the figure to a window the row never lived in.
+                       } : q.data?.historical && q.data?.session ? {
+                         volTip: `Annualised volatility of daily returns over the twenty sessions ending ${q.data.session}`,
+                         liqTip: `Average dollar volume a day over the twenty sessions ending ${q.data.session}`,
                        } : {})}
                        nameHead={category === "stocks" ? "Company" : category === "currencies" ? "Currency" : "Name"}
                        linkable={category !== "options" && category !== "currencies" && category !== "bonds"} options={category === "options"}

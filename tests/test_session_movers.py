@@ -181,3 +181,75 @@ def test_a_shut_market_is_an_empty_answer_not_a_missing_one():
 
     movers._cache.clear()
     assert movers._market_day(_Holiday(), "2026-12-25") == {}
+
+
+def _rows_as_tabs(symbol: str) -> list[dict]:
+    return [{"id": "gainers", "rows": [movers._row(symbol, 100.0, 1.0, 1000)]}]
+
+
+def test_a_past_session_is_measured_on_its_own_twenty_days():
+    """THE WHOLE POINT OF THE COLUMN (2026-09-27, the reader: "in stock and
+    etf movers, liquidity and volatility are blank — for previous").
+
+    Bars are fetched ending NOW, so a past session's window has to be cut
+    back to it. Here the sessions up to the 24th are dead flat and the ones
+    after it swing 100%: measured correctly the volatility is nil, and a
+    window that leaked past the day would be enormous."""
+    flat = [_Bar(f"2026-09-{d:02d}", 100.0, 1000) for d in range(11, 25)]
+    wild = [_Bar("2026-09-25", 200.0, 1000), _Bar("2026-09-26", 100.0, 1000),
+            _Bar("2026-09-29", 200.0, 1000), _Bar("2026-09-30", 100.0, 1000)]
+    tabs = _rows_as_tabs("FLAT")
+    movers._enrich_session_stats(_Router({"FLAT": flat + wild}), tabs, "2026-09-24")
+    row = tabs[0]["rows"][0]
+    assert row["volatility"] == 0.0, row["volatility"]
+    assert row["liquidity"] == 100_000
+
+
+def test_the_day_itself_is_inside_the_window():
+    """`<= day`, not `< day`: the session being read is the last bar of its
+    own twenty, which is what "ending on that day" means."""
+    bars = [_Bar(f"2026-09-{d:02d}", 100.0, 1000) for d in range(11, 24)]
+    bars.append(_Bar("2026-09-24", 150.0, 4000))
+    tabs = _rows_as_tabs("LAST")
+    movers._enrich_session_stats(_Router({"LAST": bars}), tabs, "2026-09-24")
+    # The 24th's own bar moved the price and carried four times the volume,
+    # so both figures have to reflect it.
+    assert tabs[0]["rows"][0]["volatility"] > 0
+    assert tabs[0]["rows"][0]["liquidity"] > 100_000
+
+
+def test_a_stats_vendor_failure_never_costs_the_list():
+    """The reader asked for the day's movers; the two statistics ride along.
+    A vendor refusing them leaves dashes, never an error."""
+    class _Angry(_Router):
+        def get(self, *a, **k):
+            raise RuntimeError("vendor down")
+
+    tabs = _rows_as_tabs("AAPL")
+    movers._enrich_session_stats(_Angry(), tabs, "2026-09-24")
+    assert tabs[0]["rows"][0]["volatility"] is None
+    assert tabs[0]["rows"][0]["liquidity"] is None
+    assert tabs[0]["rows"][0]["symbol"] == "AAPL"
+
+
+def test_a_symbol_with_no_bars_before_the_day_shows_a_dash():
+    """A listing that had barely traded by then gets None, like the live
+    column — not a figure computed from two closes."""
+    tabs = _rows_as_tabs("NEW")
+    movers._enrich_session_stats(_Router({"NEW": [_Bar("2026-09-30", 10.0, 500)]}),
+                                 tabs, "2026-09-24")
+    assert tabs[0]["rows"][0]["volatility"] is None
+
+
+def test_enough_bars_are_asked_for_to_reach_back():
+    """Asking for exactly twenty would leave none on or before a past day."""
+    asked: list[int] = []
+
+    class _Counting(_Router):
+        def get(self, method, *args, **kwargs):
+            if method == "daily_history":
+                asked.append(args[1])
+            return {}
+
+    movers._enrich_session_stats(_Counting(), _rows_as_tabs("AAPL"), "2026-09-24")
+    assert asked and asked[0] > movers.STATS_DAYS + 1

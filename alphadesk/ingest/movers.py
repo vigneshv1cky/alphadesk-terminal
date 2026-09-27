@@ -42,6 +42,7 @@ import time
 import urllib.request
 from datetime import date, datetime, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from alphadesk.config import session_label
 from alphadesk.providers.base import NeedsKey
@@ -81,6 +82,11 @@ REFRESH_WAIT_S = 0.25
 FILLING_TTL_S = 3
 
 STATS_DAYS = 20
+# Reaching a PAST session's twenty sessions means asking for more than twenty,
+# because `daily_history` has no end date — it answers the last N ending NOW.
+# The stepper the app offers stops two sessions back, but the endpoint takes
+# any date and the calendar lists twelve, so this leaves room for all of them.
+SESSION_STATS_SLACK = 15
 STOCK_MIN_PRICE = 5.0
 STOCK_MIN_TURNOVER = 1_000_000
 
@@ -307,6 +313,50 @@ def _enrich_stats(router, tabs: list[dict], category: str, venue: bool = False) 
                 st = stats_from_bars([x["close"] for x in b], [x["volume"] for x in b])
                 r["volatility"], r["liquidity"] = st["volatility"], st["liquidity"]
 
+
+def _enrich_session_stats(router, tabs: list[dict], day: str) -> None:
+    """Volatility and liquidity AS OF a past session, not as of now.
+
+    Both figures describe the twenty sessions ENDING on the day being read,
+    which is the only window that means anything beside that day's move.
+    The live figures end today; hanging them on a row from the 24th would
+    date the number to a window that row never lived in — which is why this
+    column was left empty when a past session shipped (#87). Empty was the
+    wrong answer: this project's own rule is that a column which cannot be
+    filled is DROPPED, and one that can be filled should be.
+
+    `daily_history` takes a COUNT and answers the sessions ending now, with
+    no end date, so this asks for enough of them to still hold twenty that
+    end on `day` and drops every bar after it. No provider change: the seam
+    is untouched, at the cost of a slightly wider window on one request.
+
+    A symbol left with too few closes gets None back from stats_from_bars
+    and its row shows a dash — the honest answer for a listing that had
+    barely traded by then, and the same one the live column gives.
+    """
+    syms = sorted({r["symbol"] for t in tabs for r in t["rows"] if r.get("volatility") is None})
+    if not syms:
+        return
+    try:
+        bars = router.get("daily_history", syms, STATS_DAYS + 1 + SESSION_STATS_SLACK) or {}
+    except Exception as exc:
+        # A FIGURE WE CANNOT COMPUTE IS A DASH, NEVER A FAILED LIST. The
+        # reader asked for the day's movers; the two statistics columns ride
+        # along, and a vendor refusing them must not take the movers with it.
+        log.debug("session movers: no daily history for the statistics columns (%s)", exc)
+        return
+    ny = ZoneInfo("America/New_York")
+    for t in tabs:
+        for r in t["rows"]:
+            # The stamps are UTC and the session is a New York day, so the
+            # comparison converts first — the same trap the agent's one-day
+            # chart filter hit (mcp_server.price_chart).
+            kept = [b for b in (bars.get(r["symbol"]) or [])
+                    if b.get("ts") and b["ts"].astimezone(ny).date().isoformat() <= day]
+            if not kept:
+                continue
+            st = stats_from_bars([b["close"] for b in kept], [b["volume"] for b in kept])
+            r["volatility"], r["liquidity"] = st["volatility"], st["liquidity"]
 
 def only_tradable_coins(router, tabs: list[dict], got: dict) -> None:
     """With an Alpaca key connected, a crypto list from another vendor keeps
@@ -666,7 +716,9 @@ def previous_session(router, before: str) -> Optional[str]:
 
 def session_movers(category: str, day: str, top: int = 20,
                    min_price: Optional[float] = None,
-                   min_turnover: Optional[float] = None) -> dict:
+                   min_turnover: Optional[float] = None,
+                   min_liquidity: Optional[float] = None,
+                   min_volatility: Optional[float] = None) -> dict:
     """One PAST session's movers, computed from the whole market.
 
     The change is measured close-to-close against the session before it,
@@ -685,8 +737,16 @@ def session_movers(category: str, day: str, top: int = 20,
     d_price, d_turn = DEFAULT_FLOORS.get(cat, (0.0, 0.0))
     mp = max(0.0, float(min_price)) if min_price is not None else d_price
     mt = max(0.0, float(min_turnover)) if min_turnover is not None else d_turn
+    # THE FILTER MENU ALWAYS OFFERED THESE TWO AND THIS FUNCTION USED TO DROP
+    # THEM, so a reader who set a liquidity floor on a past session got the
+    # unfiltered list back and nothing said otherwise. They were unreachable
+    # in practice while both columns were blank; filling the columns is what
+    # makes a dead control a lie.
+    ml = max(0.0, float(min_liquidity or 0.0))
+    mv = max(0.0, float(min_volatility or 0.0))
 
-    key = f"session|{router.owner}|{','.join(router.connected)}|{cat}:{day}:{top}:{mp:g}:{mt:g}"
+    key = (f"session|{router.owner}|{','.join(router.connected)}|"
+           f"{cat}:{day}:{top}:{mp:g}:{mt:g}:{ml:g}:{mv:g}")
     with _lock:
         hit = _cache.get(key)
     if hit and time.time() - hit[0] < SESSION_TTL_S:
@@ -734,7 +794,16 @@ def session_movers(category: str, day: str, top: int = 20,
     # chose it. The three the reader asked for are the three that mean
     # something: active, gainers, losers.
     tabs = [t for t in tabs_from_list(rows) if t["id"] != "all"]
+    # The live path's order, and for its reasons: the cheap floors cut the
+    # market down first, the survivors are measured, and only then can a
+    # floor that reads one of those measurements be applied. A wider cut
+    # when such a floor was asked for, because a row has to be measured
+    # before it can be dropped for its measurement.
     apply_floors(tabs, mp, mt)
+    for t in tabs:
+        t["rows"] = t["rows"][:max(top, 50) if (ml > 0 or mv > 0) else top]
+    _enrich_session_stats(router, tabs, day)
+    apply_floors(tabs, 0.0, 0.0, ml, mv)
     for t in tabs:
         t["rows"] = t["rows"][:top]
     # Names only for the rows that survived — the SEC's ticker file is one
@@ -773,11 +842,11 @@ def session_movers(category: str, day: str, top: int = 20,
               "extended": False, "session_label": None,
               "official": True, "source": "polygon",
               "filling": False,
-              "note": (f"{day} close against {prev_day}. Volatility and liquidity are not "
-                       f"shown for a past session — they describe today's twenty days, not that day's."
+              "note": (f"{day} close against {prev_day}. Volatility and liquidity are the "
+                       f"twenty sessions ending {day}, not today's."
                        + (f" {unverified} large move{'s' if unverified != 1 else ''} left out: "
                           f"no second source to check it against." if unverified else "")),
-              "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": 0.0, "min_volatility": 0.0,
+              "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
                          "default_min_price": d_price, "default_min_turnover": d_turn},
               "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": tabs}
     with _lock:

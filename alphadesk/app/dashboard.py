@@ -1207,7 +1207,8 @@ def api_category_movers(category: str, top: int = 20,
                                      f"{' and '.join(movers.SESSION_CATEGORIES)}")
         try:
             return movers.session_movers(category, session, top=max(1, min(top, 50)),
-                                         min_price=min_price, min_turnover=min_turnover)
+                                         min_price=min_price, min_turnover=min_turnover,
+                                         min_liquidity=min_liquidity, min_volatility=min_volatility)
         except KeyError:
             raise HTTPException(404, f"no such category: {category}")
     try:
