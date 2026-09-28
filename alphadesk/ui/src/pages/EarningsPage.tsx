@@ -91,9 +91,15 @@ export default function EarningsPage() {
         // reader's ask, then their default: calendar first, chart second).
         // A row click adds the company to the board and the chart follows
         // it, so a report and its price move sit together.
+        // THE CHART AND THE FIGURES SHARE A ROW, HALF EACH — the owner's own
+        // arrangement, set in the board editor and made the default here
+        // (2026-09-28). They answer one question from two sides: what the
+        // company filed, and what the price did about it. A reader who has
+        // already arranged this page keeps their layout; this is only what a
+        // board with no stored arrangement opens as.
         {
           id: "chart", label: "Chart",
-          node: <MarketChart symbol={symbol} />,
+          node: <MarketChart span={6} symbol={symbol} />,
         },
         // WHAT THE REPORT SAID, straight after the chart: the company's own
         // filed figures against the year-ago quarter. Keyless SEC data, so it
