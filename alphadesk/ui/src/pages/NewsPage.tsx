@@ -9,6 +9,7 @@ import { on, api, isNeedsKey, type NewsArticle } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { boardStories, markSeen, readSeen } from "@/lib/newsSeen"
 import { useFilingFeed, useNews } from "@/lib/queries"
+import { isWireRelease } from "@/lib/newsKind"
 import { Btn, Empty, fieldCls, Widget, btnCls, menuItemCls } from "@/components/terminal"
 import { MarketFilings } from "@/widgets/desk"
 import { Menu } from "@/components/ChartToolbar"
@@ -172,6 +173,12 @@ export default function NewsPage() {
   // of Operations item, which is what makes an Earnings scope a filter over a
   // RECORD rather than a guess at which stories are about earnings.
   const [filingItem, setFilingItem] = useState<string | null>(null)
+  // WHAT ARRIVED BEFORE THE OFFICIAL RECORD (2026-09-28, the owner: "I want
+  // what we get earlier than the official in news by other providers"). A
+  // company's own wire release beat its own 8-K by 10 minutes to three and a
+  // half hours in every case measured that day, so this is the early copy of
+  // the same events the SEC scopes below carry late.
+  const [wireOnly, setWireOnly] = useState(false)
   // POSTS ARE NOT STORIES, AND THIS PAGE COULD NOT SHOW THEM (2026-09-23,
   // the reader: "not able to filter and see only this in news"). They ride
   // the news TILE mixed into the stream, but every filter lives here — and a
@@ -230,6 +237,7 @@ export default function NewsPage() {
       (!onBoard || a.tickers.some(t => board.has(t.toUpperCase())))
       && (!source || a.source === source)
       && (!feed || (a.feeds ?? []).includes(feed))
+      && (!wireOnly || isWireRelease(a))
     // Whole words, their forms, and the companies the words name.
     const words = articles.filter(a => keep(a) && (!needle || matchesStory(needle, a, companies)))
     if (!needle || meant !== needle || !related?.length) return words
@@ -243,7 +251,7 @@ export default function NewsPage() {
     // beside it worked throughout because `source` was listed — which is what
     // made the fault look like "FMP is broken" rather than "one filter is".
     // Every name `keep` and the body read belongs in this list.
-  }, [articles, needle, companies, onBoard, source, feed, boardSymbols, meant, related])
+  }, [articles, needle, companies, onBoard, source, feed, wireOnly, boardSymbols, meant, related])
   const open = articles.find(a => a.article_id === openId) ?? window_.find(a => a.article_id === openId) ?? null
 
   // The list renders only what is on screen (#81). 104px is what a row
@@ -253,7 +261,7 @@ export default function NewsPage() {
   const win = useWindowedRows({
     count: shown.length,
     estimate: 104,
-    resetKey: `${needle}|${onBoard}|${source}|${feed}|${search?.q ?? ""}`,
+    resetKey: `${needle}|${onBoard}|${source}|${feed}|${wireOnly}|${search?.q ?? ""}`,
   })
 
   // ARRIVING WITH A STORY IN THE URL scrolls to it once. It is placed by
@@ -278,6 +286,7 @@ export default function NewsPage() {
 
   // One request serves the counts here, the list when a filings scope is
   // picked, and the "Just filed" panel beside it — they share a query key.
+  const wireCount = useMemo(() => articles.filter(isWireRelease).length, [articles])
   const filingFeed = useFilingFeed()
   const filings = filingFeed.data?.filings ?? []
   const results = useMemo(
@@ -310,7 +319,7 @@ export default function NewsPage() {
       id: "posts", label: `Posts${livePosts.length ? ` · ${livePosts.length}` : ""}`,
       on: postsOnly, off: livePosts.length === 0,
       why: "Social posts only. A post has no publisher, no feed and no ticker, so the pickers beside this cannot apply to one",
-      pick: () => { setPostsOnly(true); setOnBoard(false); setFilingItem(null) },
+      pick: () => { setPostsOnly(true); setOnBoard(false); setFilingItem(null); setWireOnly(false) },
     },
     // EACH CARRIES ITS COUNT, which is the lesson from the posts control
     // (#64): a scope the reader cannot see the size of is one they have no
@@ -321,13 +330,13 @@ export default function NewsPage() {
       id: "filings", label: `Filings${filings.length ? ` · ${filings.length}` : ""}`,
       on: filingItem === "all", off: filings.length === 0,
       why: "What the market just filed with the SEC. Most of these never reach a newswire: a company must file within four business days and is never obliged to publicise",
-      pick: () => { setPostsOnly(false); setOnBoard(false); setFilingItem("all") },
+      pick: () => { setPostsOnly(false); setOnBoard(false); setFilingItem("all"); setWireOnly(false) },
     },
     {
       id: "results", label: `Earnings${results.length ? ` · ${results.length}` : ""}`,
       on: filingItem === RESULTS_ITEM, off: results.length === 0,
       why: "Results filings only — the SEC's own Item 2.02, Results of Operations and Financial Condition, chosen by the company itself",
-      pick: () => { setPostsOnly(false); setOnBoard(false); setFilingItem(RESULTS_ITEM) },
+      pick: () => { setPostsOnly(false); setOnBoard(false); setFilingItem(RESULTS_ITEM); setWireOnly(false) },
     },
   ]
 
@@ -423,6 +432,19 @@ export default function NewsPage() {
               <option value="">All feeds</option>
               {feeds.map(f => <option key={f} value={f}>{f}</option>)}
             </select>
+          )}
+          {/* A REFINEMENT, NOT A VIEW — so it sits with the publisher and feed
+              pickers and not in the menu beside "Posts". Those replace the
+              list; this narrows it, and it composes with both of them.
+              Disabled where it cannot apply: a post carries no publisher and
+              a filings scope is not showing stories at all. */}
+          {wireCount > 0 && (
+            <Btn variant={wireOnly ? "strong" : "ghost"} active={wireOnly}
+                 disabled={postsOnly || !!filingItem}
+                 onClick={() => setWireOnly(v => !v)}
+                 title="Only the companies' own statements, straight from the newswires — the copy that arrives BEFORE the SEC filing. Measured 2026-09-28: 10 minutes ahead for Gray Media, three and a half hours for NETSOL and Moving iMage.">
+              {`Press releases · ${wireCount}`}
+            </Btn>
           )}
           <span className="tnum ml-auto text-caption text-muted-foreground">
             {filingItem

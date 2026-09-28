@@ -25,6 +25,13 @@ const compact = (n: number | null | undefined): string => {
   if (a >= 1e12) return `${(n / 1e12).toFixed(2)}T`
   if (a >= 1e9) return `${(n / 1e9).toFixed(1)}B`
   if (a >= 1e6) return `${(n / 1e6).toFixed(0)}M`
+  // THOUSANDS WERE MISSING (2026-09-28, the reader, on Northann's chart).
+  // The scale jumped from millions straight to two decimals, so 171,895 read
+  // "171895.00" -- nine characters and a fraction in a 38px axis gutter, which
+  // ran off the left of the viewBox and was clipped mid-number. It was also a
+  // discontinuity in its own right: 999,999 printed in full while 1,000,000
+  // printed as "1M".
+  if (a >= 1e3) return `${(n / 1e3).toFixed(1)}K`
   return n.toFixed(2)
 }
 
@@ -109,8 +116,15 @@ export function RevenueEarningsPanel({ symbol }: { symbol: string }) {
                          className="stroke-grid-line" strokeDasharray="3 3" strokeWidth="1" />
           })}
           <line x1={PLOT_L} x2={PLOT_R} y1={y(0)} y2={y(0)} className="stroke-n400" strokeWidth="1" />
-          {/* left axis: money */}
-          {[maxVal, maxVal / 2].map((v, i) => (
+          {/* LEFT AXIS: MONEY, READ OFF THE SCALE ITSELF. These used to be
+              maxVal and maxVal/2, which are only evenly spaced when the scale
+              starts at zero — and it starts at minVal. Northann's loss is 16x
+              its revenue (max 171,895 against min -2,833,275), so half of max
+              sat 3.9px below max at 9.5px type and the two labels printed on
+              top of each other. Taking the top, middle and bottom OF THE SCALE
+              is spaced by construction, whatever the data does, and it is what
+              the EPS panel below already did. */}
+          {[maxVal, (maxVal + minVal) / 2, minVal].map((v, i) => (
             <text key={i} x={PLOT_L - 6} y={y(v) + 3} textAnchor="end"
                   className="fill-n600" fontSize="9.5">{compact(v)}</text>
           ))}
