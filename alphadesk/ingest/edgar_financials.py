@@ -46,7 +46,22 @@ METRICS: dict[str, dict] = {
 
 _cache: dict[str, tuple[float, dict | None]] = {}
 _TTL_S = 6 * 3600
-_FORMS = ("10-Q", "10-K", "10-Q/A", "10-K/A")
+# A FOREIGN PRIVATE ISSUER'S ANNUAL REPORT COUNTS (2026-09-28, the reader:
+# "why wbuy is empty"). This was the domestic forms alone, so every fact a
+# foreign filer tagged was discarded on the FORM NAME before its concept or
+# its period was ever looked at. WEBUY Global is the case that found it: the
+# SEC holds 265 us-gaap tags for it, including the exact Revenues and
+# NetIncomeLoss concepts asked for below, over 364- and 365-day periods that
+# sit inside the annual window -- and the panel showed nothing at all, while
+# blaming IFRS for it. 20-F is the annual report of a foreign private issuer
+# and 40-F the Canadian equivalent; both carry US-GAAP XBRL when the filer
+# reports in it.
+#
+# 6-K IS DELIBERATELY NOT HERE. It is the foreign interim filing and carries
+# no fixed shape -- a 6-K may hold half-year figures, a press release, or
+# neither. The half-year periods it does carry (180 days, measured on WEBUY)
+# fall in no window here anyway, being neither a quarter nor a year.
+_FORMS = ("10-Q", "10-K", "10-Q/A", "10-K/A", "20-F", "20-F/A", "40-F", "40-F/A")
 
 
 def _days(v: dict) -> int | None:

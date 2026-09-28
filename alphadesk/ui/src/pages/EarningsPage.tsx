@@ -1,4 +1,3 @@
-import { useNarrowViewport } from "@/lib/viewport"
 import { useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { ComposedBoard } from "@/components/ComposedBoard"
@@ -31,7 +30,6 @@ import { FiledQuarterPanel } from "@/components/FiledQuarterPanel"
  * so arriving from any other screen lands on the company you were reading.
  */
 export default function EarningsPage() {
-  const narrow = useNarrowViewport()
   const [params] = useSearchParams()
   const { active, add } = useBoardSymbols()
   const symbol = normalize(params.get("symbol") || "") || active
@@ -81,7 +79,13 @@ export default function EarningsPage() {
               // the fixed height left an empty block under nine rows
               // (2026-09-19). On a phone the page is the one scroll — a
               // scrolling box inside a scrolling page is a trap for a thumb.
-              scroll={narrow ? undefined : 560}
+              // THE PANEL NO LONGER SCROLLS AS A WHOLE (2026-09-28, the
+              // owner: "make only whats below this scrollable"). Scrolling
+              // the widget carried the week arrows, the day strip and the
+              // day's own heading up out of sight, so a reader working down
+              // a long day lost both the date they were reading and the
+              // column headings. The rows scroll inside the calendar now and
+              // everything above them stays put.
             >
               <EarningsCalendar pickedRow={report} onPick={pickRow} />
             </Widget>

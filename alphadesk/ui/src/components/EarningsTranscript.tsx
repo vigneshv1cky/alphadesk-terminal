@@ -53,7 +53,14 @@ export function EarningsTranscriptPanel({ symbol, span = 6, scroll }: { symbol: 
 
   return (
     <Widget span={span} symbol={symbol} title="Earnings transcript" subtitle={subtitle}
-            scroll={unkeyed ? undefined : (scroll ?? "max(520px, calc(100vh - 320px))")}
+            // A TALL BOX IS FOR A DOCUMENT, NOT A SENTENCE (2026-09-28, the
+            // reader: "this is blank mostly"). The panel reserved 520px and
+            // more whenever a transcript MIGHT be read, so a one-line refusal
+            // sat at the top of an otherwise empty card the height of the
+            // screen. It takes its content's height unless there is actually a
+            // document to scroll.
+            scroll={unkeyed || list.data?.error || rows.length === 0
+              ? undefined : (scroll ?? "max(520px, calc(100vh - 320px))")}
             actions={rows.length > 0 && !unkeyed ? (
               <select value={id ?? ""} onChange={e => setPicked(e.target.value)}
                       aria-label="Which document" className={`${fieldCls} h-[24px] max-w-[260px] py-0 text-caption`}>

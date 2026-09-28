@@ -1089,7 +1089,19 @@ def api_fundamentals(symbol: str, period: str = "quarterly"):
         raise HTTPException(400, "bad symbol")
     if period not in ("quarterly", "annual"):
         raise HTTPException(400, "period must be quarterly or annual")
-    return fundamentals_series(sym, period)
+    out = fundamentals_series(sym, period)
+    # A FOREIGN PRIVATE ISSUER FILES NO QUARTERS (2026-09-28, found on WEBUY
+    # Global, whose panels were empty while the SEC held its full annual
+    # figures in US-GAAP). It reports once a year on a 20-F, so asking for
+    # quarters finds nothing. The annual series answers instead, and the
+    # payload says which it gave: a year is not a quarter and no panel may
+    # print one as the other. Answering here rather than in each panel is
+    # what keeps the three of them agreeing.
+    if period == "quarterly" and not (out.get("series") or {}):
+        annual = fundamentals_series(sym, "annual")
+        if (annual.get("series") or {}):
+            return annual
+    return out
 
 
 @app.get("/api/movers")

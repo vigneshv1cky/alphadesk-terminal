@@ -51,6 +51,11 @@ log = logging.getLogger(__name__)
 # threshold is nowhere near a real boundary -- which is what makes it safe.
 COVERS_REPORT_DAYS = 120
 
+# An annual filer reports once a year, so its newest filed period is up to a
+# year and a reporting lag old before the next one lands. Judging it by the
+# quarterly window would call every 20-F filer's figures missing.
+ANNUAL_COVERS_REPORT_DAYS = 460
+
 # The year-ago quarter is matched by date, not by counting back four rows: a
 # company that skipped a filing, or restated one, would shift the count and
 # silently compare the wrong pair. A 52/53-week fiscal calendar moves the end
@@ -117,16 +122,30 @@ def filed_quarter(symbol: str, on: str | None = None) -> dict:
     sym = (symbol or "").upper()
     out: dict = {"symbol": sym, "source": "sec-edgar", "period_end": None,
                  "prior_end": None, "metrics": [], "covers_report": None,
-                 "lag_days": None, "note": None}
+                 "lag_days": None, "note": None, "period": "quarterly"}
     if not sym:
         return out
+    # A FOREIGN PRIVATE ISSUER FILES NO QUARTERS (2026-09-28, found on WEBUY
+    # Global). It reports annually on a 20-F, and its interim 6-K carries
+    # half-years that are neither a quarter nor a year. Asking only for
+    # quarters left the panel empty for a company whose full annual figures
+    # the SEC holds in US-GAAP. So the annual series answers where there is no
+    # quarterly one, and the period is named in the payload rather than left
+    # for the reader to assume -- "year ended" and "quarter ended" are not
+    # interchangeable and the panel must not print one for the other.
+    grain = "quarterly"
     try:
         data = fundamentals_series(sym, "quarterly", limit=24)
+        if not (data.get("series") or {}):
+            annual = fundamentals_series(sym, "annual", limit=12)
+            if (annual.get("series") or {}):
+                data, grain = annual, "annual"
     except Exception as exc:
         log.debug("filed figures: no XBRL for %s (%s)", sym, exc)
         out["note"] = "SEC EDGAR could not be read for this company just now."
         return out
 
+    out["period"] = grain
     series: dict[str, list[dict]] = data.get("series") or {}
     labels = {m["id"]: m.get("label") or m["id"] for m in (data.get("metrics") or [])}
     units = {m["id"]: m.get("unit") or "currency" for m in (data.get("metrics") or [])}
@@ -140,10 +159,15 @@ def filed_quarter(symbol: str, on: str | None = None) -> dict:
         # empty US-GAAP fact set and nothing in it distinguishes them. Stating
         # the likely reasons without picking one is the honest form; asserting
         # the wrong one is the made-up fact this codebase keeps refusing.
-        out["note"] = ("SEC EDGAR holds no US-GAAP quarterly figures for this filer. "
-                       "That is usual for a foreign private issuer, which reports "
-                       "under IFRS and tags its filings differently, and for a "
-                       "company that has not filed a quarterly report yet.")
+        # Both grains were tried before this fires, so the filer really does
+        # tag nothing in US-GAAP. That is now a narrow statement rather than
+        # the catch-all it was: a 20-F filer reporting in US-GAAP is answered
+        # above, and what reaches here is a genuine IFRS filer (Inventiva,
+        # TSMC, Novo Nordisk) or a company that has filed nothing yet.
+        out["note"] = ("SEC EDGAR holds no US-GAAP figures for this filer, annual "
+                       "or quarterly. A company reporting under IFRS tags its "
+                       "filings differently, and a newly listed one may have filed "
+                       "no report yet.")
         return out
 
     period = ends[-1]
@@ -156,10 +180,15 @@ def filed_quarter(symbol: str, on: str | None = None) -> dict:
         try:
             lag = (date.fromisoformat(on) - date.fromisoformat(period)).days
             out["lag_days"] = lag
-            out["covers_report"] = lag <= COVERS_REPORT_DAYS
-            if lag > COVERS_REPORT_DAYS:
-                out["note"] = ("The quarter behind this report is not filed yet. "
-                               "These are the newest figures on record, which are older.")
+            # AN ANNUAL FILER'S NEWEST PERIOD IS A YEAR OLD BY DESIGN, so the
+            # quarterly window would mark every 20-F filer stale and say its
+            # figures were missing when they are simply annual.
+            window = COVERS_REPORT_DAYS if grain == "quarterly" else ANNUAL_COVERS_REPORT_DAYS
+            out["covers_report"] = lag <= window
+            if lag > window:
+                out["note"] = (
+                    "The period behind this report is not filed yet. "
+                    "These are the newest figures on record, which are older.")
         except ValueError:
             pass
 
