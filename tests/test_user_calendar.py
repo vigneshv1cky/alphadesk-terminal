@@ -140,7 +140,7 @@ def test_rows_between_names_joins_and_orders_by_liquidity(vendors, monkeypatch):
     # then liquidity still order WITHIN the filed tier, which puts ADBE first.
     # NOTSEC is dropped throughout: it is not an SEC filer.
     assert [r["symbol"] for r in rows] == ["ADBE", "REF", "TINY"]
-    assert [r["evidence"] for r in rows] == ["filed", "filed", "one_vendor"]
+    assert [r["evidence"] for r in rows] == ["reported", "reported", "one_vendor"]
     ref = rows[1]
     assert ref["edgar_only"] is True and ref["session"] == "AMC" and ref["confirmed"] is True
     adbe, _, tiny = rows
@@ -517,7 +517,13 @@ def test_each_day_lists_the_largest_company_first_and_companies_without_a_value_
     monkeypatch.setattr(edgar, "company_title", lambda s: s)
     monkeypatch.setattr(edgar_releases, "releases_by_symbol", lambda a, b: {})
     rows = uc.rows_between("2026-09-10", "2026-09-10")
-    assert [(r["symbol"], r["market_cap"]) for r in rows] == [("TINY", 5e11), ("ADBE", None)]   # ADBE has no value: after, though most traded
+    # EVIDENCE LEADS, SIZE ORDERS WITHIN IT (2026-09-28). ADBE carries an
+    # actual in the fixture, so it has REPORTED and leads whatever its market
+    # value — a number in hand is not a forecast. TINY, at half a trillion,
+    # is still only a vendor's projection. That size orders rows of EQUAL
+    # evidence is pinned separately, in test_earnings_calendar.
+    assert [(r["symbol"], r["evidence"], r["market_cap"]) for r in rows] == [
+        ("ADBE", "reported", None), ("TINY", "one_vendor", 5e11)]
 
 
 def test_a_week_with_many_timing_lookups_returns_at_once_and_fills_them_in_the_background(store, monkeypatch):
