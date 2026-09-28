@@ -1,6 +1,7 @@
 """The Nasdaq calendar pull: a failed fetch proves nothing, an empty day is
 an answer, and a row says whether the company named its time."""
 from alphadesk.ingest import earnings as cal
+from alphadesk.ingest import earnings_calendar as ec
 
 
 
@@ -73,3 +74,92 @@ def test_edgar_acceptance_time_is_eastern_despite_the_z():
     assert _accepted_at("2026-09-10T20:06:14.000Z") == "2026-09-10T16:06:14-04:00"   # Adobe, after the close
     assert _accepted_at("2026-01-15T21:05:23.000Z") == "2026-01-15T16:05:23-05:00"   # winter offset
     assert _accepted_at(None) is None and _accepted_at("garbage") is None
+
+
+# ── Evidence ordering (2026-09-27, the owner: "order by correctness") ───────
+
+def _ev_row(sym, **kw):
+    r = {"symbol": sym, "report_date": "2026-09-30", "sources": "fmp"}
+    r.update(kw)
+    return r
+
+
+def test_a_filed_report_outranks_every_forecast():
+    """A report the SEC already has is not a forecast. Whatever any calendar
+    said about the day, it happened."""
+    filed = _ev_row("AAA", date_from_edgar=True, sources="fmp")
+    announced = _ev_row("BBB", announcement={"date": "2026-09-30"}, sources="fmp,finnhub,alphavantage")
+    assert ec.evidence_of(filed) == ec.EVIDENCE_REPORTED
+    assert ec.evidence_rank(filed) < ec.evidence_rank(announced)
+
+
+def test_the_company_outranks_its_calendars():
+    announced = _ev_row("AAA", announcement={"date": "2026-09-30"})
+    three = _ev_row("BBB", sources="fmp,finnhub,alphavantage")
+    assert ec.evidence_of(announced) == ec.EVIDENCE_ANNOUNCED
+    assert ec.evidence_rank(announced) < ec.evidence_rank(three)
+
+
+def test_one_vendors_confirmed_does_not_beat_two_vendors_agreeing():
+    """MEASURED on a live week: AMTD Digital, Tudor Gold and Scottie Resources
+    all arrived marked confirmed from FMP ALONE. One vendor's flag is a claim;
+    two independent calendars agreeing is corroboration."""
+    claimed = _ev_row("HKD", confirmed=True, sources="fmp")
+    agreed = _ev_row("MTN", confirmed=False, sources="finnhub,alphavantage")
+    assert ec.evidence_of(claimed) == ec.EVIDENCE_SINGLE
+    assert ec.evidence_of(agreed) == ec.EVIDENCE_CORROBORATED
+    assert ec.evidence_rank(agreed) < ec.evidence_rank(claimed)
+
+
+def test_vendor_count_reads_the_joined_sources():
+    assert ec.vendor_count(_ev_row("A", sources="fmp,finnhub, alphavantage")) == 3
+    assert ec.vendor_count(_ev_row("A", sources="fmp,fmp")) == 1
+    assert ec.vendor_count(_ev_row("A", sources="")) == 0
+    assert ec.vendor_count({"symbol": "A"}) == 0
+
+
+def test_an_untraded_second_class_cannot_head_a_day():
+    """The fault this replaced: McCormick's non-voting class ($13.2B, $1.1M a
+    day) outranked McCormick itself and sat above AEHR ($3.4B, $254M a day).
+    A second class is exactly the row one vendor lists alone, so evidence
+    sinks it with no special case for share classes."""
+    rows = [
+        _ev_row("MKC-V", market_cap=13.2e9, liquidity=1.1e6, sources="fmp"),
+        _ev_row("AEHR", market_cap=3.4e9, liquidity=253.8e6, sources="fmp,finnhub"),
+    ]
+    rows.sort(key=lambda r: (r["report_date"], ec.evidence_rank(r),
+                             r.get("market_cap") is None, -(r.get("market_cap") or 0),
+                             -(r.get("liquidity") or 0), r["symbol"]))
+    assert [r["symbol"] for r in rows] == ["AEHR", "MKC-V"]
+
+
+def test_size_still_orders_inside_a_tier():
+    """The 2026-09-14 call is kept where it works: among equally evidenced
+    reports, the biggest company is still read first."""
+    rows = [
+        _ev_row("SMALL", market_cap=1e9, sources="fmp,finnhub"),
+        _ev_row("BIG", market_cap=100e9, sources="fmp,finnhub"),
+    ]
+    rows.sort(key=lambda r: (r["report_date"], ec.evidence_rank(r),
+                             r.get("market_cap") is None, -(r.get("market_cap") or 0),
+                             -(r.get("liquidity") or 0), r["symbol"]))
+    assert [r["symbol"] for r in rows] == ["BIG", "SMALL"]
+
+
+def test_an_actual_in_hand_counts_as_reported():
+    """CAUGHT ON SCREEN (2026-09-28). The first version tested only for a
+    joined 8-K, so Inventiva sat ELEVENTH on its own report day carrying a
+    -42.52% surprise — below three companies that had not reported at all —
+    and NETSOL fourteenth with +357%. A vendor's actual arrives before the
+    filing is found, and a number in hand is not a forecast."""
+    reported = _ev_row("IVA", eps_actual=-0.29, surprise_pct=-42.52, sources="fmp")
+    pending = _ev_row("MTN", sources="fmp,finnhub,alphavantage")
+    assert ec.evidence_of(reported) == ec.EVIDENCE_REPORTED
+    assert ec.evidence_rank(reported) < ec.evidence_rank(pending)
+
+
+def test_a_placeholder_actual_is_not_a_report():
+    """A placeholder is moved to placeholder_actual upstream and eps_actual
+    set back to None, so the tier cannot be fooled by one."""
+    ghost = _ev_row("NB", eps_actual=None, placeholder_actual=0.15, sources="fmp")
+    assert ec.evidence_of(ghost) == ec.EVIDENCE_SINGLE

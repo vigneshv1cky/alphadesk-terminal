@@ -326,7 +326,9 @@ def _rail_numbers(owner: str, uid: str | None) -> tuple[int, int | None]:
             log.warning("rail: the news count could not be built (%s)", exc)
             with_news = (_rail_counts.get(owner) or (0, (0, None)))[1][0]
         try:
-            week = earnings_calendar.week()
+            # The badge counts what the tab shows, or pressing it would
+            # open a page that disagrees with the number that sent you there.
+            week = earnings_calendar.reported_week()
             calls = sum(d.get("count") or 0 for d in week.get("days") or [])
         except NeedsKey:
             calls = None
@@ -2257,7 +2259,16 @@ def api_earnings():
         v = e.get("low_liquidity")
         e["low_liquidity"] = bool(v) if v is not None else None
 
-    return {"upcoming": upcoming, "reported": reported}
+    # SAY WHICH CALENDAR THIS IS (2026-09-28). With no calendar vendor the
+    # window is built from SEC filings alone: complete about what has
+    # reported, silent about what is coming, because no filing announces a
+    # future date. An unexplained empty "upcoming" would read as "nothing is
+    # due" — the very thing invariant 8's key prompt exists to prevent — so
+    # the payload states it and the page can offer the vendors that would fill it.
+    from alphadesk.providers import get_prices
+    calendars = list(get_prices()._order("earnings_calendar", "earnings_calendar") or [])
+    return {"upcoming": upcoming, "reported": reported,
+            "calendar_vendors": calendars, "forward_available": bool(calendars)}
 
 
 @app.get("/api/earnings/find")
@@ -2311,7 +2322,13 @@ def api_earnings_week(start: str | None = None):
     sunday = anchor - timedelta(days=anchor.isoweekday() % 7)
 
     from alphadesk.ingest import earnings_calendar
-    return earnings_calendar.week(sunday.isoformat())
+    # THE EARNINGS TAB IS A RESULTS FEED (2026-09-28, the owner's call).
+    # Not the vendor calendar: that was measured listing 45 of 61 companies
+    # that reported, and carrying 33 rows in 100 for days that had passed
+    # with no report at all. A filing is mandatory, so this is complete and
+    # true by construction — and silent about the future, which is stated in
+    # the payload rather than left to be inferred from empty days.
+    return earnings_calendar.reported_week(sunday.isoformat())
 
 
 @app.get("/api/earnings/context/{symbol}")

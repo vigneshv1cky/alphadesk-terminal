@@ -104,6 +104,13 @@ export interface EarningsRow {
   /** The company's own press release naming the report date (and, when it
    * says so, the session) — what dated this row over the vendor's projection. */
   announcement?: EarningsAnnouncement | null
+  /** What DATES this row, strongest first: "reported" (the results are out),
+   * "announced" (the company's own press release named the day), "vendors"
+   * (two or more calendars agree) or "one_vendor" (one said so and nothing
+   * checked it). Each day is ordered by this. */
+  evidence?: "reported" | "announced" | "vendors" | "one_vendor"
+  /** How many calendars listed this report. */
+  vendor_count?: number
   /** Twenty-session annualised volatility, percent, from the user's chart vendor. */
   volatility?: number | null
   /** Twenty-session average dollar volume a day. */
@@ -281,6 +288,19 @@ export interface EarningsWeek {
   /** Lookups still running in the background for a busy week: companies whose
    * usual report time, and whose press releases, are not in yet. */
   pending?: { timing?: number; announcements?: number }
+  /** "edgar" when the week is a RESULTS FEED built from SEC filings alone:
+   * complete about what reported, silent about what is coming, and carrying
+   * no analyst estimates because no filing contains one. */
+  source?: "edgar"
+  /** The reader's connected calendar vendors. Empty means this week was built
+   * from SEC filings alone — see below. */
+  calendar_vendors?: string[]
+  /** False when no calendar vendor is connected: the week is COMPLETE about
+   * what has reported (a results filing is mandatory and EDGAR is keyless)
+   * and SILENT about what is coming, because no filing announces a future
+   * date. The page must say so — an unexplained empty run of future days
+   * reads as "nothing is due". */
+  forward_available?: boolean
 }
 
 

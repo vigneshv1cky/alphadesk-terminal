@@ -133,9 +133,17 @@ def test_rows_between_names_joins_and_orders_by_liquidity(vendors, monkeypatch):
     monkeypatch.setattr(edgar, "_ticker_cik_map", lambda: {"ADBE": "0000796343", "TINY": "0000000001", "REF": "0000000002"})
     monkeypatch.setattr(uc, "quarter_release", lambda sym, d: True)
     rows = uc.rows_between("2026-09-10", "2026-09-10")
-    assert [r["symbol"] for r in rows] == ["ADBE", "TINY", "REF"]     # NOTSEC is not an SEC filer; most traded first, REF has no bars
-    assert rows[2]["edgar_only"] is True and rows[2]["session"] == "AMC" and rows[2]["confirmed"] is True
-    adbe, tiny, _ = rows
+    # EVIDENCE ORDERS THE DAY (2026-09-27, the owner: "order by correctness").
+    # ADBE and REF both have their results filing in, so both outrank TINY,
+    # which is one vendor's unconfirmed projection — REF ahead of it even
+    # though no vendor listed REF at all and it has no bars to measure. Size
+    # then liquidity still order WITHIN the filed tier, which puts ADBE first.
+    # NOTSEC is dropped throughout: it is not an SEC filer.
+    assert [r["symbol"] for r in rows] == ["ADBE", "REF", "TINY"]
+    assert [r["evidence"] for r in rows] == ["reported", "reported", "one_vendor"]
+    ref = rows[1]
+    assert ref["edgar_only"] is True and ref["session"] == "AMC" and ref["confirmed"] is True
+    adbe, _, tiny = rows
     assert adbe["company_name"] == "Adobe Inc." and adbe["surprise_pct"] == 6.0 and adbe["released_at"].startswith("2026-09-10T16:06")
     assert adbe["liquidity"] > 1e9 and adbe["low_liquidity"] is False and adbe["volatility"] is not None
     assert tiny["low_liquidity"] is True and tiny["released_at"] is None
@@ -170,22 +178,28 @@ def test_find_asks_for_one_symbol_and_dates_it_like_the_week(vendors, monkeypatc
     assert uc.find("ZZZZ", today="2026-09-13")["listed"] is False
 
 
-def test_no_calendar_vendor_is_a_key_prompt_and_a_refusal_is_named(vendors):
+def test_the_week_stands_on_sec_filings_with_no_calendar_vendor(vendors):
+    """THE SPINE IS EDGAR (2026-09-28). With no calendar vendor this used to
+    raise NeedsKey, so a self-hosted reader got a 428 and an empty page. A
+    results filing is mandatory and EDGAR is keyless, so the past is knowable
+    for nothing: the week is built from filings alone rather than refused."""
     vendors(alpaca=_Bars())
-    with pytest.raises(NeedsKey):
-        uc.rows_between("2026-09-10", "2026-09-10")
+    rows = uc.rows_between("2026-09-10", "2026-09-10")
+    assert isinstance(rows, list)          # answered, not refused
 
+
+def test_a_refusal_is_still_named_where_a_prompt_is_still_raised(vendors):
+    """The per-company lookup still needs a calendar — EDGAR cannot answer
+    when a company will NEXT report — so it still prompts, and still names
+    the vendor that refused rather than the ones the reader lacks."""
     class _Refuses:
         name = "fmp"
         def earnings_calendar(self, s, e, symbol=None):
             raise EntitlementError("HTTP 402")
-    vendors(fmp=_Refuses())
+    vendors(alpaca=_Bars(), fmp=_Refuses())
     with pytest.raises(NeedsKey) as exc:
-        uc.rows_between("2026-09-10", "2026-09-10")
-    assert exc.value.prompt()["refused"] == ["Financial Modeling Prep"]
-    assert uc.upcoming(7) == [] and uc.report_row("ADBE", "2026-09-10") is None
-    with pytest.raises(NeedsKey):
         uc.find("ADBE")
+    assert exc.value.prompt()["refused"] == ["Financial Modeling Prep"]
 
 
 def test_previous_weekday_skips_the_weekend():
@@ -503,7 +517,13 @@ def test_each_day_lists_the_largest_company_first_and_companies_without_a_value_
     monkeypatch.setattr(edgar, "company_title", lambda s: s)
     monkeypatch.setattr(edgar_releases, "releases_by_symbol", lambda a, b: {})
     rows = uc.rows_between("2026-09-10", "2026-09-10")
-    assert [(r["symbol"], r["market_cap"]) for r in rows] == [("TINY", 5e11), ("ADBE", None)]   # ADBE has no value: after, though most traded
+    # EVIDENCE LEADS, SIZE ORDERS WITHIN IT (2026-09-28). ADBE carries an
+    # actual in the fixture, so it has REPORTED and leads whatever its market
+    # value — a number in hand is not a forecast. TINY, at half a trillion,
+    # is still only a vendor's projection. That size orders rows of EQUAL
+    # evidence is pinned separately, in test_earnings_calendar.
+    assert [(r["symbol"], r["evidence"], r["market_cap"]) for r in rows] == [
+        ("ADBE", "reported", None), ("TINY", "one_vendor", 5e11)]
 
 
 def test_a_week_with_many_timing_lookups_returns_at_once_and_fills_them_in_the_background(store, monkeypatch):
@@ -606,3 +626,38 @@ def test_foreign_candidates_keep_the_exhibit_over_the_cover_page():
     assert set(rows) == {"ZTO", "ZTOEF"}              # both listings of one filer
     assert rows["ZTO"]["document"] == "tm2623526d1_ex99-1.htm" and rows["ZTO"]["is_exhibit"]
     assert rows["ZTO"]["cik"] == "0001677250"
+
+
+# ── Results published in a periodic report (2026-09-28) ─────────────────────
+
+def test_a_periodic_report_is_the_release_when_there_is_no_8k(monkeypatch):
+    """MEASURED: of 67 companies the calendar showed as reported in one week,
+    23 had a vendor's actual and no filing this sweep had found — and EDGAR
+    showed every checked one HAD filed: Espey, Amesite and Legacy Housing in
+    a 10-K, Shineco in a 10-Q. Item 2.02 is required only when results go out
+    by some other means first, so a filer that simply publishes its 10-K owes
+    no 8-K and was invisible."""
+    from alphadesk.ingest import edgar_releases as er
+    hits = [{"_source": {"adsh": "0001-26-1", "file_date": "2026-09-23",
+                         "display_names": ["ESPEY MFG & ELECTRONICS CORP (ESP)  (CIK 0000033533)"],
+                         "root_forms": ["10-K"]}}]
+    assert er.parse_periodic_hits(hits) == [{
+        "symbol": "ESP", "accession": "0001-26-1", "cik": "0000033533",
+        "file_date": "2026-09-23", "event_date": "2026-09-23",
+        "company": "ESPEY MFG & ELECTRONICS CORP", "form": "10-K"}]
+
+
+def test_a_company_that_announced_on_an_8k_does_not_get_a_second_row(monkeypatch):
+    """A large filer announces on an 8-K and files the 10-Q days later.
+    Counting both would put two rows on the calendar for one set of results,
+    so a periodic report is only the release where no Item 2.02 exists in the
+    surrounding quarter."""
+    from alphadesk.ingest import edgar_releases as er
+    monkeypatch.setattr(er, "releases_by_symbol",
+                        lambda a, b: {"BIG": [{"form": "8-K", "file_date": "2026-09-20"}]})
+    monkeypatch.setattr(er, "_search_form", lambda day, form, off: {"hits": {"hits": [
+        {"_source": {"adsh": "x", "file_date": "2026-09-23", "root_forms": [form],
+                     "display_names": ["BIG CO (BIG)  (CIK 0000000009)"]}}]}})
+    saved = []
+    monkeypatch.setattr(er.store, "upsert_release", lambda *a, **k: saved.append(a[0]))
+    assert er.refresh_periodic_day("2026-09-23") == 0 and saved == []

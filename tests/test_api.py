@@ -7,10 +7,17 @@ class TestSurface:
     def test_consumption_endpoints_serve(self, client):
         for url in ("/healthz", "/api/screener", "/api/system", "/api/tokens"):
             assert client.get(url).status_code == 200, url
-        # Market data is the user's own: with no vendor connected the
-        # calendar answers the key prompt, not an empty page.
+        # THE SPINE IS EDGAR (2026-09-28). With no calendar vendor the
+        # window is built from SEC filings — mandatory and keyless — rather
+        # than refused, so a self-hosted reader sees what actually reported.
+        # What the vendors still own is the FUTURE, and the payload says so:
+        # an unexplained empty "upcoming" would read as "nothing is due",
+        # which is the failure invariant 8's key prompt exists to prevent.
         r = client.get("/api/earnings")
-        assert r.status_code == 428 and r.json()["detail"]["needs_key"]["surface"] == "earnings_calendar"
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["forward_available"] is False and body["calendar_vendors"] == []
+        assert body["upcoming"] == []
 
     def test_trading_endpoints_are_gone(self, client):
         # AlphaDesk is a consumption product; these were removed with the

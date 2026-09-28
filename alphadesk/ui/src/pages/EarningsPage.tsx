@@ -72,7 +72,7 @@ export default function EarningsPage() {
             <Widget
               span={12}
               title="Earnings calendar"
-              subtitle="a week at a time — every reporter your calendar vendors list, largest companies first"
+              subtitle="a week at a time — from SEC filings and your calendar vendors, most certain first"
               // The panel scrolls, not the page — which is what lets the column
               // header stay put. As tall as the screen allows (2026-09-11, the
               // reader's call), but no taller than the day: a number is a cap

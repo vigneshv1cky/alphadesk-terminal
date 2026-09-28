@@ -25,7 +25,7 @@ vendor memo, and the EDGAR half is shared public data.
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from alphadesk.providers.base import EntitlementError, NeedsKey, ProviderError
@@ -35,11 +35,19 @@ log = logging.getLogger("alphadesk.earnings_calendar")
 LOW_LIQUIDITY_DOLLAR_VOL = 10_000_000
 
 
-def _vendor_rows(router, start: str, end: str) -> list[tuple[str, list[dict]]]:
+def _vendor_rows(router, start: str, end: str, *, required: bool = True) -> list[tuple[str, list[dict]]]:
+    """Each connected calendar vendor's rows for the window.
+
+    `required=False` returns an EMPTY list instead of raising when nobody
+    carries the surface — the caller then builds the calendar from SEC
+    filings alone. See the note on the EDGAR spine in rows_between.
+    """
     got: list[tuple[str, list[dict]]] = []
     refused: list[str] = []
     order = router._order("earnings_calendar", "earnings_calendar")
     if not order:
+        if not required:
+            return []
         raise NeedsKey("earnings_calendar", [], signed_in=router.uid is not None)
     for name in order:
         try:
@@ -53,6 +61,8 @@ def _vendor_rows(router, start: str, end: str) -> list[tuple[str, list[dict]]]:
         if rows is not None:
             got.append((name, rows))
     if not got:
+        if not required:
+            return []
         raise NeedsKey("earnings_calendar", refused, signed_in=router.uid is not None)
     return got
 
@@ -61,6 +71,10 @@ def combine(per_vendor: list[tuple[str, list[dict]]]) -> list[dict]:
     """The vendors' rows as one list: the first vendor's rows as primary,
     the others unioned in, moved reports collapsed. Pure."""
     from alphadesk.ingest.earnings import collapse_moved, union_calendars
+    if not per_vendor:
+        # No calendar vendor connected: the caller builds the week from SEC
+        # filings alone (see rows_between). Not an error — an empty union.
+        return []
     primary_name, primary = per_vendor[0]
     prim = [{**r, "sources": primary_name} for r in primary]
     others = [{**r, "source": name} for name, rows in per_vendor[1:] for r in rows]
@@ -757,10 +771,89 @@ def _mark_listings(rows: list[dict], listed: dict[str, str]) -> None:
         r["listing"] = listing_kind(r["symbol"], listed or {}, tickers_of_cik, meta.get("exchange"))
 
 
+# ── What actually dates a row (2026-09-27, the owner: "order by correctness") ──
+# MEASURED on a live week before this was written: of 185 rows, 92 rested on a
+# SINGLE vendor, 43 on two, 11 on three or more, 13 on the company's own
+# announcement. Against that, the forward accuracy log says one vendor gets the
+# date exactly right 39-51% of the time and the union 52%. So half the calendar
+# was a coin flip and nothing on screen said so.
+#
+# ONE VENDOR'S "CONFIRMED" IS A CLAIM, TWO VENDORS AGREEING IS CORROBORATION.
+# The measurement exposed this: AMTD Digital, Tudor Gold and Scottie Resources
+# all arrived marked confirmed from FMP ALONE, and under a naive ordering that
+# outranked two independent calendars agreeing on a date. It does not any more.
+EVIDENCE_REPORTED = "reported"      # the results are OUT; it happened
+EVIDENCE_ANNOUNCED = "announced"    # the company's own press release named the day
+EVIDENCE_CORROBORATED = "vendors"   # two or more calendars agree
+EVIDENCE_SINGLE = "one_vendor"      # one calendar said so, and nothing checked it
+
+#: Strongest first. The ORDER of this tuple is the ranking.
+EVIDENCE_ORDER = (EVIDENCE_REPORTED, EVIDENCE_ANNOUNCED, EVIDENCE_CORROBORATED, EVIDENCE_SINGLE)
+
+
+def vendor_count(row: dict) -> int:
+    """How many calendars listed this report. `sources` is comma-joined."""
+    return len({s.strip() for s in (row.get("sources") or "").split(",") if s.strip()})
+
+
+def evidence_of(row: dict) -> str:
+    """What dates this row, as one of EVIDENCE_ORDER.
+
+    A row the SEC already has is not a forecast at all, so it ranks first
+    whatever any calendar said. Then the company's own word, which is the
+    only source that cannot be wrong about its own plans. Then agreement
+    between independent calendars. Then a single vendor, alone.
+    """
+    # THE RESULTS BEING OUT IS THE STRONGEST EVIDENCE THERE IS, and an
+    # ACTUAL counts as much as a filing (2026-09-28, caught on screen: the
+    # first version tested only for a joined 8-K, so Inventiva sat ELEVENTH
+    # on its own report day carrying a -42.52% surprise, below three
+    # companies that had not reported at all, and NETSOL fourteenth with
+    # +357%. A vendor's actual arrives before we find the filing, and a
+    # number in hand is not a forecast whatever EDGAR has caught up with.)
+    # A PLACEHOLDER is not an actual: it is moved to placeholder_actual and
+    # eps_actual set back to None upstream, so this cannot be fooled by one.
+    if (row.get("eps_actual") is not None or row.get("released_on") or row.get("released_at")
+            or row.get("date_from_edgar") or row.get("edgar_only")):
+        return EVIDENCE_REPORTED
+    if row.get("announcement"):
+        return EVIDENCE_ANNOUNCED
+    return EVIDENCE_CORROBORATED if vendor_count(row) >= 2 else EVIDENCE_SINGLE
+
+
+def evidence_rank(row: dict) -> int:
+    try:
+        return EVIDENCE_ORDER.index(evidence_of(row))
+    except ValueError:            # pragma: no cover - evidence_of is closed
+        return len(EVIDENCE_ORDER)
+
+
 def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | None = None) -> list[dict]:
-    """Every report the user's vendors list in [start, end]. Raises NeedsKey
-    when no connected vendor carries an earnings calendar. Lookups too many to
-    wait for are filled in the background and counted in `pending`."""
+    """Every report in [start, end], from SEC filings and the reader's
+    vendors. Lookups too many to wait for are filled in the background and
+    counted in `pending`.
+
+    THE SPINE IS EDGAR, THE VENDORS ARE ENRICHMENT (2026-09-28, the owner's
+    call). This used to raise NeedsKey the moment no vendor carried the
+    surface, so a reader with no calendar key got a 428 and an empty page —
+    on a product whose self-hosted path is first-class and whose readers
+    bring their own keys. But a results filing is MANDATORY and EDGAR is
+    keyless, so the past is knowable for nothing: `edgar_only_rows` already
+    builds a row for every results filing no vendor listed, and given no
+    vendor rows at all it builds the whole calendar.
+
+    What the vendors still own is the FUTURE. EDGAR has no forward-looking
+    date — no filing says "we will report on the 28th" — so without a vendor
+    the calendar is complete about what has happened and silent about what
+    has not. `week()` reports which case the reader is in.
+
+    THIS NARROWS INVARIANT 8's "never answer a missing key with an empty
+    200", deliberately and in its spirit rather than its letter. That rule
+    exists so absence never reads as "no data exists". Here the answer is
+    not empty: it is every company that actually reported, and the payload
+    says plainly that upcoming reports need a calendar vendor. Answering 428
+    instead would hide real, free, official data behind a key prompt.
+    """
     from alphadesk.ingest import edgar, edgar_releases
     from alphadesk.ingest.movers import stats_from_bars
     from alphadesk.providers import get_prices
@@ -769,7 +862,7 @@ def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | No
     # vendor dates two weeks early still lands here once its 8-K is joined.
     fetch_lo = (date.fromisoformat(start) - timedelta(days=LATER_FILING_DAYS)).isoformat()
     fetch_hi = (date.fromisoformat(end) + timedelta(days=EARLIER_FILING_DAYS)).isoformat()
-    per_vendor = _vendor_rows(router, fetch_lo, fetch_hi)
+    per_vendor = _vendor_rows(router, fetch_lo, fetch_hi, required=False)
     rows = combine(per_vendor)
     _capture_forecasts(router, per_vendor, rows, (fetch_lo, fetch_hi))
     listed = edgar._ticker_cik_map()
@@ -863,9 +956,25 @@ def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | No
             r.setdefault("volatility", None)
             r.setdefault("liquidity", None)
             r.setdefault("low_liquidity", None)
-    # Largest company first within a day; a company with no market value on
-    # the reader's vendors follows, most traded first.
-    rows.sort(key=lambda r: (r["report_date"], r.get("market_cap") is None, -(r.get("market_cap") or 0),
+    # EVIDENCE FIRST, THEN SIZE (2026-09-27, the owner: "order by
+    # correctness"). Market cap alone ordered a live week badly in three
+    # separate ways, all measured: McCormick's NON-VOTING class ($13.2B,
+    # $1.1M traded a day) outranked McCormick itself and sat above AEHR
+    # ($3.4B, $254M traded); Capitec took two of a day's top four slots as
+    # CKHGF and CKHGY with no measurable volume between them; and four
+    # closed-end bond funds outranked Progress Software and Hub Group.
+    #
+    # Ranking by what DATES the row puts that right without a special case
+    # for any of them: untraded second classes and fund shells are exactly
+    # the rows one vendor lists alone, so they sink on their own.
+    # Size still orders within a tier, which is the 2026-09-14 call kept
+    # where it works, and liquidity breaks its ties so a listing that does
+    # not trade cannot head a day.
+    for r in rows:
+        r["evidence"] = evidence_of(r)
+        r["vendor_count"] = vendor_count(r)
+    rows.sort(key=lambda r: (r["report_date"], evidence_rank(r),
+                             r.get("market_cap") is None, -(r.get("market_cap") or 0),
                              -(r.get("liquidity") or 0), r["symbol"]))
     return rows
 
@@ -917,8 +1026,17 @@ def week(start: Optional[str] = None) -> dict:
         d = sunday + timedelta(days=i)
         key = d.isoformat()
         days.append({"date": key, "weekday": d.strftime("%a"), "count": len(by_day.get(key, [])), "rows": by_day.get(key, [])})
+    # WHICH CALENDAR THE READER IS ACTUALLY LOOKING AT. With no calendar
+    # vendor the week is built from SEC filings alone: complete about what
+    # has happened, silent about what has not, because no filing announces a
+    # future date. Saying so is the whole reason this may answer 200 rather
+    # than a key prompt — an unexplained week that stops at today would read
+    # as "nothing is coming", which is worse than a 428.
+    calendars = list(get_prices()._order("earnings_calendar", "earnings_calendar") or [])
     built = {"start": sunday.isoformat(), "end": saturday.isoformat(), "today": now_et().date().isoformat(),
-             "days": days, "pending": pending}
+             "days": days, "pending": pending,
+             "calendar_vendors": calendars,
+             "forward_available": bool(calendars)}
     # A week still waiting on background lookups is NOT kept: it is asked
     # again every few seconds precisely so those fill in.
     if not any(pending.values()):
@@ -1048,3 +1166,178 @@ def report_row(symbol: str, report_date: str) -> dict | None:
     except NeedsKey:
         return None
     return None
+
+
+# ── THE RESULTS FEED: the Earnings tab, from SEC filings alone ──────────────
+# (2026-09-28, the owner's call after measuring the alternative.)
+#
+# The calendar the vendors build was measured twice on live data and failed
+# both ways. RECALL: of 61 companies that reported, the merged calendar
+# listed 45, and no single vendor managed more than 37. PRECISION: of 100
+# rows on days that had ALREADY PASSED, 33 produced no report at all — 14
+# were on the wrong day by eight or nine days (AAR Corp claimed the 21st,
+# reported the 29th) and 19 never happened. 28 of those 33 rested on one
+# vendor.
+#
+# A results filing is MANDATORY and EDGAR is keyless, so a feed built from
+# filings is COMPLETE and TRUE BY CONSTRUCTION: every row is a filing that
+# exists, and no company that reported can be missing. The phantom rows
+# cannot occur, because there is nothing to be wrong about.
+#
+# WHAT IT GIVES UP, deliberately: there are no upcoming rows. No filing
+# announces a date that has not happened, so a forward view could only be a
+# vendor's guess (39-51% right) or a projection from filing history (34%
+# exact, and impossible for the 43% of companies with no prior-year filing).
+# The owner chose neither. The Earnings tab answers "who reported, and what
+# did they file", and the forward question is answered by the screener
+# window and the rail, which still run on the vendor calendar.
+#
+# ORDERED BY THE CLOCK, newest first within a day. A feed is chronological:
+# that is the order the results actually came out in, it needs no vendor to
+# compute, and it cannot be gamed by an untraded second class the way market
+# cap was.
+def reported_between(start: str, end: str) -> list[dict]:
+    """Every company that released results in [start, end], from SEC filings.
+
+    One row per company per release day: a registrant filing under several
+    tickers (ORCL and its preferred ORCL-PD) takes the common one, and the
+    others are marked `listing` so the tab can hide them as it already does.
+    """
+    from alphadesk.config import symbol_meta
+    from alphadesk.ingest import edgar, edgar_releases
+    releases = edgar_releases.releases_by_symbol(start, end)
+    listed = edgar._ticker_cik_map() or {}
+    tickers_of_cik: dict[str, list[str]] = {}
+    for t, c in listed.items():
+        tickers_of_cik.setdefault(c, []).append(t)
+
+    # Group every filing by (registrant, release day) so one company that
+    # files under two tickers is one row, not two.
+    by_key: dict[tuple[str, str], list[dict]] = {}
+    for sym, filings in releases.items():
+        if sym not in listed:
+            continue                      # not an SEC-listed ticker we know
+        for f in filings:
+            day = release_day(f)
+            if not (start <= day <= end):
+                continue
+            by_key.setdefault((f.get("cik") or listed[sym], day), []).append({**f, "symbol": sym})
+
+    rows: list[dict] = []
+    for (cik, day), filings in by_key.items():
+        # The common listing first: no dash, then shortest, then alphabetical
+        # — the same rule the calendar uses to pick a company's main ticker.
+        filings.sort(key=lambda f: ("-" in f["symbol"], len(f["symbol"]), f["symbol"]))
+        f = filings[0]
+        sym = f["symbol"]
+        clock = release_clock(f)
+        rows.append({
+            "symbol": sym,
+            "company_name": f.get("company") or edgar.company_title(sym),
+            "report_date": day,
+            # The acceptance instant stands for the release only when the
+            # filing landed on the day it reports; days later it is the
+            # filing's clock, not the release's (release_clock).
+            "released_at": clock,
+            "released_on": day,
+            "filed_on": f["file_date"][:10],
+            "filed_at": f.get("accepted_at"),
+            "session": _session_of(clock) if clock else None,
+            "form": f.get("form"),
+            "accession": f.get("accession"),
+            # The exchange comes from the SEC's own ticker file (symbol_meta),
+            # keyless like the rest of this. Passing None here classified
+            # EVERY row as OTC: listing_kind reads an empty exchange as
+            # over-the-counter, which is right for a real blank and wrong for
+            # "I did not look".
+            "listing": listing_kind(sym, listed, tickers_of_cik,
+                                    (symbol_meta(sym) or {}).get("exchange")),
+            "sources": "edgar",
+            "evidence": EVIDENCE_REPORTED,
+            "vendor_count": 0,
+            # No vendor, so no consensus and no surprise. Stated as None
+            # rather than omitted, so the tab renders a dash and not a gap.
+            "eps_estimate": None, "eps_actual": None, "surprise_pct": None,
+            "estimate_count": None, "confirmed": True,
+        })
+    # SIZE AND LIQUIDITY STILL COME FROM THE READER'S VENDORS, and should.
+    # "No vendor data in the Earnings tab" meant the vendor CALENDAR — the
+    # forward dates and estimates that were measured wrong. A market cap from
+    # a quote vendor is a different thing entirely, it cannot invent a report
+    # that did not happen, and without it the table loses every sense of
+    # scale. Absent a vendor these stay None and the columns simply empty,
+    # which is the same degradation every other panel makes.
+    if rows:
+        try:
+            from alphadesk.ingest.movers import stats_from_bars
+            from alphadesk.providers import get_prices
+            router = get_prices()
+            syms = sorted({r["symbol"] for r in rows})
+            caps = router.get("market_caps", syms) or {}
+            bars = router.get("daily_history", syms, 21) or {}
+            for r in rows:
+                r["market_cap"] = caps.get(r["symbol"].upper())
+                b = bars.get(r["symbol"]) or []
+                st = (stats_from_bars([x["close"] for x in b], [x["volume"] for x in b])
+                      if b else {"volatility": None, "liquidity": None})
+                r["volatility"], r["liquidity"] = st["volatility"], st["liquidity"]
+                r["low_liquidity"] = (st["liquidity"] < LOW_LIQUIDITY_DOLLAR_VOL) if st["liquidity"] is not None else None
+        except Exception as exc:
+            # Enrichment, never the feed: a vendor refusing must not cost the
+            # reader the list of who reported.
+            log.debug("results feed: no size or liquidity (%s)", exc)
+            for r in rows:
+                r.setdefault("market_cap", None)
+                r.setdefault("volatility", None)
+                r.setdefault("liquidity", None)
+                r.setdefault("low_liquidity", None)
+    # Newest release first within a day; a filing with no clock sorts after
+    # the timed ones rather than jumping the queue on a null.
+    rows.sort(key=lambda r: (r["report_date"], r.get("released_at") is None,
+                             r.get("released_at") or "", r["symbol"]), reverse=False)
+    rows.sort(key=lambda r: r["report_date"])
+    return rows
+
+
+def _session_of(accepted_at: str) -> str | None:
+    """Which session an acceptance instant falls in, New York time."""
+    from alphadesk.config import ET
+    # NARROW ON PURPOSE. This began as `except Exception`, and when the module
+    # turned out not to import `datetime` at all the NameError was swallowed
+    # and EVERY row came back with no session — a coding error disguised as
+    # missing data. A malformed stamp is a ValueError; anything else is a bug
+    # and should say so.
+    try:
+        t = datetime.fromisoformat(accepted_at).astimezone(ET)
+    except (ValueError, TypeError):
+        return None
+    hm = t.hour * 60 + t.minute
+    return "BMO" if hm < 9 * 60 + 30 else "AMC" if hm >= 16 * 60 else "DAY"
+
+def reported_week(start: Optional[str] = None) -> dict:
+    """One Sunday-to-Saturday week of RESULTS — the Earnings tab's shape,
+    from SEC filings alone (2026-09-28, the owner's call).
+
+    Same payload as week() so the page needs no new shape, with two honest
+    differences: there are no rows after today, because no filing announces
+    a report that has not happened, and no estimates, because no filing
+    contains a consensus. `forward_available` is FALSE here always — not
+    because a vendor is missing, but because this tab no longer asks one.
+    """
+    from alphadesk.config import now_et
+    anchor = date.fromisoformat(start) if start else now_et().date()
+    sunday = anchor - timedelta(days=anchor.isoweekday() % 7)
+    saturday = sunday + timedelta(days=6)
+    rows = reported_between(sunday.isoformat(), saturday.isoformat())
+    by_day: dict[str, list[dict]] = {}
+    for r in rows:
+        by_day.setdefault(r["report_date"][:10], []).append(r)
+    days = []
+    for i in range(7):
+        d = sunday + timedelta(days=i)
+        key = d.isoformat()
+        days.append({"date": key, "weekday": d.strftime("%a"),
+                     "count": len(by_day.get(key, [])), "rows": by_day.get(key, [])})
+    return {"start": sunday.isoformat(), "end": saturday.isoformat(),
+            "today": now_et().date().isoformat(), "days": days, "pending": {},
+            "source": "edgar", "calendar_vendors": [], "forward_available": False}

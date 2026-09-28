@@ -200,7 +200,11 @@ function placeholderTitle(r: EarningsRow): string {
   return `${who} lists an actual of ${eps(r.placeholder_actual)}, exactly its estimate, and the company has filed nothing with the SEC for this report — treated as a placeholder, not a result`
 }
 
-function DayTable({ day, picked, pickedRow, onPick, found }: {
+function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
+  /** False on a RESULTS FEED, which carries no analyst consensus: the
+   * estimate columns are then dropped rather than rendered empty, the
+   * way currencies drop Liquidity. */
+  estimates?: boolean
   day: EarningsDay
   /** The symbol the finder is on: its row is marked and scrolled to. */
   found?: string | null
@@ -235,9 +239,11 @@ function DayTable({ day, picked, pickedRow, onPick, found }: {
                   columns that matter less at that width hide below lg. */}
               <th className="hidden border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground md:table-cell" />
               <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="When the company reports: BMO before the open, AMC after the close, or the release time once it is out. Green: released. Amber: the date is not confirmed by the company. Hover a row for how the time is known" aria-description="When the company reports: BMO before the open, AMC after the close, or the release time once it is out. Green: released. Amber: the date is not confirmed by the company. Hover a row for how the time is known">When</th>
+              {estimates && <>
               <th className="w-[70px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="The analyst consensus for earnings per share, adjusted for any split since it was quoted" aria-description="The analyst consensus for earnings per share, adjusted for any split since it was quoted">Est EPS</th>
               <th className="hidden w-[90px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell" data-tip="Earnings per share as reported, once released" aria-description="Earnings per share as reported, once released">Actual EPS</th>
               <th className="w-[76px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="How far reported earnings per share came in above or below the estimate, in percent" aria-description="How far reported earnings per share came in above or below the estimate, in percent">Surprise</th>
+              </>}
               <th className="w-[80px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                   data-tip="Market capitalisation today, from your company data vendor. Each day lists the largest companies first" aria-description="Market capitalisation today, from your company data vendor. Each day lists the largest companies first">Mkt cap</th>
               <th className="w-[74px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
@@ -328,6 +334,18 @@ function DayTable({ day, picked, pickedRow, onPick, found }: {
                     {r.date_from_edgar && (
                       <span className="ml-1 text-label text-muted-foreground" title={`Your calendar vendor listed ${r.vendor_date}; the results 8-K on EDGAR reports a release on ${r.report_date}`}>·EDGAR</span>
                     )}
+                    {/* THE WEAKEST TIER WAS THE ONLY UNMARKED ONE (2026-09-28).
+                        Measured on a live week: 103 of 185 rows rested on a
+                        SINGLE vendor, against a forward log where one vendor
+                        gets the date exactly right 39-51% of the time. Every
+                        other tier already carried a mark — ·EDGAR, ·PR — so
+                        the half of the page most worth doubting looked the
+                        most ordinary. Ordering by evidence is only half the
+                        job if the row does not say which tier it is in. */}
+                    {r.evidence === "one_vendor" && (
+                      <span className="ml-1 text-label text-muted-foreground/70"
+                            title={`Only ${r.sources || "one calendar"} lists this report, and nothing corroborates the date. On the forward log a single vendor is exactly right 39-51% of the time — treat the day as approximate until the company confirms it or a second calendar agrees.`}>·1</span>
+                    )}
                     {/* A results 8-K already landed, days before this report:
                         preliminary or restated figures, not this quarter, so
                         the date stands (Hub Group, 2026-09-15). */}
@@ -351,6 +369,7 @@ function DayTable({ day, picked, pickedRow, onPick, found }: {
                       title={whenTitle}>
                     {when}
                   </td>
+                  {estimates && <>
                   <td className="tnum border-b border-row-rule px-2 py-1.5 text-right"
                       title={r.split_note ? `Adjusted for the ${r.split_note}; your vendor quoted ${eps(r.eps_estimate_unadjusted)} on the old share count` : undefined}>
                     {eps(r.eps_estimate)}{r.split_note ? <span className="text-muted-foreground">†</span> : null}
@@ -376,6 +395,7 @@ function DayTable({ day, picked, pickedRow, onPick, found }: {
                       <span className="block text-label font-normal text-muted-foreground">{freshAge}</span>
                     )}
                   </td>
+                  </>}
                   <td className="tnum border-b border-row-rule px-2 py-1.5 text-right">
                     {money(r.market_cap)}
                   </td>
@@ -541,9 +561,34 @@ export function EarningsCalendar({ picked, pickedRow, onPick }: {
             </span>
           ) : null}
           {isPlaceholderData && start && <span className="mr-2 font-semibold text-accent-700">loading the week of {new Date(`${start}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}…</span>}
-          {total} {total === 1 ? "call" : "calls"} this week
-          {confirmedTotal < total && <> · {confirmedTotal} with a confirmed time</>}
+          {total} {week.source === "edgar" ? (total === 1 ? "report" : "reports") : (total === 1 ? "call" : "calls")} this week
+          {week.source !== "edgar" && confirmedTotal < total && <> · {confirmedTotal} with a confirmed time</>}
         </span>
+        {/* NO CALENDAR VENDOR: SAY SO, IN WORDS, WITHOUT A HOVER (2026-09-28).
+            The week is then built from SEC filings alone — complete about what
+            has reported, silent about what is coming, because no filing
+            announces a future date. A run of empty days ahead with nothing
+            explaining them reads as "nothing is due", which is the very thing
+            a key prompt exists to prevent; the server answers 200 here
+            precisely BECAUSE this line is on screen. Not a title attribute:
+            a reader cannot hover something they have no reason to point at. */}
+        {/* WHAT THIS PAGE IS, not what it lacks (2026-09-28). While the week
+            came from vendors, an empty run of future days meant a missing key
+            and the line offered to fix it. It no longer does: this tab asks
+            no vendor for dates, so inviting one would be a lie about what
+            pressing it would change. It says what the page is instead. */}
+        {week.source === "edgar" ? (
+          <span className="text-caption text-muted-foreground"
+                title="Every US filer that reported, from its own SEC filing — an 8-K, a 6-K, or a 10-K or 10-Q where the company files no separate announcement. Reports still to come are not here: no filing announces a date that has not happened.">
+            results as filed · reports only, no forecasts
+          </span>
+        ) : week.forward_available === false ? (
+          <a href="/account"
+             className="text-caption font-semibold text-accent-700 hover:underline"
+             title="FMP, Finnhub or Alpha Vantage carry upcoming report dates. SEC filings, which are free, only record reports that have already happened.">
+             past reports only — connect a calendar for upcoming ones
+          </a>
+        ) : null}
         {hiddenCount > 0 && (
           <button type="button" onClick={toggleAll}
                   title="Over-the-counter listings and a company's other tickers — warrants, preferred series, a second share class"
@@ -608,7 +653,8 @@ export function EarningsCalendar({ picked, pickedRow, onPick }: {
       {total === 0 ? (
         <Empty>nothing reports this week</Empty>
       ) : (
-        shown.map(d => <DayTable key={d.date} day={d} picked={picked} pickedRow={pickedRow} onPick={onPick} found={findSym} />)
+        shown.map(d => <DayTable key={d.date} day={d} picked={picked} pickedRow={pickedRow} onPick={onPick} found={findSym}
+                                  estimates={week.source !== "edgar"} />)
       )}
       </div>
     </div>

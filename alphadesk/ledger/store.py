@@ -104,6 +104,24 @@ CREATE TABLE IF NOT EXISTS press_release_checks (
     PRIMARY KEY (owner, symbol)
 );
 
+-- WHICH FILINGS HAVE ALREADY BEEN OPENED (2026-09-28). A results release
+-- whose only evidence is its exhibit has to be read to be recognised, and a
+-- single day carries about ninety 6-Ks. Without remembering which accessions
+-- were examined the sweep would re-read all of them every fifteen minutes,
+-- for ever. NO OWNER COLUMN: a filing is identical for every reader, like
+-- annual_report_sections. Not pruned — EDGAR data is public.
+-- KEYED BY THE DOCUMENT, NOT JUST THE FILING: two sweeps read different
+-- exhibits of the same 6-K (99.1 is ZJK's financial statements, 99.3 its
+-- press release), and sharing one key let one path's verdict silence the
+-- other's read for ever.
+CREATE TABLE IF NOT EXISTS exhibit_checks (
+    accession  TEXT NOT NULL,
+    document   TEXT NOT NULL DEFAULT '',
+    checked_at TEXT NOT NULL,
+    is_results INTEGER,
+    PRIMARY KEY (accession, document)
+);
+
 CREATE TABLE IF NOT EXISTS earnings_forecasts (
     owner       TEXT NOT NULL,
     vendor      TEXT NOT NULL,
@@ -581,7 +599,11 @@ def init() -> None:
         "ALTER TABLE news_articles ADD COLUMN feeds TEXT",
         "ALTER TABLE earnings_releases ADD COLUMN event_date TEXT",  # the release day an 8-K reports
         "ALTER TABLE earnings_releases ADD COLUMN accepted_source TEXT",  # 'index' once read from the filing index          # which reader feeds delivered it
-        "ALTER TABLE earnings_releases ADD COLUMN form TEXT",  # 8-K, or 6-K for a foreign private issuer
+        "ALTER TABLE earnings_releases ADD COLUMN form TEXT",
+        # WHEN WE FIRST SAW IT, beside EDGAR's own acceptance stamp: the two
+        # together are the only measure of how fast this terminal learns that
+        # a company has reported (2026-09-28). Written on INSERT only.
+        "ALTER TABLE earnings_releases ADD COLUMN first_seen_at TEXT",
         "ALTER TABLE fund_name_verdicts ADD COLUMN vec TEXT",  # the name's numbers, kept for the reference points
     ):
         try:
@@ -1590,20 +1612,47 @@ def delete_chart_state(user_id: str, key: str) -> bool:
     return cur.rowcount > 0
 
 
+def exhibit_checked(accessions: list[str], document: str = "") -> set[str]:
+    """Of these filings, the ones whose `document` has already been read."""
+    if not accessions:
+        return set()
+    with _lock, _connect() as conn:
+        rows = conn.execute(
+            "SELECT accession FROM exhibit_checks WHERE document = ? AND accession IN (%s)"
+            % ",".join("?" * len(accessions)), (document, *accessions)).fetchall()
+    return {r[0] for r in rows}
+
+
+def mark_exhibit_checked(accession: str, is_results: bool, document: str = "") -> None:
+    """Record that this filing was opened, and what it turned out to be, so
+    it is never fetched again."""
+    with _lock, _connect() as conn:
+        conn.execute(
+            "INSERT INTO exhibit_checks (accession, document, checked_at, is_results) VALUES (?,?,?,?)"
+            " ON CONFLICT (accession, document) DO UPDATE SET checked_at=excluded.checked_at,"
+            " is_results=excluded.is_results",
+            (accession, document, datetime.now(timezone.utc).isoformat(timespec="seconds"),
+             1 if is_results else 0))
+
+
 def upsert_release(symbol: str, accession: str, cik: str | None, file_date: str,
                    accepted_at: str | None, company: str | None, event_date: str | None = None,
                    accepted_source: str | None = None, form: str | None = None) -> None:
     with _lock, _connect() as conn:
         conn.execute(
-            "INSERT INTO earnings_releases (symbol, accession, cik, file_date, accepted_at, company, event_date, accepted_source, form)"
-            " VALUES (?,?,?,?,?,?,?,?,?)"
+            "INSERT INTO earnings_releases (symbol, accession, cik, file_date, accepted_at, company, event_date, accepted_source, form, first_seen_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)"
+            # first_seen_at is DELIBERATELY absent from the update clause below:
+            # it records the FIRST sighting, and re-stamping it on every sweep
+            # would measure the last refresh instead of the detection lag.
             " ON CONFLICT (symbol, accession) DO UPDATE SET"
             " accepted_at=COALESCE(excluded.accepted_at, earnings_releases.accepted_at),"
             " company=COALESCE(excluded.company, earnings_releases.company),"
             " event_date=COALESCE(excluded.event_date, earnings_releases.event_date),"
             " accepted_source=COALESCE(excluded.accepted_source, earnings_releases.accepted_source),"
             " form=COALESCE(excluded.form, earnings_releases.form)",
-            (symbol.upper(), accession, cik, file_date, accepted_at, company, event_date, accepted_source, form))
+            (symbol.upper(), accession, cik, file_date, accepted_at, company, event_date, accepted_source, form,
+             datetime.now(timezone.utc).isoformat(timespec="seconds")))
 
 
 def save_announcements(owner: str, rows: list[dict]) -> int:
