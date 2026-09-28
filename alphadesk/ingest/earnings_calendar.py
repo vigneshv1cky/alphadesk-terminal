@@ -1260,6 +1260,37 @@ def reported_between(start: str, end: str) -> list[dict]:
             "eps_estimate": None, "eps_actual": None, "surprise_pct": None,
             "estimate_count": None, "confirmed": True,
         })
+    # SIZE AND LIQUIDITY STILL COME FROM THE READER'S VENDORS, and should.
+    # "No vendor data in the Earnings tab" meant the vendor CALENDAR — the
+    # forward dates and estimates that were measured wrong. A market cap from
+    # a quote vendor is a different thing entirely, it cannot invent a report
+    # that did not happen, and without it the table loses every sense of
+    # scale. Absent a vendor these stay None and the columns simply empty,
+    # which is the same degradation every other panel makes.
+    if rows:
+        try:
+            from alphadesk.ingest.movers import stats_from_bars
+            from alphadesk.providers import get_prices
+            router = get_prices()
+            syms = sorted({r["symbol"] for r in rows})
+            caps = router.get("market_caps", syms) or {}
+            bars = router.get("daily_history", syms, 21) or {}
+            for r in rows:
+                r["market_cap"] = caps.get(r["symbol"].upper())
+                b = bars.get(r["symbol"]) or []
+                st = (stats_from_bars([x["close"] for x in b], [x["volume"] for x in b])
+                      if b else {"volatility": None, "liquidity": None})
+                r["volatility"], r["liquidity"] = st["volatility"], st["liquidity"]
+                r["low_liquidity"] = (st["liquidity"] < LOW_LIQUIDITY_DOLLAR_VOL) if st["liquidity"] is not None else None
+        except Exception as exc:
+            # Enrichment, never the feed: a vendor refusing must not cost the
+            # reader the list of who reported.
+            log.debug("results feed: no size or liquidity (%s)", exc)
+            for r in rows:
+                r.setdefault("market_cap", None)
+                r.setdefault("volatility", None)
+                r.setdefault("liquidity", None)
+                r.setdefault("low_liquidity", None)
     # Newest release first within a day; a filing with no clock sorts after
     # the timed ones rather than jumping the queue on a null.
     rows.sort(key=lambda r: (r["report_date"], r.get("released_at") is None,
@@ -1282,3 +1313,31 @@ def _session_of(accepted_at: str) -> str | None:
         return None
     hm = t.hour * 60 + t.minute
     return "BMO" if hm < 9 * 60 + 30 else "AMC" if hm >= 16 * 60 else "DAY"
+
+def reported_week(start: Optional[str] = None) -> dict:
+    """One Sunday-to-Saturday week of RESULTS — the Earnings tab's shape,
+    from SEC filings alone (2026-09-28, the owner's call).
+
+    Same payload as week() so the page needs no new shape, with two honest
+    differences: there are no rows after today, because no filing announces
+    a report that has not happened, and no estimates, because no filing
+    contains a consensus. `forward_available` is FALSE here always — not
+    because a vendor is missing, but because this tab no longer asks one.
+    """
+    from alphadesk.config import now_et
+    anchor = date.fromisoformat(start) if start else now_et().date()
+    sunday = anchor - timedelta(days=anchor.isoweekday() % 7)
+    saturday = sunday + timedelta(days=6)
+    rows = reported_between(sunday.isoformat(), saturday.isoformat())
+    by_day: dict[str, list[dict]] = {}
+    for r in rows:
+        by_day.setdefault(r["report_date"][:10], []).append(r)
+    days = []
+    for i in range(7):
+        d = sunday + timedelta(days=i)
+        key = d.isoformat()
+        days.append({"date": key, "weekday": d.strftime("%a"),
+                     "count": len(by_day.get(key, [])), "rows": by_day.get(key, [])})
+    return {"start": sunday.isoformat(), "end": saturday.isoformat(),
+            "today": now_et().date().isoformat(), "days": days, "pending": {},
+            "source": "edgar", "calendar_vendors": [], "forward_available": False}

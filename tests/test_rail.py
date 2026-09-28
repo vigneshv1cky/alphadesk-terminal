@@ -1,4 +1,9 @@
-"""The rail's counts brought the live service down on 2026-09-21.
+"""The rail badge counts the RESULTS FEED since 2026-09-28, not the vendor
+calendar: the Earnings tab became a feed of what has filed, and a badge that
+counted something else would send a reader to a page disagreeing with the
+number that sent them. These stubs follow it.
+
+The rail's counts brought the live service down on 2026-09-21.
 
 Its cache is only written when the rebuild FINISHES, so while one was in
 flight every other rail request missed and started its own. Adding three
@@ -35,7 +40,7 @@ def test_one_rebuild_serves_every_caller(client, monkeypatch):
     from alphadesk.ingest import earnings_calendar
     _reset(dashboard)
     started: list = []
-    monkeypatch.setattr(earnings_calendar, "week", _slow_week(started, 0.6))
+    monkeypatch.setattr(earnings_calendar, "reported_week", _slow_week(started, 0.6))
     with ThreadPoolExecutor(max_workers=5) as pool:
         codes = [f.result().status_code
                  for f in [pool.submit(client.get, "/api/rail") for _ in range(5)]]
@@ -50,7 +55,7 @@ def test_a_rebuild_that_will_not_finish_does_not_hold_the_request(client, monkey
     from alphadesk.ingest import earnings_calendar
     _reset(dashboard)
     monkeypatch.setattr(dashboard, "RAIL_BUILD_S", 0.4)
-    monkeypatch.setattr(earnings_calendar, "week", _slow_week([], 1.5))
+    monkeypatch.setattr(earnings_calendar, "reported_week", _slow_week([], 1.5))
     began = time.time()
     r = client.get("/api/rail")
     took = time.time() - began
@@ -63,7 +68,7 @@ def test_the_counts_are_cached_between_callers(client, monkeypatch):
     from alphadesk.ingest import earnings_calendar
     _reset(dashboard)
     started: list = []
-    monkeypatch.setattr(earnings_calendar, "week", _slow_week(started, 0))
+    monkeypatch.setattr(earnings_calendar, "reported_week", _slow_week(started, 0))
     assert client.get("/api/rail").json()["earnings_calls"] == 3
     assert client.get("/api/rail").json()["earnings_calls"] == 3
     assert len(started) == 1, "the second caller rebuilt instead of reading the cache"
@@ -81,7 +86,7 @@ def test_the_rebuild_never_runs_on_a_request_thread(client, monkeypatch):
         where.append(threading.current_thread().name)
         return {"days": []}
 
-    monkeypatch.setattr(earnings_calendar, "week", week)
+    monkeypatch.setattr(earnings_calendar, "reported_week", week)
     client.get("/api/rail")
     assert where and where[0].startswith("rail-counts"), where
 
@@ -121,7 +126,7 @@ def test_a_vendor_failure_costs_a_badge_and_not_the_page(client, monkeypatch):
         raise RuntimeError("the vendor is having an afternoon")
 
     monkeypatch.setattr(screener, "inventory", boom)
-    monkeypatch.setattr(earnings_calendar, "week", boom)
+    monkeypatch.setattr(earnings_calendar, "reported_week", boom)
     r = client.get("/api/rail")
     assert r.status_code == 200
     assert r.json()["earnings_calls"] is None

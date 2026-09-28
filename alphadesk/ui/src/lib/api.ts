@@ -288,6 +288,10 @@ export interface EarningsWeek {
   /** Lookups still running in the background for a busy week: companies whose
    * usual report time, and whose press releases, are not in yet. */
   pending?: { timing?: number; announcements?: number }
+  /** "edgar" when the week is a RESULTS FEED built from SEC filings alone:
+   * complete about what reported, silent about what is coming, and carrying
+   * no analyst estimates because no filing contains one. */
+  source?: "edgar"
   /** The reader's connected calendar vendors. Empty means this week was built
    * from SEC filings alone — see below. */
   calendar_vendors?: string[]
