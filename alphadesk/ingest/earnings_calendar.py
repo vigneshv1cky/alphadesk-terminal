@@ -1236,7 +1236,14 @@ def reported_between(start: str, end: str) -> list[dict]:
         # hours and processed later — so the cell read "6:20 PM" for a clock
         # belonging to a different day. A stamp from another day dates
         # nothing here and is dropped; the row then shows its filing day.
-        if clock and _et_day(clock) != day:
+        # AND SAY SO RATHER THAN SHOWING NOTHING. Westin Acquisition's 10-Q
+        # is dated the 28th and was accepted at 19:16 on the 25th, filed
+        # after hours and processed later. Dropping the clock is right — it
+        # dates nothing on the 28th — but a bare dash tells the reader less
+        # than the truth does, so the day it WAS accepted travels with the
+        # row and the cell prints it.
+        accepted_day = _et_day(clock) if clock else None
+        if clock and accepted_day != day:
             clock = None
         rows.append({
             "symbol": sym,
@@ -1250,6 +1257,7 @@ def reported_between(start: str, end: str) -> list[dict]:
             "filed_on": f["file_date"][:10],
             "filed_at": f.get("accepted_at"),
             "session": _session_of(clock) if clock else None,
+            "accepted_day": accepted_day if accepted_day != day else None,
             "form": f.get("form"),
             "accession": f.get("accession"),
             # The exchange comes from the SEC's own ticker file (symbol_meta),

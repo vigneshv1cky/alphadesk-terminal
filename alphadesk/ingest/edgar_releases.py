@@ -389,6 +389,23 @@ def fill_times(since: str) -> int:
         for r in rows:
             f = filings.get(r["accession"])
             if not f:
+                # THE SUBMISSIONS RECORD DOES NOT ALWAYS HAVE IT YET
+                # (2026-09-28). Westin Acquisition's 10-Q was found by the
+                # full-text search the moment it appeared, while the filer's
+                # submissions record still ended at May — so the clock could
+                # never be filled and the tab showed a dash for ever, not for
+                # a cycle. The filing's OWN index header carries the
+                # acceptance instant and does not depend on that record.
+                try:
+                    clock = edgar.accepted_at_from_index(r.get("cik"), r["accession"])
+                except Exception as exc:
+                    log.debug("index header unreadable for %s: %s", r["accession"], exc)
+                    continue
+                if clock:
+                    store.upsert_release(r["symbol"], r["accession"], r.get("cik"), r["file_date"],
+                                         clock, None, None, accepted_source="index",
+                                         form=(r.get("form") or "8-K"))
+                    filled += 1
                 continue
             text = None
             rd = (f.get("report_date") or "")[:10]
