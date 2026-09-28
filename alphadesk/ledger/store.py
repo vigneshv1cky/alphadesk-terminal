@@ -581,7 +581,11 @@ def init() -> None:
         "ALTER TABLE news_articles ADD COLUMN feeds TEXT",
         "ALTER TABLE earnings_releases ADD COLUMN event_date TEXT",  # the release day an 8-K reports
         "ALTER TABLE earnings_releases ADD COLUMN accepted_source TEXT",  # 'index' once read from the filing index          # which reader feeds delivered it
-        "ALTER TABLE earnings_releases ADD COLUMN form TEXT",  # 8-K, or 6-K for a foreign private issuer
+        "ALTER TABLE earnings_releases ADD COLUMN form TEXT",
+        # WHEN WE FIRST SAW IT, beside EDGAR's own acceptance stamp: the two
+        # together are the only measure of how fast this terminal learns that
+        # a company has reported (2026-09-28). Written on INSERT only.
+        "ALTER TABLE earnings_releases ADD COLUMN first_seen_at TEXT",
         "ALTER TABLE fund_name_verdicts ADD COLUMN vec TEXT",  # the name's numbers, kept for the reference points
     ):
         try:
@@ -1595,15 +1599,19 @@ def upsert_release(symbol: str, accession: str, cik: str | None, file_date: str,
                    accepted_source: str | None = None, form: str | None = None) -> None:
     with _lock, _connect() as conn:
         conn.execute(
-            "INSERT INTO earnings_releases (symbol, accession, cik, file_date, accepted_at, company, event_date, accepted_source, form)"
-            " VALUES (?,?,?,?,?,?,?,?,?)"
+            "INSERT INTO earnings_releases (symbol, accession, cik, file_date, accepted_at, company, event_date, accepted_source, form, first_seen_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)"
+            # first_seen_at is DELIBERATELY absent from the update clause below:
+            # it records the FIRST sighting, and re-stamping it on every sweep
+            # would measure the last refresh instead of the detection lag.
             " ON CONFLICT (symbol, accession) DO UPDATE SET"
             " accepted_at=COALESCE(excluded.accepted_at, earnings_releases.accepted_at),"
             " company=COALESCE(excluded.company, earnings_releases.company),"
             " event_date=COALESCE(excluded.event_date, earnings_releases.event_date),"
             " accepted_source=COALESCE(excluded.accepted_source, earnings_releases.accepted_source),"
             " form=COALESCE(excluded.form, earnings_releases.form)",
-            (symbol.upper(), accession, cik, file_date, accepted_at, company, event_date, accepted_source, form))
+            (symbol.upper(), accession, cik, file_date, accepted_at, company, event_date, accepted_source, form,
+             datetime.now(timezone.utc).isoformat(timespec="seconds")))
 
 
 def save_announcements(owner: str, rows: list[dict]) -> int:

@@ -133,9 +133,17 @@ def test_rows_between_names_joins_and_orders_by_liquidity(vendors, monkeypatch):
     monkeypatch.setattr(edgar, "_ticker_cik_map", lambda: {"ADBE": "0000796343", "TINY": "0000000001", "REF": "0000000002"})
     monkeypatch.setattr(uc, "quarter_release", lambda sym, d: True)
     rows = uc.rows_between("2026-09-10", "2026-09-10")
-    assert [r["symbol"] for r in rows] == ["ADBE", "TINY", "REF"]     # NOTSEC is not an SEC filer; most traded first, REF has no bars
-    assert rows[2]["edgar_only"] is True and rows[2]["session"] == "AMC" and rows[2]["confirmed"] is True
-    adbe, tiny, _ = rows
+    # EVIDENCE ORDERS THE DAY (2026-09-27, the owner: "order by correctness").
+    # ADBE and REF both have their results filing in, so both outrank TINY,
+    # which is one vendor's unconfirmed projection — REF ahead of it even
+    # though no vendor listed REF at all and it has no bars to measure. Size
+    # then liquidity still order WITHIN the filed tier, which puts ADBE first.
+    # NOTSEC is dropped throughout: it is not an SEC filer.
+    assert [r["symbol"] for r in rows] == ["ADBE", "REF", "TINY"]
+    assert [r["evidence"] for r in rows] == ["filed", "filed", "one_vendor"]
+    ref = rows[1]
+    assert ref["edgar_only"] is True and ref["session"] == "AMC" and ref["confirmed"] is True
+    adbe, _, tiny = rows
     assert adbe["company_name"] == "Adobe Inc." and adbe["surprise_pct"] == 6.0 and adbe["released_at"].startswith("2026-09-10T16:06")
     assert adbe["liquidity"] > 1e9 and adbe["low_liquidity"] is False and adbe["volatility"] is not None
     assert tiny["low_liquidity"] is True and tiny["released_at"] is None

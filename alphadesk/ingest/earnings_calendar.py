@@ -757,6 +757,53 @@ def _mark_listings(rows: list[dict], listed: dict[str, str]) -> None:
         r["listing"] = listing_kind(r["symbol"], listed or {}, tickers_of_cik, meta.get("exchange"))
 
 
+# ── What actually dates a row (2026-09-27, the owner: "order by correctness") ──
+# MEASURED on a live week before this was written: of 185 rows, 92 rested on a
+# SINGLE vendor, 43 on two, 11 on three or more, 13 on the company's own
+# announcement. Against that, the forward accuracy log says one vendor gets the
+# date exactly right 39-51% of the time and the union 52%. So half the calendar
+# was a coin flip and nothing on screen said so.
+#
+# ONE VENDOR'S "CONFIRMED" IS A CLAIM, TWO VENDORS AGREEING IS CORROBORATION.
+# The measurement exposed this: AMTD Digital, Tudor Gold and Scottie Resources
+# all arrived marked confirmed from FMP ALONE, and under a naive ordering that
+# outranked two independent calendars agreeing on a date. It does not any more.
+EVIDENCE_FILED = "filed"            # the results filing is in; it happened
+EVIDENCE_ANNOUNCED = "announced"    # the company's own press release named the day
+EVIDENCE_CORROBORATED = "vendors"   # two or more calendars agree
+EVIDENCE_SINGLE = "one_vendor"      # one calendar said so, and nothing checked it
+
+#: Strongest first. The ORDER of this tuple is the ranking.
+EVIDENCE_ORDER = (EVIDENCE_FILED, EVIDENCE_ANNOUNCED, EVIDENCE_CORROBORATED, EVIDENCE_SINGLE)
+
+
+def vendor_count(row: dict) -> int:
+    """How many calendars listed this report. `sources` is comma-joined."""
+    return len({s.strip() for s in (row.get("sources") or "").split(",") if s.strip()})
+
+
+def evidence_of(row: dict) -> str:
+    """What dates this row, as one of EVIDENCE_ORDER.
+
+    A row the SEC already has is not a forecast at all, so it ranks first
+    whatever any calendar said. Then the company's own word, which is the
+    only source that cannot be wrong about its own plans. Then agreement
+    between independent calendars. Then a single vendor, alone.
+    """
+    if row.get("released_on") or row.get("released_at") or row.get("date_from_edgar") or row.get("edgar_only"):
+        return EVIDENCE_FILED
+    if row.get("announcement"):
+        return EVIDENCE_ANNOUNCED
+    return EVIDENCE_CORROBORATED if vendor_count(row) >= 2 else EVIDENCE_SINGLE
+
+
+def evidence_rank(row: dict) -> int:
+    try:
+        return EVIDENCE_ORDER.index(evidence_of(row))
+    except ValueError:            # pragma: no cover - evidence_of is closed
+        return len(EVIDENCE_ORDER)
+
+
 def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | None = None) -> list[dict]:
     """Every report the user's vendors list in [start, end]. Raises NeedsKey
     when no connected vendor carries an earnings calendar. Lookups too many to
@@ -863,9 +910,25 @@ def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | No
             r.setdefault("volatility", None)
             r.setdefault("liquidity", None)
             r.setdefault("low_liquidity", None)
-    # Largest company first within a day; a company with no market value on
-    # the reader's vendors follows, most traded first.
-    rows.sort(key=lambda r: (r["report_date"], r.get("market_cap") is None, -(r.get("market_cap") or 0),
+    # EVIDENCE FIRST, THEN SIZE (2026-09-27, the owner: "order by
+    # correctness"). Market cap alone ordered a live week badly in three
+    # separate ways, all measured: McCormick's NON-VOTING class ($13.2B,
+    # $1.1M traded a day) outranked McCormick itself and sat above AEHR
+    # ($3.4B, $254M traded); Capitec took two of a day's top four slots as
+    # CKHGF and CKHGY with no measurable volume between them; and four
+    # closed-end bond funds outranked Progress Software and Hub Group.
+    #
+    # Ranking by what DATES the row puts that right without a special case
+    # for any of them: untraded second classes and fund shells are exactly
+    # the rows one vendor lists alone, so they sink on their own.
+    # Size still orders within a tier, which is the 2026-09-14 call kept
+    # where it works, and liquidity breaks its ties so a listing that does
+    # not trade cannot head a day.
+    for r in rows:
+        r["evidence"] = evidence_of(r)
+        r["vendor_count"] = vendor_count(r)
+    rows.sort(key=lambda r: (r["report_date"], evidence_rank(r),
+                             r.get("market_cap") is None, -(r.get("market_cap") or 0),
                              -(r.get("liquidity") or 0), r["symbol"]))
     return rows
 
