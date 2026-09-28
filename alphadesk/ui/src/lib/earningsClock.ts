@@ -138,12 +138,18 @@ export function reportedLabel(r: WhenRow): string {
   if (clockAt) return etClock(clockAt, r.report_date)
   if (r.session === "BMO") return "pre-mkt"
   if (r.session === "AMC") return "after"
-  // No clock: an 8-K may be filed up to four business days AFTER the release
-  // it reports, and there the filing's own time dates nothing. The filing day
-  // is shown instead. (A filing accepted BEFORE its administrative date is a
-  // different case and never reaches here: the row moves to the day it was
-  // accepted, so its clock is same-day.)
-  return r.filed_on && r.filed_on !== r.report_date ? `filed ${r.filed_on.slice(5)}` : "—"
+  // NO TIME EXISTS FOR THIS ROW, and it must not borrow one (2026-09-28, the
+  // owner: "I want accurate data of when it came public"). An 8-K may be
+  // filed up to four business days after the release it reports, and 25 of a
+  // fortnight's 169 rows were: the company's own words date the DAY and
+  // nothing dates the hour. The news feed could time 1 of 17 of them, because
+  // they are the small and foreign filers the wires do not cover.
+  //
+  // This used to print the FILING day, which is one to six days after the
+  // release and sits beside a row already dated correctly — a second date
+  // answering a question nobody asked. The day is right; the hour is unknown
+  // and says so.
+  return "day only"
 }
 
 export function whenLabel(r: WhenRow, todayEt: string = todayInEt()): string {
