@@ -5,7 +5,7 @@ import { ComposedBoard } from "@/components/ComposedBoard"
 import { EarningsCalendar } from "@/components/EarningsCalendar"
 import type { EarningsRow } from "@/lib/api"
 import {
-  EarningsHistoryPanel, EarningsInsightsPanel, EpsPanel, RevenueEarningsPanel,
+  EarningsHistoryPanel, EpsPanel, RevenueEarningsPanel,
 } from "@/components/EarningsPanels"
 import { EarningsTranscriptPanel } from "@/components/EarningsTranscript"
 import { Widget } from "@/components/terminal"
@@ -122,10 +122,12 @@ export default function EarningsPage() {
           id: "eps", label: "EPS",
           node: symbol ? <EpsPanel symbol={symbol} /> : needPick("EPS"),
         },
-        {
-          id: "consensus", label: "Consensus estimates",
-          node: symbol ? <EarningsInsightsPanel symbol={symbol} /> : needPick("Consensus Estimates"),
-        },
+        // CONSENSUS ESTIMATES IS NOT HERE ANY MORE (2026-09-28, the owner:
+        // keep only the facts). It is a forecast of something that has not
+        // happened, so it has no factual form at all — and the estimates
+        // behind it were measured against a licensed consensus and agreed on
+        // about half the rows. It was not deleted: it lives on the Analysis
+        // page, which is where a forecast belongs. Don't add it back here.
         {
           id: "history", label: "Earnings history",
           node: symbol ? <EarningsHistoryPanel symbol={symbol} span={6} /> : needPick("Earnings history"),

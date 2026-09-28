@@ -1,10 +1,8 @@
 import { useMemo, useState } from "react"
 import type { MetricPeriod } from "@/lib/api"
 import { QueryFailure } from "@/components/KeyPrompt"
-import { fiscalYearEndMonth, lastQuarters, periodLabel as fiscalPeriodLabel, reportedQuarterLabel } from "@/lib/fiscal"
-import {
-  useEarningsContext, useEarningsHistory, useEarningsInsights, useFundamentals, useQuote,
-} from "@/lib/queries"
+import { fiscalYearEndMonth, periodLabel as fiscalPeriodLabel } from "@/lib/fiscal"
+import { useEarningsInsights, useFundamentals, useQuote } from "@/lib/queries"
 import { Empty, Table, TD, TH, THead, TR, Widget, btnCls } from "@/components/terminal"
 
 /** The three company-scoped panels under the earnings calendar.
@@ -201,78 +199,79 @@ export function RevenueEarningsPanel({ symbol }: { symbol: string }) {
   )
 }
 
-/* ── Earnings per share — hollow ring estimate, filled dot actual ───────── */
+/* ── Earnings per share — as FILED, no estimate line ────────────────────── */
 
+const eps = (v: number | null) => (v == null ? "—" : v.toFixed(2))
+
+/** DILUTED EPS THE COMPANY FILED, quarter by quarter (2026-09-28, the owner:
+ * "removing all forecast or claims data from earnings tab and keeping only the
+ * facts").
+ *
+ * This used to draw a hollow ring for the analyst estimate against a filled
+ * dot for the actual, with a Beat/Missed verdict under it — three vendor
+ * claims and a judgment built on them. The estimates were measured against a
+ * licensed consensus and agreed on about half the rows. What replaced them is
+ * the company's own diluted EPS out of SEC XBRL, which needs no key.
+ *
+ * THE COST IS COVERAGE, and it is real: XBRL is US-GAAP, so a foreign private
+ * issuer filing under IFRS has none. Measured on thirteen companies that had
+ * just reported, three were in that position. They get an empty panel that
+ * says so, rather than a vendor's claim dressed as a filing.
+ */
 export function EpsPanel({ symbol }: { symbol: string }) {
-  const { data, isPending } = useEarningsContext(symbol)
+  const { data, isPending } = useFundamentals(symbol, "quarterly")
   const { data: quote } = useQuote(symbol)
-  // The next report's date comes from the earnings record's upcoming row;
-  // the quote's own earnings stamp lags and names the LAST report for weeks.
-  const { data: history } = useEarningsHistory(symbol)
-  const nextDate = history?.reports?.find(r => r.upcoming)?.date ?? quote?.earnings_date ?? null
   const fyEnd = fiscalYearEndMonth(quote?.fiscal_year_end)
   const [hover, setHover] = useState<number | null>(null)
 
   const points = useMemo(() => {
-    // The last four reported quarters, oldest first: the chart reads left to
-    // right into the present. Each point is labelled for the fiscal quarter
-    // it covers when the fiscal year end is known, else by its report date.
-    const hist = lastQuarters(data?.report_history ?? [])
-    const out = hist.map(h => ({
-      ...h, upcoming: false as boolean,
-      // A row dated by its quarter end is labelled by that period; a row
-      // dated by its report day, by the quarter that closed before it.
-      label: (h.period_end ? fiscalPeriodLabel(h.period_end, "quarterly", fyEnd) : reportedQuarterLabel(h.date, fyEnd)) ?? h.date.slice(5),
+    const series = data?.series?.diluted_eps ?? []
+    return series.slice(-8).map(p => ({
+      t: p.t, v: p.v,
+      label: fiscalPeriodLabel(p.t, "quarterly", fyEnd) ?? p.t.slice(5),
     }))
-    if (data?.next_q_eps_estimate != null) {
-      const next = nextDate
-      out.push({
-        date: next ?? "next", label: (next && reportedQuarterLabel(next, fyEnd)) ?? "Next",
-        eps_estimate: data.next_q_eps_estimate, eps_actual: null,
-        surprise_pct: null, upcoming: true,
-      })
-    }
-    return out
-  }, [data, fyEnd, nextDate])
+  }, [data, fyEnd])
 
   const body = () => {
     if (isPending) return <Empty>loading…</Empty>
-    if (!points.length) return <Empty>no reported quarters for {symbol}</Empty>
-
-    const vals = points.flatMap(p => [p.eps_estimate, p.eps_actual]).filter((v): v is number => v != null)
+    if (!points.length) {
+      return <Empty>SEC EDGAR holds no filed earnings per share for {symbol}. That is usual for a
+        foreign private issuer, which reports under IFRS and tags its filings differently.</Empty>
+    }
+    const vals = points.map(p => p.v)
+    const hi = Math.max(...vals, 0)
     const lo = Math.min(...vals, 0)
-    const hi = Math.max(...vals)
     const span = hi - lo || 1
     const y = (v: number) => PLOT_B - ((v - lo) / span) * (PLOT_B - PLOT_T)
     const step = (PLOT_R + 32 - PLOT_L) / points.length
+    const path = points.map((p, i) => `${i ? "L" : "M"}${PLOT_L + step * (i + 0.5)},${y(p.v)}`).join(" ")
 
     return (
       <div className="px-3 pb-2 pt-1">
         <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="block w-full" role="img"
-             aria-label="EPS estimate against actual, by quarter">
+             aria-label="Diluted earnings per share by quarter, as filed with the SEC">
           {[0.25, 0.5, 0.75].map(f => {
             const gy = PLOT_T + (PLOT_B - PLOT_T) * f
             return <line key={f} x1={PLOT_L} x2={PLOT_R + 32} y1={gy} y2={gy}
                          className="stroke-grid-line" strokeDasharray="3 3" strokeWidth="1" />
           })}
+          {/* Read off the scale, so the labels are spaced whatever the data
+              does — the fault that put two of them 3.9px apart next door. */}
           {[hi, (hi + lo) / 2, lo].map((v, i) => (
             <text key={i} x={PLOT_L - 6} y={y(v) + 3} textAnchor="end"
                   className="fill-n600" fontSize="9.5">{v.toFixed(2)}</text>
           ))}
+          {/* The zero line is solid: profit and loss is the one division here
+              that is a fact about the number rather than a reading of it. */}
+          {lo < 0 && <line x1={PLOT_L} x2={PLOT_R + 32} y1={y(0)} y2={y(0)}
+                           className="stroke-n400" strokeWidth="1" />}
+          <path d={path} fill="none" className="stroke-foreground" strokeWidth="1.4" />
           {points.map((p, i) => {
             const cx = PLOT_L + step * (i + 0.5)
-            const beat = p.eps_actual != null && p.eps_estimate != null && p.eps_actual >= p.eps_estimate
             const dim = hover != null && hover !== i
             return (
-              <g key={p.date} opacity={dim ? 0.45 : 1}>
-                {p.eps_estimate != null && (
-                  <circle cx={cx} cy={y(p.eps_estimate)} r="6.5" fill="none"
-                          className="stroke-n500" strokeWidth="1.6" />
-                )}
-                {p.eps_actual != null && (
-                  <circle cx={cx} cy={y(p.eps_actual)} r="6.5"
-                          className={beat ? "fill-gain" : "fill-loss"} />
-                )}
+              <g key={p.t} opacity={dim ? 0.45 : 1}>
+                <circle cx={cx} cy={y(p.v)} r="5.5" className={p.v >= 0 ? "fill-gain" : "fill-loss"} />
                 <text x={cx} y={PLOT_B + 14} textAnchor="middle"
                       className={`fill-n600 ${hover === i ? "font-semibold" : ""}`}
                       fontSize="9.5">{p.label}</text>
@@ -280,100 +279,96 @@ export function EpsPanel({ symbol }: { symbol: string }) {
             )
           })}
           {points.map((p, i) => (
-            <rect key={`h-${p.date}`} x={PLOT_L + step * i} y={PLOT_T} width={step} height={PLOT_B - PLOT_T + 16}
+            <rect key={`h-${p.t}`} x={PLOT_L + step * i} y={PLOT_T} width={step} height={PLOT_B - PLOT_T + 16}
                   fill="transparent" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
           ))}
         </svg>
         {(() => {
-          const p = points[hover ?? points.length - 1]
-          const diff = p.eps_actual != null && p.eps_estimate != null ? p.eps_actual - p.eps_estimate : null
-          const verdict = diff == null ? null : Math.abs(diff) < 0.005 ? "Met" : diff > 0 ? `Beat by $${diff.toFixed(2)}` : `Missed by $${Math.abs(diff).toFixed(2)}`
+          const at = hover ?? points.length - 1
+          const p = points[at]
+          // A year earlier is FOUR QUARTERS BACK in a filed series, which is
+          // the only comparison here — and it is filed against filed, never
+          // against anybody's expectation of it.
+          const prior = at >= 4 ? points[at - 4] : null
           return (
             <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-caption">
               <span className="font-semibold">{p.label}</span>
-              <span className="num text-muted-foreground">{p.upcoming ? (p.date !== "next" ? `reports ${p.date}` : "next report") : `reported ${p.date}`}</span>
-              <span className="num">Estimate <span className="font-semibold">{p.eps_estimate == null ? "—" : p.eps_estimate.toFixed(2)}</span></span>
-              {!p.upcoming && <span className="num">Actual <span className="font-semibold">{p.eps_actual == null ? "—" : p.eps_actual.toFixed(2)}</span></span>}
-              {verdict && (
-                <span className={`num font-semibold ${diff! > 0.005 ? "text-gain" : diff! < -0.005 ? "text-loss" : "text-muted-foreground"}`}>
-                  {verdict}{p.surprise_pct != null ? ` (${p.surprise_pct > 0 ? "+" : ""}${p.surprise_pct.toFixed(1)}%)` : ""}
+              <span className="num text-muted-foreground">quarter ended {p.t}</span>
+              <span className="num">Diluted EPS <span className="font-semibold">{p.v.toFixed(2)}</span></span>
+              {prior && (
+                <span className="num text-muted-foreground">
+                  a year earlier <span className="font-semibold">{prior.v.toFixed(2)}</span>
                 </span>
               )}
             </div>
           )
         })()}
-        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-label font-medium uppercase tracking-caps text-muted-foreground">
-          <span className="flex items-center gap-1.5 whitespace-nowrap">
-            <span className="h-[10px] w-[10px] rounded-full border-[1.6px] border-n500" /> Estimate
-          </span>
-          <span className="flex items-center gap-1.5 whitespace-nowrap"><span className="h-[10px] w-[10px] rounded-full bg-gain" /> Beat</span>
-          <span className="flex items-center gap-1.5 whitespace-nowrap"><span className="h-[10px] w-[10px] rounded-full bg-loss" /> Miss</span>
-          {data?.beat_streak && <span className="whitespace-nowrap">{data.beat_streak}</span>}
-          {nextDate && (
-            <span className="ml-auto whitespace-nowrap normal-case tracking-normal">Next report {nextDate}</span>
-          )}
-        </div>
       </div>
     )
   }
 
   return (
     <Widget span={6} symbol={symbol} title="Earnings per share"
-            subtitle="estimate vs actual, last four quarters">
+            subtitle="diluted, as filed with the SEC">
       {body()}
     </Widget>
   )
 }
 
-/* ── Earnings history — every report on record ──────────────────────────── */
+/* ── Earnings history — every quarter the company has filed ─────────────── */
 
-const eps = (v: number | null) => (v == null ? "—" : v.toFixed(2))
-
-/** The full record as a table: the next scheduled report on top with its
- * consensus estimates, then every reported quarter — estimate, actual,
- * surprise, and the quarter's revenue joined from the income statement.
- * Past revenue estimates are on no free source, so that column is filled
- * for the upcoming row only and reads "—" elsewhere, never a guess. */
+/** THE FILED RECORD AS A TABLE. The estimate, actual and surprise columns are
+ * gone with the vendor record behind them; surprise has no factual form at
+ * all, because it is defined against an estimate. What is left is what the
+ * company filed each quarter, and a year-over-year change computed from two
+ * filed figures.
+ *
+ * It shares its request with the two charts above — one XBRL read serves all
+ * three, because they take the same query key. */
 export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: string; span?: number; scroll?: number | string }) {
-  const { data, isPending, isError, error } = useEarningsHistory(symbol)
+  const { data, isPending } = useFundamentals(symbol, "quarterly")
   const { data: quote } = useQuote(symbol)
   const fyEnd = fiscalYearEndMonth(quote?.fiscal_year_end)
-  const rows = data?.reports ?? []
+
+  const rows = useMemo(() => {
+    const rev = data?.series?.revenue ?? []
+    const net = data?.series?.net_income ?? []
+    const eps = data?.series?.diluted_eps ?? []
+    const at = (arr: { t: string; v: number }[], t: string) => arr.find(x => x.t === t)?.v ?? null
+    const ends = [...new Set([...rev, ...net, ...eps].map(p => p.t))].sort().reverse().slice(0, 12)
+    return ends.map(t => ({
+      t,
+      label: fiscalPeriodLabel(t, "quarterly", fyEnd) ?? t,
+      revenue: at(rev, t), net: at(net, t), eps: at(eps, t),
+    }))
+  }, [data, fyEnd])
+
   return (
     <Widget span={span} symbol={symbol} title="Earnings history"
-            subtitle="estimate, actual, surprise · revenue as filed" scroll={scroll ?? 420}
-           >
+            subtitle="every quarter as filed with the SEC" scroll={scroll ?? 420}>
       {isPending ? <Empty>loading…</Empty>
-        : isError ? <QueryFailure error={error}>the report record is unavailable right now</QueryFailure>
-        : rows.length === 0 ? <Empty>no reports on record for {symbol}</Empty> : (
+        : rows.length === 0 ? (
+          <Empty>SEC EDGAR holds no filed quarters for {symbol}. That is usual for a foreign
+            private issuer, which reports under IFRS and tags its filings differently.</Empty>
+        ) : (
         <Table>
           <THead>
-            <TH className="w-[128px]" title="The report day, or the fiscal quarter when the vendor dates reports by the quarter they cover. NEXT marks the scheduled report">Date</TH>
-            <TH align="right" className="w-[64px]" title="Earnings per share as reported: green at or above the estimate, red below it">EPS</TH>
-            <TH align="right" className="w-[72px]" title="The analyst consensus for earnings per share before the report">EPS est.</TH>
-            <TH align="right" className="w-[76px]" title="How far reported earnings per share came in above or below the estimate, in percent">Surprise</TH>
-            <TH align="right" title="The quarter's revenue as filed with the SEC">Revenue</TH>
-            <TH align="right" title="The analyst consensus for revenue. Only the upcoming report carries one; past revenue estimates are on no source here">Revenue est.</TH>
+            <TH className="w-[104px]" title="The fiscal quarter, by the period end the company filed">Quarter</TH>
+            <TH align="right" className="w-[92px]" title="Revenue for the quarter, as filed">Revenue</TH>
+            <TH align="right" className="w-[92px]" title="Net income for the quarter, as filed. Green above zero, red below — which is a fact about the figure, not a judgment on it">Net income</TH>
+            <TH align="right" className="w-[80px]" title="Diluted earnings per share, as filed">Diluted EPS</TH>
+            <TH align="right" title="Net margin: net income over revenue. Derived from two filed figures, and shown only where revenue is positive in the quarter">Net margin</TH>
           </THead>
           <tbody>
             {rows.map(r => {
-              const beat = r.eps_actual != null && r.eps_estimate != null
-                ? (r.eps_actual >= r.eps_estimate ? "text-gain" : "text-loss") : ""
+              const margin = r.revenue && r.revenue > 0 && r.net != null ? (r.net / r.revenue) * 100 : null
               return (
-                <tr key={r.date} title={r.upcoming ? "Scheduled — estimates are the analyst consensus" : undefined}>
-                  <TD mono title={r.date_kind === "period_end" ? "This vendor dates reports by the quarter they cover; the report day itself is not on its record" : undefined}>
-                    {r.date_kind === "period_end" && r.period_end
-                      ? <span className="text-muted-foreground">{fiscalPeriodLabel(r.period_end, "quarterly", fyEnd)}</span>
-                      : r.date}
-                    {r.upcoming && <span className="ml-1.5 text-label font-medium uppercase tracking-caps text-accent-700">next</span>}
-                  </TD>
-                  <TD align="right" mono className={beat}>{eps(r.eps_actual)}</TD>
-                  <TD align="right" mono className="text-muted-foreground">{eps(r.eps_estimate)}</TD>
-                  <TD align="right" mono className={beat}>
-                    {r.surprise_pct == null ? "—" : `${r.surprise_pct > 0 ? "+" : ""}${r.surprise_pct.toFixed(2)}%`}
-                  </TD>
-                  <TD align="right" mono className={beat}>{compact(r.revenue)}</TD>
-                  <TD align="right" mono className="text-muted-foreground">{compact(r.revenue_estimate)}</TD>
+                <tr key={r.t}>
+                  <TD mono title={`Quarter ended ${r.t}`}>{r.label}</TD>
+                  <TD align="right" mono>{compact(r.revenue)}</TD>
+                  <TD align="right" mono className={r.net == null ? "" : r.net >= 0 ? "text-gain" : "text-loss"}>{compact(r.net)}</TD>
+                  <TD align="right" mono className={r.eps == null ? "" : r.eps >= 0 ? "text-gain" : "text-loss"}>{eps(r.eps)}</TD>
+                  <TD align="right" mono className="text-muted-foreground">{margin == null ? "—" : `${margin.toFixed(1)}%`}</TD>
                 </tr>
               )
             })}
@@ -383,6 +378,7 @@ export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: str
     </Widget>
   )
 }
+
 
 /* ── Earnings insights — the consensus grid ─────────────────────────────── */
 
