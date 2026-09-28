@@ -544,6 +544,21 @@ export function EarningsCalendar({ picked, pickedRow, onPick }: {
           {total} {total === 1 ? "call" : "calls"} this week
           {confirmedTotal < total && <> · {confirmedTotal} with a confirmed time</>}
         </span>
+        {/* NO CALENDAR VENDOR: SAY SO, IN WORDS, WITHOUT A HOVER (2026-09-28).
+            The week is then built from SEC filings alone — complete about what
+            has reported, silent about what is coming, because no filing
+            announces a future date. A run of empty days ahead with nothing
+            explaining them reads as "nothing is due", which is the very thing
+            a key prompt exists to prevent; the server answers 200 here
+            precisely BECAUSE this line is on screen. Not a title attribute:
+            a reader cannot hover something they have no reason to point at. */}
+        {week.forward_available === false && (
+          <a href="/account"
+             className="text-caption font-semibold text-accent-700 hover:underline"
+             title="FMP, Finnhub or Alpha Vantage carry upcoming report dates. SEC filings, which are free, only record reports that have already happened.">
+             past reports only — connect a calendar for upcoming ones
+          </a>
+        )}
         {hiddenCount > 0 && (
           <button type="button" onClick={toggleAll}
                   title="Over-the-counter listings and a company's other tickers — warrants, preferred series, a second share class"

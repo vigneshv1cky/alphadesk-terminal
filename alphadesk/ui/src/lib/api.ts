@@ -281,6 +281,15 @@ export interface EarningsWeek {
   /** Lookups still running in the background for a busy week: companies whose
    * usual report time, and whose press releases, are not in yet. */
   pending?: { timing?: number; announcements?: number }
+  /** The reader's connected calendar vendors. Empty means this week was built
+   * from SEC filings alone — see below. */
+  calendar_vendors?: string[]
+  /** False when no calendar vendor is connected: the week is COMPLETE about
+   * what has reported (a results filing is mandatory and EDGAR is keyless)
+   * and SILENT about what is coming, because no filing announces a future
+   * date. The page must say so — an unexplained empty run of future days
+   * reads as "nothing is due". */
+  forward_available?: boolean
 }
 
 
