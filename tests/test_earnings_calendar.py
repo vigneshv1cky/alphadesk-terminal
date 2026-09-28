@@ -89,7 +89,7 @@ def test_a_filed_report_outranks_every_forecast():
     said about the day, it happened."""
     filed = _ev_row("AAA", date_from_edgar=True, sources="fmp")
     announced = _ev_row("BBB", announcement={"date": "2026-09-30"}, sources="fmp,finnhub,alphavantage")
-    assert ec.evidence_of(filed) == ec.EVIDENCE_FILED
+    assert ec.evidence_of(filed) == ec.EVIDENCE_REPORTED
     assert ec.evidence_rank(filed) < ec.evidence_rank(announced)
 
 
@@ -144,3 +144,22 @@ def test_size_still_orders_inside_a_tier():
                              r.get("market_cap") is None, -(r.get("market_cap") or 0),
                              -(r.get("liquidity") or 0), r["symbol"]))
     assert [r["symbol"] for r in rows] == ["BIG", "SMALL"]
+
+
+def test_an_actual_in_hand_counts_as_reported():
+    """CAUGHT ON SCREEN (2026-09-28). The first version tested only for a
+    joined 8-K, so Inventiva sat ELEVENTH on its own report day carrying a
+    -42.52% surprise — below three companies that had not reported at all —
+    and NETSOL fourteenth with +357%. A vendor's actual arrives before the
+    filing is found, and a number in hand is not a forecast."""
+    reported = _ev_row("IVA", eps_actual=-0.29, surprise_pct=-42.52, sources="fmp")
+    pending = _ev_row("MTN", sources="fmp,finnhub,alphavantage")
+    assert ec.evidence_of(reported) == ec.EVIDENCE_REPORTED
+    assert ec.evidence_rank(reported) < ec.evidence_rank(pending)
+
+
+def test_a_placeholder_actual_is_not_a_report():
+    """A placeholder is moved to placeholder_actual upstream and eps_actual
+    set back to None, so the tier cannot be fooled by one."""
+    ghost = _ev_row("NB", eps_actual=None, placeholder_actual=0.15, sources="fmp")
+    assert ec.evidence_of(ghost) == ec.EVIDENCE_SINGLE

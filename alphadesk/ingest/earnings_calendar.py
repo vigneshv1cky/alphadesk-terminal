@@ -782,13 +782,13 @@ def _mark_listings(rows: list[dict], listed: dict[str, str]) -> None:
 # The measurement exposed this: AMTD Digital, Tudor Gold and Scottie Resources
 # all arrived marked confirmed from FMP ALONE, and under a naive ordering that
 # outranked two independent calendars agreeing on a date. It does not any more.
-EVIDENCE_FILED = "filed"            # the results filing is in; it happened
+EVIDENCE_REPORTED = "reported"      # the results are OUT; it happened
 EVIDENCE_ANNOUNCED = "announced"    # the company's own press release named the day
 EVIDENCE_CORROBORATED = "vendors"   # two or more calendars agree
 EVIDENCE_SINGLE = "one_vendor"      # one calendar said so, and nothing checked it
 
 #: Strongest first. The ORDER of this tuple is the ranking.
-EVIDENCE_ORDER = (EVIDENCE_FILED, EVIDENCE_ANNOUNCED, EVIDENCE_CORROBORATED, EVIDENCE_SINGLE)
+EVIDENCE_ORDER = (EVIDENCE_REPORTED, EVIDENCE_ANNOUNCED, EVIDENCE_CORROBORATED, EVIDENCE_SINGLE)
 
 
 def vendor_count(row: dict) -> int:
@@ -804,8 +804,18 @@ def evidence_of(row: dict) -> str:
     only source that cannot be wrong about its own plans. Then agreement
     between independent calendars. Then a single vendor, alone.
     """
-    if row.get("released_on") or row.get("released_at") or row.get("date_from_edgar") or row.get("edgar_only"):
-        return EVIDENCE_FILED
+    # THE RESULTS BEING OUT IS THE STRONGEST EVIDENCE THERE IS, and an
+    # ACTUAL counts as much as a filing (2026-09-28, caught on screen: the
+    # first version tested only for a joined 8-K, so Inventiva sat ELEVENTH
+    # on its own report day carrying a -42.52% surprise, below three
+    # companies that had not reported at all, and NETSOL fourteenth with
+    # +357%. A vendor's actual arrives before we find the filing, and a
+    # number in hand is not a forecast whatever EDGAR has caught up with.)
+    # A PLACEHOLDER is not an actual: it is moved to placeholder_actual and
+    # eps_actual set back to None upstream, so this cannot be fooled by one.
+    if (row.get("eps_actual") is not None or row.get("released_on") or row.get("released_at")
+            or row.get("date_from_edgar") or row.get("edgar_only")):
+        return EVIDENCE_REPORTED
     if row.get("announcement"):
         return EVIDENCE_ANNOUNCED
     return EVIDENCE_CORROBORATED if vendor_count(row) >= 2 else EVIDENCE_SINGLE

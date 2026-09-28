@@ -104,6 +104,13 @@ export interface EarningsRow {
   /** The company's own press release naming the report date (and, when it
    * says so, the session) — what dated this row over the vendor's projection. */
   announcement?: EarningsAnnouncement | null
+  /** What DATES this row, strongest first: "reported" (the results are out),
+   * "announced" (the company's own press release named the day), "vendors"
+   * (two or more calendars agree) or "one_vendor" (one said so and nothing
+   * checked it). Each day is ordered by this. */
+  evidence?: "reported" | "announced" | "vendors" | "one_vendor"
+  /** How many calendars listed this report. */
+  vendor_count?: number
   /** Twenty-session annualised volatility, percent, from the user's chart vendor. */
   volatility?: number | null
   /** Twenty-session average dollar volume a day. */

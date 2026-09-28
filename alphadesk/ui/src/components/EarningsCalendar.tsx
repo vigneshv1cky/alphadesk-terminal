@@ -328,6 +328,18 @@ function DayTable({ day, picked, pickedRow, onPick, found }: {
                     {r.date_from_edgar && (
                       <span className="ml-1 text-label text-muted-foreground" title={`Your calendar vendor listed ${r.vendor_date}; the results 8-K on EDGAR reports a release on ${r.report_date}`}>·EDGAR</span>
                     )}
+                    {/* THE WEAKEST TIER WAS THE ONLY UNMARKED ONE (2026-09-28).
+                        Measured on a live week: 103 of 185 rows rested on a
+                        SINGLE vendor, against a forward log where one vendor
+                        gets the date exactly right 39-51% of the time. Every
+                        other tier already carried a mark — ·EDGAR, ·PR — so
+                        the half of the page most worth doubting looked the
+                        most ordinary. Ordering by evidence is only half the
+                        job if the row does not say which tier it is in. */}
+                    {r.evidence === "one_vendor" && (
+                      <span className="ml-1 text-label text-muted-foreground/70"
+                            title={`Only ${r.sources || "one calendar"} lists this report, and nothing corroborates the date. On the forward log a single vendor is exactly right 39-51% of the time — treat the day as approximate until the company confirms it or a second calendar agrees.`}>·1</span>
+                    )}
                     {/* A results 8-K already landed, days before this report:
                         preliminary or restated figures, not this quarter, so
                         the date stands (Hub Group, 2026-09-15). */}
