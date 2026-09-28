@@ -7,7 +7,7 @@ import { on, type EarningsDay, type EarningsFind, type EarningsRow, type Earning
 import { keys, useEarningsFind, useEarningsWeek } from "@/lib/queries"
 import { Empty, btnCls } from "@/components/terminal"
 import { QueryFailure } from "@/components/KeyPrompt"
-import { ago, etClock, inBackfillWindow, sessionLabel, todayInEt, whenLabel } from "@/lib/earningsClock"
+import { ago, etClock, inBackfillWindow, reportedLabel, sessionLabel, todayInEt, whenLabel } from "@/lib/earningsClock"
 import { vendorLabel } from "@/lib/vendors"
 
 export { sessionLabel }
@@ -238,7 +238,9 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                   few pixels and read as one letter. It hides below md; the
                   columns that matter less at that width hide below lg. */}
               <th className="hidden border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground md:table-cell" />
-              <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="When the company reports: BMO before the open, AMC after the close, or the release time once it is out. Green: released. Amber: the date is not confirmed by the company. Hover a row for how the time is known" aria-description="When the company reports: BMO before the open, AMC after the close, or the release time once it is out. Green: released. Amber: the date is not confirmed by the company. Hover a row for how the time is known">When</th>
+              <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip={estimates
+                    ? "When the company reports: BMO before the open, AMC after the close, or the release time once it is out. Green: released. Amber: the date is not confirmed by the company. Hover a row for how the time is known"
+                    : "When EDGAR accepted the filing, New York time. That is at or after the moment the results went out, never before it, so it is an upper bound on the release. A filing accepted on a later day shows that day instead, because no release time can be claimed for it."}>When</th>
               {estimates && <>
               <th className="w-[70px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="The analyst consensus for earnings per share, adjusted for any split since it was quoted" aria-description="The analyst consensus for earnings per share, adjusted for any split since it was quoted">Est EPS</th>
               <th className="hidden w-[90px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell" data-tip="Earnings per share as reported, once released" aria-description="Earnings per share as reported, once released">Actual EPS</th>
@@ -277,7 +279,8 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
               // tested; the tooltip below spells out the evidence.
               const todayEt = todayInEt()
               const past = r.report_date < todayEt
-              const when = whenLabel(r, todayEt)
+              // On the feed every row has reported, so the clock stands alone.
+              const when = estimates ? whenLabel(r, todayEt) : reportedLabel(r)
               const sighted = !!r.actual_at && inBackfillWindow(r.actual_at, r.report_date)
               const whenTitle = out
                 ? [r.released_at ? `8-K accepted by EDGAR ${etClock(r.released_at, r.report_date, true)} ET (${ago(r.released_at)})`
