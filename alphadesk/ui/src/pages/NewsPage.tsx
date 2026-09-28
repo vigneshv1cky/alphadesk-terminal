@@ -10,6 +10,7 @@ import { useBoardSymbols } from "@/lib/boardSymbols"
 import { boardStories, markSeen, readSeen } from "@/lib/newsSeen"
 import { useNews } from "@/lib/queries"
 import { Btn, Empty, fieldCls, Widget, btnCls, menuItemCls } from "@/components/terminal"
+import { MarketFilings } from "@/widgets/desk"
 import { Menu } from "@/components/ChartToolbar"
 import { cn } from "@/lib/utils"
 import { newsTime } from "@/lib/newsClock"
@@ -530,14 +531,33 @@ export default function NewsPage() {
       </Widget>
   ) : null
 
+  const filingsPanel = (
+    <Widget span={6} title="Just filed"
+            subtitle="what the market filed with the SEC, newest first — keyless">
+      <MarketFilings />
+    </Widget>
+  )
+
   return (
     <ComposedBoard
       page="news"
+      // FILINGS BELONG ON THIS PAGE (2026-09-28, the owner: "filings into
+      // news"). They are the same kind of object as a story -- something that
+      // just happened and might matter -- and they cover exactly where the
+      // wire is silent: a company must file within four business days and is
+      // never obliged to publicise, so an auditor resignation or a delisting
+      // notice reaches no newswire at all. Measured that day, a $6B registrant
+      // and a $1.5B one each filed material 8-Ks with no story on the feed.
+      // It sits BESIDE the stories rather than inside the list: a filing has
+      // no headline and no body, so interleaving it into a windowed story list
+      // would mean two row shapes in one virtualised column.
       panels={oneColumn
-        ? [{ id: "list", label: "Market news", node: listPanel }]
+        ? [{ id: "list", label: "Market news", node: listPanel },
+           { id: "filings", label: "Just filed", node: filingsPanel }]
         : [
             { id: "list", label: "Market news", node: listPanel },
             { id: "reader", label: "Reader", node: readerPanel },
+            { id: "filings", label: "Just filed", node: filingsPanel },
           ]}
     />
   )

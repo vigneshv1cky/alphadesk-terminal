@@ -263,7 +263,7 @@ function FundamentalsTile() {
  * what that drops, because securitisation trusts and Federal Home Loan Banks
  * file constantly and trade nowhere — a list without that reads as noise.
  */
-function MarketFilings() {
+export function MarketFilings() {
   const { add } = useBoardSymbols()
   const q = useQuery({
     queryKey: ["filing-feed"],
@@ -309,7 +309,23 @@ function MarketFilings() {
                       : "—"}
                   </span>
                   <span className="w-[76px] shrink-0 truncate text-caption text-muted-foreground">{f.form}</span>
-                  <span className="min-w-0 flex-1 truncate text-caption">{f.company}</span>
+                  {/* WHAT THE FILING IS, not just that there was one. Without
+                      this the row reads "8-K · Hain Celestial" for a DELISTING
+                      NOTICE, which is the catalyst a reader came for. The
+                      wording is EDGAR's own — the registrant picks the items
+                      from the SEC's fixed list and files them under signature,
+                      so naming them is a record and never our judgment. They
+                      are listed in the SEC's order and never ranked: which
+                      item matters is the reader's call. */}
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-caption">{f.company}</span>
+                    {(f.items ?? []).length > 0 && (
+                      <span className="truncate text-label text-muted-foreground"
+                            title={(f.items ?? []).map(i => `Item ${i.number}: ${i.label}`).join(" · ")}>
+                        {(f.items ?? []).map(i => i.label).join(" · ")}
+                      </span>
+                    )}
+                  </span>
                   <span className="shrink-0 text-label uppercase tracking-caps text-muted-foreground">edgar →</span>
                 </a>
               </li>
