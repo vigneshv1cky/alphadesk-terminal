@@ -1293,6 +1293,7 @@ def reported_between(start: str, end: str) -> list[dict]:
     # which is the same degradation every other panel makes.
     if rows:
         try:
+            from alphadesk.config import now_et
             from alphadesk.ingest.movers import stats_from_bars
             from alphadesk.providers import get_prices
             router = get_prices()
@@ -1304,6 +1305,7 @@ def reported_between(start: str, end: str) -> list[dict]:
             # that cannot come out of them. Used only while the reacting
             # session is still open.
             live = router.get("quotes", syms) or {}
+            today_et = now_et().date().isoformat()
             for r in rows:
                 r["market_cap"] = caps.get(r["symbol"].upper())
                 b = bars.get(r["symbol"]) or []
@@ -1318,10 +1320,15 @@ def reported_between(start: str, end: str) -> list[dict]:
                 # it costs no extra request. None on the day itself until the
                 # session's bar exists — a part-day move is not a close.
                 q = live.get(r["symbol"].upper()) or live.get(r["symbol"]) or {}
+                base = _base_close(b, r["report_date"], r.get("session"))
+                bar = _reacting_bar(b, r["report_date"], r.get("session"))
                 r["move_pct"] = move_since_report(
-                    _base_close(b, r["report_date"], r.get("session")),
-                    _reacting_close(b, r["report_date"], r.get("session")),
+                    base, bar.get("close") if bar else None,
                     q.get("price") if isinstance(q, dict) else None)
+                # THE BEST AND WORST OF THE SAME WINDOW, off the same bar.
+                r["move_high_pct"], r["move_low_pct"] = move_extremes(
+                    base, bar, q if isinstance(q, dict) else None,
+                    live_reads_report(r["report_date"], r.get("session"), today_et))
         except Exception as exc:
             # Enrichment, never the feed: a vendor refusing must not cost the
             # reader the list of who reported.
@@ -1332,6 +1339,8 @@ def reported_between(start: str, end: str) -> list[dict]:
                 r.setdefault("liquidity", None)
                 r.setdefault("low_liquidity", None)
                 r.setdefault("move_pct", None)
+                r.setdefault("move_high_pct", None)
+                r.setdefault("move_low_pct", None)
     # Newest release first within a day; a filing with no clock sorts after
     # the timed ones rather than jumping the queue on a null.
     rows.sort(key=lambda r: (r["report_date"], r.get("released_at") is None,
@@ -1408,16 +1417,72 @@ def _base_close(bars: list[dict], day: str, session: str | None) -> float | None
     return dated[base][1].get("close") if base >= 0 else None
 
 
-def _reacting_close(bars: list[dict], day: str, session: str | None) -> float | None:
-    """That session's close, once it HAS one — the session the report was
-    read in: the report day itself in the morning, the next one after the
-    bell. None while it is still trading."""
+def _reacting_bar(bars: list[dict], day: str, session: str | None) -> dict | None:
+    """The whole bar for the session that READ the report — the report day
+    itself in the morning, the next one after the bell. None while that
+    session is still trading, because it has no bar yet.
+
+    The bar rather than its close, because the high and the low are what the
+    range columns are measured from and they cost nothing extra: these are
+    the same twenty-one daily bars the volatility column already asked for.
+    """
     dated = _dated(bars)
     at = next((i for i, (d, _) in enumerate(dated) if d == day), None)
     if at is None:
         return None
     react = at + 1 if (session or "").upper() == "AMC" else at
-    return dated[react][1].get("close") if react < len(dated) else None
+    return dated[react][1] if react < len(dated) else None
+
+
+def _reacting_close(bars: list[dict], day: str, session: str | None) -> float | None:
+    """That session's close, once it HAS one. None while it is still
+    trading."""
+    bar = _reacting_bar(bars, day, session)
+    return bar.get("close") if bar else None
+
+
+def live_reads_report(day: str, session: str | None, today: str) -> bool:
+    """Whether the session trading RIGHT NOW is the one reading this report.
+
+    The live quote carries the CURRENT session's range, and that is only the
+    reaction's range when the current session is the reacting one. For a
+    morning report that is the report day; after the bell it is any later
+    day. Getting this wrong would print the report day's own range — struck
+    entirely BEFORE an after-hours release — as the reaction to it.
+    """
+    if not day or not today:
+        return False
+    return today > day if (session or "").upper() == "AMC" else today == day
+
+
+def move_extremes(base: float | None, bar: dict | None, quote: dict | None,
+                  live: bool) -> tuple[float | None, float | None]:
+    """The best and worst the price reached in the reacting session, both
+    measured from the SAME baseline as the move itself (2026-09-28, the
+    owner).
+
+    NEITHER IS CLAMPED AT ZERO. A stock that gapped down and never traded
+    back through the baseline has a negative best, and that is the useful
+    fact — it says the reaction was one-directional, which a floor of zero
+    would hide. The pair also brackets the move: a large spread on a small
+    move is a session that round-tripped, which no single figure can say.
+
+    The finished bar wins; while the reacting session is still open the live
+    quote's own high and low stand in, and only then (see live_reads_report).
+    Both are regular-session figures, so an after-hours reaction to an
+    after-the-bell release is not in them until the next session opens.
+    """
+    if not base:
+        return (None, None)
+    if bar:
+        high, low = bar.get("high"), bar.get("low")
+    elif live and isinstance(quote, dict):
+        high, low = quote.get("day_high"), quote.get("day_low")
+    else:
+        return (None, None)
+    if high is None or low is None:
+        return (None, None)
+    return (round((high - base) / base * 100, 2), round((low - base) / base * 100, 2))
 
 
 def _dated(bars: list[dict]) -> list[tuple[str, dict]]:
