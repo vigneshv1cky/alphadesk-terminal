@@ -2344,6 +2344,29 @@ def api_earnings_context(symbol: str):
     return earnings_record.context(sym)
 
 
+@app.get("/api/earnings/filed/{symbol}")
+def api_earnings_filed(symbol: str, on: str = ""):
+    """What the company FILED for its newest quarter, against the same quarter
+    a year earlier — revenue, margins, earnings and cash, each with the period
+    it belongs to.
+
+    Keyless: this is the company's own XBRL from SEC EDGAR, so a reader with no
+    vendor connected still gets it. No verdict is returned and none should be
+    added: the figures and their direction are the answer, and the price
+    reaction on the calendar row is the market's own (invariant 1).
+
+    `on` is the report date being read, and decides only whether the filed
+    quarter is recent enough to belong to it — the answer says so rather than
+    quietly showing an older quarter as if it were the new one.
+    """
+    from alphadesk.ingest import filed_figures
+    sym = "".join(c for c in symbol.upper() if c.isalnum() or c in ".-^=")[:14]
+    if not sym:
+        raise HTTPException(400, "bad symbol")
+    day = on.strip()[:10] if on else None
+    return filed_figures.filed_quarter(sym, day or None)
+
+
 @app.get("/api/transcripts/{symbol}")
 def api_transcripts_list(symbol: str):
     """The earnings documents on record for one symbol from the selected

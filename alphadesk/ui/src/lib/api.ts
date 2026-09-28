@@ -1384,6 +1384,42 @@ export interface AgentAccessToken {
   last_used_at: string | null
 }
 
+
+/** What the company FILED for its newest quarter, from SEC EDGAR's XBRL —
+ * keyless, so a reader with no vendor still gets it. There is no verdict here
+ * and none should be added: the figures and their direction are the answer
+ * (invariant 1), and the market's own is the price reaction on the row. */
+export type FiledMetric = {
+  id: string
+  label: string
+  unit: "currency" | "percent" | string
+  value?: number | null
+  prior?: number | null
+  /** Percent change. Null through a sign change, where a percent of a negative
+   * base reads as a collapse — `direction` still says which way it went. */
+  change_pct?: number | null
+  /** Margins move in percentage POINTS: 2% -> 4% is +2pp, never "+100%". */
+  change_pp?: number | null
+  direction?: "up" | "down" | "flat" | null
+  /** False for margins, which are arithmetic on two filed figures rather than
+   * filed figures themselves. */
+  filed?: boolean
+}
+
+export type FiledQuarter = {
+  symbol: string
+  source: string
+  period_end?: string | null
+  prior_end?: string | null
+  /** False when the quarter behind this report is not on file yet — XBRL
+   * arrives with the 10-Q/10-K, which can trail the 8-K by weeks. */
+  covers_report?: boolean | null
+  lag_days?: number | null
+  note?: string | null
+  metrics: FiledMetric[]
+}
+
+
 export const api = {
   authMe: () => get<AuthMe>("/api/auth/me"),
   billing: () => get<Access>("/api/billing"),
@@ -1524,6 +1560,8 @@ export const api = {
     get<EarningsFind>(`/api/earnings/find?symbol=${encodeURIComponent(symbol)}`),
   earningsWeek: (start?: string) =>
     get<EarningsWeek>(`/api/earnings/week${start ? `?start=${start}` : ""}`),
+  earningsFiled: (symbol: string, on?: string) =>
+    get<FiledQuarter>(`/api/earnings/filed/${encodeURIComponent(symbol)}${on ? `?on=${on}` : ""}`),
   earningsContext: (symbol: string) =>
     get<EarningsContext>(`/api/earnings/context/${encodeURIComponent(symbol)}`),
   earningsHistory: (symbol: string) =>

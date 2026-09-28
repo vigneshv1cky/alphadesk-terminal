@@ -34,6 +34,7 @@ export const keys = {
   earningsWeek: (start?: string) => ["earnings-week", start ?? "current"] as const,
   earningsFind: (symbol: string) => ["earnings-find", symbol] as const,
   earningsContext: (symbol: string) => ["earnings-context", symbol] as const,
+  earningsFiled: (symbol: string, on?: string) => ["earnings-filed", symbol, on ?? ""] as const,
   earningsHistory: (symbol: string) => ["earnings-history", symbol] as const,
   transcripts: (symbol: string) => ["transcripts", symbol] as const,
   transcript: (symbol: string, id: string) => ["transcript", symbol, id] as const,
@@ -84,6 +85,16 @@ export const useEarningsContext = (symbol: string) =>
     queryFn: ({ signal }) => on(signal).earningsContext(symbol),
     enabled: !!symbol,
     staleTime: 10 * 60_000,
+  })
+
+/** The filed quarter. Keyless SEC data that only changes when the company
+ * files, so it is held a long time — nothing here moves intraday. */
+export const useEarningsFiled = (symbol: string, reportDay?: string) =>
+  useQuery({
+    queryKey: keys.earningsFiled(symbol, reportDay),
+    queryFn: ({ signal }) => on(signal).earningsFiled(symbol, reportDay),
+    enabled: !!symbol,
+    staleTime: 30 * 60_000,
   })
 
 export const useTranscripts = (symbol: string) =>
