@@ -626,3 +626,38 @@ def test_foreign_candidates_keep_the_exhibit_over_the_cover_page():
     assert set(rows) == {"ZTO", "ZTOEF"}              # both listings of one filer
     assert rows["ZTO"]["document"] == "tm2623526d1_ex99-1.htm" and rows["ZTO"]["is_exhibit"]
     assert rows["ZTO"]["cik"] == "0001677250"
+
+
+# ── Results published in a periodic report (2026-09-28) ─────────────────────
+
+def test_a_periodic_report_is_the_release_when_there_is_no_8k(monkeypatch):
+    """MEASURED: of 67 companies the calendar showed as reported in one week,
+    23 had a vendor's actual and no filing this sweep had found — and EDGAR
+    showed every checked one HAD filed: Espey, Amesite and Legacy Housing in
+    a 10-K, Shineco in a 10-Q. Item 2.02 is required only when results go out
+    by some other means first, so a filer that simply publishes its 10-K owes
+    no 8-K and was invisible."""
+    from alphadesk.ingest import edgar_releases as er
+    hits = [{"_source": {"adsh": "0001-26-1", "file_date": "2026-09-23",
+                         "display_names": ["ESPEY MFG & ELECTRONICS CORP (ESP)  (CIK 0000033533)"],
+                         "root_forms": ["10-K"]}}]
+    assert er.parse_periodic_hits(hits) == [{
+        "symbol": "ESP", "accession": "0001-26-1", "cik": "0000033533",
+        "file_date": "2026-09-23", "event_date": "2026-09-23",
+        "company": "ESPEY MFG & ELECTRONICS CORP", "form": "10-K"}]
+
+
+def test_a_company_that_announced_on_an_8k_does_not_get_a_second_row(monkeypatch):
+    """A large filer announces on an 8-K and files the 10-Q days later.
+    Counting both would put two rows on the calendar for one set of results,
+    so a periodic report is only the release where no Item 2.02 exists in the
+    surrounding quarter."""
+    from alphadesk.ingest import edgar_releases as er
+    monkeypatch.setattr(er, "releases_by_symbol",
+                        lambda a, b: {"BIG": [{"form": "8-K", "file_date": "2026-09-20"}]})
+    monkeypatch.setattr(er, "_search_form", lambda day, form, off: {"hits": {"hits": [
+        {"_source": {"adsh": "x", "file_date": "2026-09-23", "root_forms": [form],
+                     "display_names": ["BIG CO (BIG)  (CIK 0000000009)"]}}]}})
+    saved = []
+    monkeypatch.setattr(er.store, "upsert_release", lambda *a, **k: saved.append(a[0]))
+    assert er.refresh_periodic_day("2026-09-23") == 0 and saved == []

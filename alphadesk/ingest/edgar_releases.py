@@ -361,3 +361,91 @@ def releases_by_symbol(start: str, end: str) -> dict[str, list[dict]]:
     for r in store.releases_between(start, end):
         out.setdefault(r["symbol"], []).append(r)
     return out
+
+
+# ── RESULTS PUBLISHED IN A PERIODIC REPORT (2026-09-28) ─────────────────────
+# MEASURED, after the results feed came up a third short. Of 67 companies the
+# calendar showed as having reported in one week, 23 had a vendor's actual and
+# NO filing this sweep had found. Checking EDGAR directly for eight of them
+# showed the sweep, not the vendors, was wrong — every one had filed:
+#
+#   Franklin Wireless  10-K 09-28     Espey Mfg      10-K 09-23
+#   Amesite            10-K 09-23     Legacy Housing 10-K 09-24
+#   Shineco            10-Q 09-24     ZJK Industrial  6-K 09-21
+#   AnaptysBio          8-K 09-21 — filed, but carrying NO Item 2.02
+#
+# A COMPANY NEED NOT ANNOUNCE ON AN 8-K. Item 2.02 is required only when
+# results are released by some other means first; a filer that simply
+# publishes its 10-K or 10-Q has furnished them and owes no 8-K at all. The
+# sweep looked only for Item 2.02, so every such company was invisible — and
+# they are disproportionately the small filers no vendor lists either.
+#
+# ONLY WHERE THERE IS NO 8-K IN THE SURROUNDING QUARTER. A large company
+# announces on an 8-K and files the 10-Q days later; counting both would put
+# a second row on the calendar for one set of results. Requiring the company
+# to have no Item 2.02 anywhere in ±PERIODIC_QUARTER_DAYS keeps this to the
+# filers that never use them, which is the measured gap.
+_PERIODIC_FORMS = ("10-K", "10-Q")
+PERIODIC_QUARTER_DAYS = 45
+
+
+def parse_periodic_hits(hits: list[dict]) -> list[dict]:
+    """Search hits → one row per (ticker, filing). Unlike parse_hits there is
+    no item number to test: a 10-K or 10-Q IS the results, so the form's
+    presence is the whole signal. Pure."""
+    out: dict[tuple[str, str], dict] = {}
+    for h in hits:
+        src = h.get("_source") or {}
+        adsh = src.get("adsh") or str(h.get("_id") or "").split(":")[0]
+        for name in src.get("display_names") or []:
+            m = _TICKERS.search(name)
+            if not m:
+                continue
+            company = name[: m.start()].strip()
+            cik = f"{int(m.group(2)):010d}"
+            for t in m.group(1).split(","):
+                t = t.strip().upper()
+                if t and (t, adsh) not in out:
+                    fd = src.get("file_date")
+                    out[(t, adsh)] = {"symbol": t, "accession": adsh, "cik": cik,
+                                      "file_date": fd, "event_date": fd, "company": company,
+                                      "form": (src.get("root_forms") or [None])[0] or src.get("file_type")}
+    return list(out.values())
+
+
+def _search_form(day: str, form: str, offset: int) -> dict:
+    """Every filing of one form on one day. No phrase: the form filter alone
+    is the query, the same shape the 8-K sweep uses."""
+    q = urlencode({"forms": form, "dateRange": "custom", "startdt": day, "enddt": day, "from": offset})
+    return json.loads(edgar._get(f"{_SEARCH}?{q}", timeout=30.0))
+
+
+def refresh_periodic_day(day: str) -> int:
+    """Store the day's 10-K and 10-Q filings as results releases, but only
+    for companies with no Item 2.02 8-K in the surrounding quarter."""
+    d = date.fromisoformat(day)
+    lo = (d - timedelta(days=PERIODIC_QUARTER_DAYS)).isoformat()
+    hi = (d + timedelta(days=PERIODIC_QUARTER_DAYS)).isoformat()
+    # One read of what is already known, rather than a query per company.
+    announced = {sym for sym, fs in releases_by_symbol(lo, hi).items()
+                 if any((f.get("form") or "8-K") == "8-K" for f in fs)}
+    stored = 0
+    for form in _PERIODIC_FORMS:
+        rows: list[dict] = []
+        for page in range(_MAX_PAGES):
+            try:
+                got = _search_form(day, form, page * _PAGE)
+            except Exception as exc:
+                log.warning("EDGAR %s search failed for %s page %d: %s", form, day, page, exc)
+                break
+            hits = (got.get("hits") or {}).get("hits") or []
+            rows.extend(parse_periodic_hits(hits))
+            if len(hits) < _PAGE:
+                break
+        for r in rows:
+            if r["symbol"] in announced:
+                continue                      # it announced on an 8-K; one event, one row
+            store.upsert_release(r["symbol"], r["accession"], r["cik"], r["file_date"],
+                                 None, r["company"], r["event_date"], form=form)
+            stored += 1
+    return stored

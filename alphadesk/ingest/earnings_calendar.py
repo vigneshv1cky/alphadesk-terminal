@@ -25,7 +25,7 @@ vendor memo, and the EDGAR half is shared public data.
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from alphadesk.providers.base import EntitlementError, NeedsKey, ProviderError
@@ -1166,3 +1166,119 @@ def report_row(symbol: str, report_date: str) -> dict | None:
     except NeedsKey:
         return None
     return None
+
+
+# ── THE RESULTS FEED: the Earnings tab, from SEC filings alone ──────────────
+# (2026-09-28, the owner's call after measuring the alternative.)
+#
+# The calendar the vendors build was measured twice on live data and failed
+# both ways. RECALL: of 61 companies that reported, the merged calendar
+# listed 45, and no single vendor managed more than 37. PRECISION: of 100
+# rows on days that had ALREADY PASSED, 33 produced no report at all — 14
+# were on the wrong day by eight or nine days (AAR Corp claimed the 21st,
+# reported the 29th) and 19 never happened. 28 of those 33 rested on one
+# vendor.
+#
+# A results filing is MANDATORY and EDGAR is keyless, so a feed built from
+# filings is COMPLETE and TRUE BY CONSTRUCTION: every row is a filing that
+# exists, and no company that reported can be missing. The phantom rows
+# cannot occur, because there is nothing to be wrong about.
+#
+# WHAT IT GIVES UP, deliberately: there are no upcoming rows. No filing
+# announces a date that has not happened, so a forward view could only be a
+# vendor's guess (39-51% right) or a projection from filing history (34%
+# exact, and impossible for the 43% of companies with no prior-year filing).
+# The owner chose neither. The Earnings tab answers "who reported, and what
+# did they file", and the forward question is answered by the screener
+# window and the rail, which still run on the vendor calendar.
+#
+# ORDERED BY THE CLOCK, newest first within a day. A feed is chronological:
+# that is the order the results actually came out in, it needs no vendor to
+# compute, and it cannot be gamed by an untraded second class the way market
+# cap was.
+def reported_between(start: str, end: str) -> list[dict]:
+    """Every company that released results in [start, end], from SEC filings.
+
+    One row per company per release day: a registrant filing under several
+    tickers (ORCL and its preferred ORCL-PD) takes the common one, and the
+    others are marked `listing` so the tab can hide them as it already does.
+    """
+    from alphadesk.config import symbol_meta
+    from alphadesk.ingest import edgar, edgar_releases
+    releases = edgar_releases.releases_by_symbol(start, end)
+    listed = edgar._ticker_cik_map() or {}
+    tickers_of_cik: dict[str, list[str]] = {}
+    for t, c in listed.items():
+        tickers_of_cik.setdefault(c, []).append(t)
+
+    # Group every filing by (registrant, release day) so one company that
+    # files under two tickers is one row, not two.
+    by_key: dict[tuple[str, str], list[dict]] = {}
+    for sym, filings in releases.items():
+        if sym not in listed:
+            continue                      # not an SEC-listed ticker we know
+        for f in filings:
+            day = release_day(f)
+            if not (start <= day <= end):
+                continue
+            by_key.setdefault((f.get("cik") or listed[sym], day), []).append({**f, "symbol": sym})
+
+    rows: list[dict] = []
+    for (cik, day), filings in by_key.items():
+        # The common listing first: no dash, then shortest, then alphabetical
+        # — the same rule the calendar uses to pick a company's main ticker.
+        filings.sort(key=lambda f: ("-" in f["symbol"], len(f["symbol"]), f["symbol"]))
+        f = filings[0]
+        sym = f["symbol"]
+        clock = release_clock(f)
+        rows.append({
+            "symbol": sym,
+            "company_name": f.get("company") or edgar.company_title(sym),
+            "report_date": day,
+            # The acceptance instant stands for the release only when the
+            # filing landed on the day it reports; days later it is the
+            # filing's clock, not the release's (release_clock).
+            "released_at": clock,
+            "released_on": day,
+            "filed_on": f["file_date"][:10],
+            "filed_at": f.get("accepted_at"),
+            "session": _session_of(clock) if clock else None,
+            "form": f.get("form"),
+            "accession": f.get("accession"),
+            # The exchange comes from the SEC's own ticker file (symbol_meta),
+            # keyless like the rest of this. Passing None here classified
+            # EVERY row as OTC: listing_kind reads an empty exchange as
+            # over-the-counter, which is right for a real blank and wrong for
+            # "I did not look".
+            "listing": listing_kind(sym, listed, tickers_of_cik,
+                                    (symbol_meta(sym) or {}).get("exchange")),
+            "sources": "edgar",
+            "evidence": EVIDENCE_REPORTED,
+            "vendor_count": 0,
+            # No vendor, so no consensus and no surprise. Stated as None
+            # rather than omitted, so the tab renders a dash and not a gap.
+            "eps_estimate": None, "eps_actual": None, "surprise_pct": None,
+            "estimate_count": None, "confirmed": True,
+        })
+    # Newest release first within a day; a filing with no clock sorts after
+    # the timed ones rather than jumping the queue on a null.
+    rows.sort(key=lambda r: (r["report_date"], r.get("released_at") is None,
+                             r.get("released_at") or "", r["symbol"]), reverse=False)
+    rows.sort(key=lambda r: r["report_date"])
+    return rows
+
+
+def _session_of(accepted_at: str) -> str | None:
+    """Which session an acceptance instant falls in, New York time."""
+    from alphadesk.config import ET
+    # NARROW ON PURPOSE. This began as `except Exception`, and when the module
+    # turned out not to import `datetime` at all the NameError was swallowed
+    # and EVERY row came back with no session — a coding error disguised as
+    # missing data. A malformed stamp is a ValueError; anything else is a bug
+    # and should say so.
+    try:
+        t = datetime.fromisoformat(accepted_at).astimezone(ET)
+    except (ValueError, TypeError):
+        return None
+    hm = t.hour * 60 + t.minute
+    return "BMO" if hm < 9 * 60 + 30 else "AMC" if hm >= 16 * 60 else "DAY"
