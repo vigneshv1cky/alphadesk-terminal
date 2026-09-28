@@ -1420,6 +1420,9 @@ export type FiledQuarter = {
   prior_end?: string | null
   /** False when the quarter behind this report is not on file yet — XBRL
    * arrives with the 10-Q/10-K, which can trail the 8-K by weeks. */
+  /** "quarterly", or "annual" for a foreign private issuer that files a 20-F
+   * and no quarters. A year is not a quarter and the panel must say which. */
+  period?: "quarterly" | "annual"
   covers_report?: boolean | null
   lag_days?: number | null
   note?: string | null

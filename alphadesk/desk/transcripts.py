@@ -21,7 +21,7 @@ import re
 
 from alphadesk.ledger import store
 from alphadesk.providers import get_transcripts
-from alphadesk.providers.base import ProviderError
+from alphadesk.providers.base import EntitlementError, ProviderError
 
 log = logging.getLogger("alphadesk.transcripts")
 
@@ -58,9 +58,22 @@ def list_transcripts(symbol: str) -> dict:
         rows = prov.list_transcripts(symbol)
     except ProviderError as exc:
         log.info("transcripts list unavailable for %s via %s: %s", symbol, prov.name, exc)
-        rows = []
+        # SAY WHAT HAPPENED, NOT THE STATUS LINE (2026-09-28, the reader, on a
+        # panel reading "HTTP 402"). A vendor's status code is not a sentence,
+        # and 402 in particular means something a reader can act on: the key
+        # works and the PLAN does not reach this. Recorded call transcripts sit
+        # on FMP's Ultimate tier, which is why a Premium key lands here.
+        from alphadesk.providers.catalogue import VENDORS
+        v = VENDORS.get(prov.name)
+        name = v.label if v else prov.name
+        if isinstance(exc, EntitlementError):
+            why = (f"{name} refused this: recorded call transcripts are not on your plan "
+                   f"with them. SEC results releases are free — clear your transcript "
+                   f"vendor on the Account page to read those instead.")
+        else:
+            why = f"{name} could not be reached for this symbol just now ({exc})."
         return {"symbol": symbol.upper(), "provider": prov.name, "kind": prov.kind,
-                "transcripts": rows, "error": str(exc)}
+                "transcripts": [], "error": why}
     return {"symbol": symbol.upper(), "provider": prov.name, "kind": prov.kind, "transcripts": rows}
 
 

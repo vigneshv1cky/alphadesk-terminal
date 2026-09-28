@@ -66,10 +66,53 @@ def test_an_ifrs_filer_says_so_rather_than_reading_as_silent(monkeypatch):
     applied to a keyless source)."""
     monkeypatch.setattr("alphadesk.ingest.edgar_financials.fundamentals_series",
                         lambda *a, **k: {"metrics": [], "series": {}})
-    out = ff.filed_quarter("VFS", "2026-09-28")
+    out = ff.filed_quarter("IVA", "2026-09-28")
     assert out["metrics"] == []
-    assert "IFRS" in out["note"] and "not filed a quarterly report yet" in out["note"]
+    # BOTH GRAINS ARE TRIED before this message can fire, so it is now a narrow
+    # claim rather than a catch-all: a 20-F filer reporting in US-GAAP is
+    # answered with its annual series (see the test below), and only a genuine
+    # IFRS filer or a company that has filed nothing reaches here.
+    assert "IFRS" in out["note"] and "annual or quarterly" in out["note"]
     assert out["period_end"] is None
+
+
+def test_a_filer_with_no_quarters_is_answered_with_its_YEARS(monkeypatch):
+    """A FOREIGN PRIVATE ISSUER FILES NO QUARTERS (2026-09-28, found on WEBUY
+    Global, whose panels were empty while the SEC held 265 us-gaap tags for
+    it). It reports once a year on a 20-F. Asking only for quarters found
+    nothing and the panel blamed IFRS for it — which was simply false."""
+    annual = {"metrics": [{"id": "revenue", "label": "Revenue", "unit": "currency"}],
+              "series": {"revenue": [{"t": "2024-12-31", "v": 50_869_812.0},
+                                     {"t": "2025-12-31", "v": 18_834_099.0}]}}
+
+    def series(sym, period="quarterly", **k):
+        return {"metrics": [], "series": {}} if period == "quarterly" else annual
+
+    monkeypatch.setattr("alphadesk.ingest.edgar_financials.fundamentals_series", series)
+    out = ff.filed_quarter("WBUY", "2026-09-28")
+    assert out["period"] == "annual"
+    assert out["period_end"] == "2025-12-31" and out["prior_end"] == "2024-12-31"
+    assert out["metrics"][0]["change_pct"] == -62.98
+    # Its newest filed period is a year old BY DESIGN, so the quarterly window
+    # would mark every 20-F filer stale and say its figures were missing.
+    assert out["covers_report"] is True and out["note"] is None
+
+
+def test_a_quarterly_filer_is_not_switched_to_annual(monkeypatch):
+    """The fallback fires only where there is no quarterly series at all — a
+    10-Q filer must keep its quarters."""
+    q = {"metrics": [{"id": "revenue", "label": "Revenue", "unit": "currency"}],
+         "series": {"revenue": [{"t": "2025-06-30", "v": 1.0}, {"t": "2026-06-30", "v": 2.0}]}}
+    calls = []
+
+    def series(sym, period="quarterly", **k):
+        calls.append(period)
+        return q if period == "quarterly" else {"metrics": [], "series": {}}
+
+    monkeypatch.setattr("alphadesk.ingest.edgar_financials.fundamentals_series", series)
+    out = ff.filed_quarter("NTWK", "2026-09-28")
+    assert out["period"] == "quarterly"
+    assert calls == ["quarterly"]          # annual is never asked for
 
 
 def test_margins_move_in_percentage_points_and_only_off_positive_revenue(monkeypatch):

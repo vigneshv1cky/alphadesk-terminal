@@ -224,13 +224,18 @@ export function EpsPanel({ symbol }: { symbol: string }) {
   const fyEnd = fiscalYearEndMonth(quote?.fiscal_year_end)
   const [hover, setHover] = useState<number | null>(null)
 
+  // THE SERIES MAY BE ANNUAL. A foreign private issuer files a 20-F and no
+  // quarters, so the endpoint answers with its yearly series — and labelling
+  // those "Q4 FY21" would call a full year its fourth quarter. The payload
+  // says which grain it gave; the labels follow it.
+  const grain = data?.period === "annual" ? "annual" : "quarterly"
   const points = useMemo(() => {
     const series = data?.series?.diluted_eps ?? []
     return series.slice(-8).map(p => ({
       t: p.t, v: p.v,
-      label: fiscalPeriodLabel(p.t, "quarterly", fyEnd) ?? p.t.slice(5),
+      label: fiscalPeriodLabel(p.t, grain, fyEnd) ?? p.t.slice(0, 4),
     }))
-  }, [data, fyEnd])
+  }, [data, fyEnd, grain])
 
   const body = () => {
     if (isPending) return <Empty>loading…</Empty>
@@ -289,11 +294,12 @@ export function EpsPanel({ symbol }: { symbol: string }) {
           // A year earlier is FOUR QUARTERS BACK in a filed series, which is
           // the only comparison here — and it is filed against filed, never
           // against anybody's expectation of it.
-          const prior = at >= 4 ? points[at - 4] : null
+          const back = grain === "annual" ? 1 : 4
+          const prior = at >= back ? points[at - back] : null
           return (
             <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-caption">
               <span className="font-semibold">{p.label}</span>
-              <span className="num text-muted-foreground">quarter ended {p.t}</span>
+              <span className="num text-muted-foreground">{grain === "annual" ? "year" : "quarter"} ended {p.t}</span>
               <span className="num">Diluted EPS <span className="font-semibold">{p.v.toFixed(2)}</span></span>
               {prior && (
                 <span className="num text-muted-foreground">
@@ -309,7 +315,7 @@ export function EpsPanel({ symbol }: { symbol: string }) {
 
   return (
     <Widget span={6} symbol={symbol} title="Earnings per share"
-            subtitle="diluted, as filed with the SEC">
+            subtitle={grain === "annual" ? "diluted, by year as filed with the SEC" : "diluted, as filed with the SEC"}>
       {body()}
     </Widget>
   )
@@ -329,6 +335,9 @@ export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: str
   const { data, isPending } = useFundamentals(symbol, "quarterly")
   const { data: quote } = useQuote(symbol)
   const fyEnd = fiscalYearEndMonth(quote?.fiscal_year_end)
+  // An annual filer's rows are YEARS. Calling the column "Quarter" over them
+  // would misstate every period in the table.
+  const grain = data?.period === "annual" ? "annual" : "quarterly"
 
   const rows = useMemo(() => {
     const rev = data?.series?.revenue ?? []
@@ -338,33 +347,33 @@ export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: str
     const ends = [...new Set([...rev, ...net, ...eps].map(p => p.t))].sort().reverse().slice(0, 12)
     return ends.map(t => ({
       t,
-      label: fiscalPeriodLabel(t, "quarterly", fyEnd) ?? t,
+      label: fiscalPeriodLabel(t, grain, fyEnd) ?? t,
       revenue: at(rev, t), net: at(net, t), eps: at(eps, t),
     }))
-  }, [data, fyEnd])
+  }, [data, fyEnd, grain])
 
   return (
     <Widget span={span} symbol={symbol} title="Earnings history"
-            subtitle="every quarter as filed with the SEC" scroll={scroll ?? 420}>
+            subtitle={`every ${grain === "annual" ? "year" : "quarter"} as filed with the SEC`} scroll={scroll ?? 420}>
       {isPending ? <Empty>loading…</Empty>
         : rows.length === 0 ? (
-          <Empty>SEC EDGAR holds no filed quarters for {symbol}. That is usual for a foreign
+          <Empty>SEC EDGAR holds no filed periods for {symbol}. That is usual for a foreign
             private issuer, which reports under IFRS and tags its filings differently.</Empty>
         ) : (
         <Table>
           <THead>
-            <TH className="w-[104px]" title="The fiscal quarter, by the period end the company filed">Quarter</TH>
-            <TH align="right" className="w-[92px]" title="Revenue for the quarter, as filed">Revenue</TH>
-            <TH align="right" className="w-[92px]" title="Net income for the quarter, as filed. Green above zero, red below — which is a fact about the figure, not a judgment on it">Net income</TH>
+            <TH className="w-[104px]" title="The fiscal period, by the period end the company filed">{grain === "annual" ? "Year" : "Quarter"}</TH>
+            <TH align="right" className="w-[92px]" title="Revenue for the period, as filed">Revenue</TH>
+            <TH align="right" className="w-[92px]" title="Net income for the period, as filed. Green above zero, red below — which is a fact about the figure, not a judgment on it">Net income</TH>
             <TH align="right" className="w-[80px]" title="Diluted earnings per share, as filed">Diluted EPS</TH>
-            <TH align="right" title="Net margin: net income over revenue. Derived from two filed figures, and shown only where revenue is positive in the quarter">Net margin</TH>
+            <TH align="right" title="Net margin: net income over revenue. Derived from two filed figures, and shown only where revenue is positive in the period">Net margin</TH>
           </THead>
           <tbody>
             {rows.map(r => {
               const margin = r.revenue && r.revenue > 0 && r.net != null ? (r.net / r.revenue) * 100 : null
               return (
                 <tr key={r.t}>
-                  <TD mono title={`Quarter ended ${r.t}`}>{r.label}</TD>
+                  <TD mono title={`${grain === "annual" ? "Year" : "Quarter"} ended ${r.t}`}>{r.label}</TD>
                   <TD align="right" mono>{compact(r.revenue)}</TD>
                   <TD align="right" mono className={r.net == null ? "" : r.net >= 0 ? "text-gain" : "text-loss"}>{compact(r.net)}</TD>
                   <TD align="right" mono className={r.eps == null ? "" : r.eps >= 0 ? "text-gain" : "text-loss"}>{eps(r.eps)}</TD>

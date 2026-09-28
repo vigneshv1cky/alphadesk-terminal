@@ -9,6 +9,8 @@ import { Empty, btnCls } from "@/components/terminal"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { ago, etClock, inBackfillWindow, reportedLabel, sessionLabel, todayInEt, whenLabel } from "@/lib/earningsClock"
 import { vendorLabel } from "@/lib/vendors"
+import { useNarrowViewport } from "@/lib/viewport"
+import { cn } from "@/lib/utils"
 
 export { sessionLabel }
 
@@ -219,7 +221,15 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
       {/* A day heading sits on the card itself above a hairline (2026-09-18):
           a grey band under a 40%-ink rule read as a slab across a white card
           once the panels became cards. */}
-      <h3 className="border-b border-card-rule bg-card px-3 pb-2 pt-4 text-body font-extrabold uppercase tracking-caps">
+      {/* Sticky so the date stays readable while its rows pass under it —
+          and the column headings stick directly beneath it at the heading's
+          own 44px, so a reader well down a long day still knows which column
+          is which. Both carry an opaque background: a transparent sticky
+          element lets the rows show through as they pass under. */}
+      {/* Sticky so the date stays readable while its rows pass under it —
+          and opaque, because a transparent heading would let rows show
+          through as they scroll beneath. */}
+      <h3 className="sticky top-0 z-10 border-b border-card-rule bg-card px-3 pb-2 pt-4 text-body font-extrabold uppercase tracking-caps">
         {longDay(day.date)}
         <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
           {day.count} {day.count === 1 ? "call" : "calls"}
@@ -231,41 +241,48 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
           Volatility and Liquidity out of view. The wider floor applies from lg,
           where Max up and Max down join and the fixed columns total 684px —
           below lg those two are hidden and the old floor still fits. */}
-      <div className="overflow-x-auto"><div className="min-w-[560px] lg:min-w-[724px]">
+      {/* NO SCROLL CONTAINER OF ITS OWN. A per-day `overflow-x-auto` wrapper
+          computes `overflow-y: auto` as well — CSS promotes the other axis
+          the moment one is not `visible` — which made it the nearest scroll
+          container and left the sticky column headings anchored to a box that
+          never scrolls vertically. The list's single scroller handles both
+          axes now, so sideways scrolling moves the whole week together
+          instead of one day's table inside it. */}
+      <div><div className="min-w-[560px] lg:min-w-[724px]">
       <table className="w-full table-fixed border-separate border-spacing-0 text-body">
           <thead>
             <tr>
-              <th className="w-[112px] border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="The ticker. Click a row to add it to the board and read the report in the insights box" aria-description="The ticker. Click a row to add it to the board and read the report in the insights box">Symbol</th>
+              <th className="w-[112px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="The ticker. Click a row to add it to the board and read the report in the insights box" aria-description="The ticker. Click a row to add it to the board and read the report in the insights box">Symbol</th>
               {/* The name needs room: at a narrow tile it was left with a
                   few pixels and read as one letter. It hides below md; the
                   columns that matter less at that width hide below lg. */}
-              <th className="hidden border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground md:table-cell" />
-              <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip={estimates
+              <th className="hidden sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground md:table-cell" />
+              <th className="w-[104px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip={estimates
                     ? "When the company reports: BMO before the open, AMC after the close, or the release time once it is out. Green: released. Amber: the date is not confirmed by the company. Hover a row for how the time is known"
                     : "When EDGAR accepted the filing, New York time. That is at or after the moment the results went out, never before it, so it is an upper bound on the release. A filing accepted on a later day shows that day instead, because no release time can be claimed for it."}>When</th>
               {estimates && <>
-              <th className="w-[70px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="The analyst consensus for earnings per share, adjusted for any split since it was quoted" aria-description="The analyst consensus for earnings per share, adjusted for any split since it was quoted">Est EPS</th>
-              <th className="hidden w-[90px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell" data-tip="Earnings per share as reported, once released" aria-description="Earnings per share as reported, once released">Actual EPS</th>
-              <th className="w-[76px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="How far reported earnings per share came in above or below the estimate, in percent" aria-description="How far reported earnings per share came in above or below the estimate, in percent">Surprise</th>
+              <th className="w-[70px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="The analyst consensus for earnings per share, adjusted for any split since it was quoted" aria-description="The analyst consensus for earnings per share, adjusted for any split since it was quoted">Est EPS</th>
+              <th className="hidden w-[90px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell" data-tip="Earnings per share as reported, once released" aria-description="Earnings per share as reported, once released">Actual EPS</th>
+              <th className="w-[76px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="How far reported earnings per share came in above or below the estimate, in percent" aria-description="How far reported earnings per share came in above or below the estimate, in percent">Surprise</th>
               </>}
               {!estimates && (
-                <th className="w-[76px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+                <th className="w-[76px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                     data-tip="How far the price has moved since the report. Measured from the last close before the results could be read — the prior session for a morning report, the report day\u2019s own close for one after the bell. Live while that session is still trading, and fixed at its close once it ends.">Move</th>
               )}
               {/* The range of the SAME window Move measures, off the same
                   baseline. They hide below lg: nine columns crush the company
                   name at a narrow viewport, and these are secondary to Move. */}
               {!estimates && <>
-              <th className="hidden w-[76px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell"
+              <th className="hidden w-[76px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell"
                   data-tip="The highest the price reached in the same window Move measures, against the same baseline. Not floored at zero: a stock that gapped down and never traded back above the baseline shows a negative best, which says the reaction only ran one way.">Max up</th>
-              <th className="hidden w-[84px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell"
+              <th className="hidden w-[84px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell"
                   data-tip="The lowest the price reached in the same window Move measures, against the same baseline. Regular-session figures, so an after-hours reaction to a release after the bell is not in them until the next session opens.">Max down</th>
               </>}
-              <th className="w-[80px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+              <th className="w-[80px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                   data-tip="Market capitalisation today, from your company data vendor. Each day lists the largest companies first" aria-description="Market capitalisation today, from your company data vendor. Each day lists the largest companies first">Mkt cap</th>
-              <th className="w-[74px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+              <th className="w-[74px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                   data-tip="Annualised volatility of daily returns over the last twenty sessions, from your chart vendor" aria-description="Annualised volatility of daily returns over the last twenty sessions, from your chart vendor">Volatility</th>
-              <th className="w-[78px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+              <th className="w-[78px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                   data-tip="Average dollar volume a day over the last twenty sessions, from your chart vendor" aria-description="Average dollar volume a day over the last twenty sessions, from your chart vendor">Liquidity</th>
             </tr>
           </thead>
@@ -486,6 +503,7 @@ export function EarningsCalendar({ picked, pickedRow, onPick }: {
   // Kept across pages for the session (lib/keptState): leaving Earnings and
   // coming back used to reopen this week with no day picked.
   const [start, setStart] = useKeptState<string | undefined>("alphadesk.earnings.week", undefined)
+  const narrow = useNarrowViewport()
   const { data, isPending, isError, error, isPlaceholderData } = useEarningsWeek(start)
   const qc = useQueryClient()
   // The weeks either side are asked for once this one is on screen, one after
@@ -706,7 +724,16 @@ export function EarningsCalendar({ picked, pickedRow, onPick }: {
         ))}
       </div>
 
-      <div className={isPlaceholderData ? "pointer-events-none opacity-50 transition-opacity" : undefined} aria-busy={isPlaceholderData}>
+      {/* ONLY THE ROWS SCROLL. The week arrows and the day strip sit above
+          this and stay put; each day's heading is sticky inside it, so on a
+          whole-week view the date you are reading stays on screen as its rows
+          pass under it. On a phone the page is the one scroll — a panel that
+          scrolls inside a scrolling page is the trap #273 fixed for the day
+          strip, and it applies here too. */}
+      <div className={cn("min-h-0", narrow ? "overflow-x-auto" : "overflow-auto",
+                         isPlaceholderData && "pointer-events-none opacity-50 transition-opacity")}
+           style={narrow ? undefined : { maxHeight: "max(420px, 100vh - 320px)" }}
+           aria-busy={isPlaceholderData}>
       {total === 0 ? (
         <Empty>nothing reports this week</Empty>
       ) : (

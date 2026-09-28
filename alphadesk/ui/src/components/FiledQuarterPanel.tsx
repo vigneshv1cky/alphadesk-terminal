@@ -63,8 +63,11 @@ export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; repo
   return (
     <div>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-row-rule px-3 py-2.5">
+        {/* A FOREIGN PRIVATE ISSUER FILES A YEAR, NOT A QUARTER. Printing
+            "Quarter ended" over its annual figures would misstate the period
+            the numbers cover, which is the one thing this header exists for. */}
         <span className="text-caption font-semibold text-foreground">
-          Quarter ended {day(data.period_end)}
+          {data.period === "annual" ? "Year" : "Quarter"} ended {day(data.period_end)}
         </span>
         <span className="text-caption text-muted-foreground">
           against {day(data.prior_end)}
@@ -74,7 +77,7 @@ export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; repo
         {data.covers_report === false && (
           <span className="text-caption font-semibold text-warn"
                 title={data.note ?? undefined}>
-            the quarter behind this report is not filed yet
+            the {data.period === "annual" ? "year" : "quarter"} behind this report is not filed yet
           </span>
         )}
         <span className="ml-auto text-caption text-muted-foreground"
@@ -86,7 +89,12 @@ export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; repo
         <thead>
           <tr>
             <th className="border-b border-row-rule bg-panel px-3 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground">Figure</th>
-            <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">This quarter</th>
+            {/* The column says the same thing the header does — an annual filer's
+                figures are a YEAR's, and "This quarter" over them is the same
+                misstatement one level down. */}
+            <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">
+              This {data.period === "annual" ? "year" : "quarter"}
+            </th>
             <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">Year ago</th>
             <th className="w-[86px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">Change</th>
           </tr>
