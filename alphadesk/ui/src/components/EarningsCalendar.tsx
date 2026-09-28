@@ -375,7 +375,7 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                   <td className={`overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-2 py-1.5 text-label font-medium uppercase tracking-caps ${out ? "text-gain" : sure || past ? "text-muted-foreground" : "text-warn"}`}
                       title={estimates ? whenTitle
                         : r.released_at ? `EDGAR accepted the filing ${etClock(r.released_at, r.report_date, true)} ET — at or after the moment the results went out`
-                        : "No acceptance time for this filing yet"}>
+                        : `The company filed on ${r.filed_on ?? "a later day"}, after the results were released, so EDGAR times the filing and not the release. The day is the company's own; the hour is not in the record.`}>
                     {when}
                   </td>
                   {estimates && <>

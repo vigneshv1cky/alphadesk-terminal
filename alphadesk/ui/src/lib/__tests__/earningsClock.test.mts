@@ -90,17 +90,20 @@ test("reportedLabel drops Out and shows the clock alone", () => {
   }), etClock("2026-09-22T06:55:14-04:00", "2026-09-22"))
 })
 
-test("a filing accepted on a LATER day claims no release time", () => {
-  // EDGAR's acceptance is at or after the release, never before it, so a
-  // filing that landed days later cannot date the release and does not try.
+test("a filing that landed days later shows no time and borrows none", () => {
+  // 25 of a fortnight's 169 rows were filed one to six days after the release
+  // they report. The company's own words date the DAY; nothing dates the hour,
+  // and the news feed could time 1 of 17 of them. This used to print the
+  // FILING day — one to six days after the release, beside a row already
+  // dated correctly — which reads as the public moment and is not.
   assert.equal(reportedLabel({
     report_date: "2026-09-22", session: null,
     released_on: "2026-09-22", filed_on: "2026-09-25",
-  }), "filed 09-25")
+  }), "day only")
 })
 
 test("no clock and no later filing falls back to the session", () => {
   assert.equal(reportedLabel({ report_date: "2026-09-22", session: "AMC", released_on: "2026-09-22" }), "after")
   assert.equal(reportedLabel({ report_date: "2026-09-22", session: "BMO", released_on: "2026-09-22" }), "pre-mkt")
-  assert.equal(reportedLabel({ report_date: "2026-09-22", session: null, released_on: "2026-09-22" }), "—")
+  assert.equal(reportedLabel({ report_date: "2026-09-22", session: null, released_on: "2026-09-22" }), "day only")
 })
