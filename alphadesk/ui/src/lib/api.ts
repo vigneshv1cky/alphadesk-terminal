@@ -111,10 +111,6 @@ export interface EarningsRow {
   evidence?: "reported" | "announced" | "vendors" | "one_vendor"
   /** How many calendars listed this report. */
   vendor_count?: number
-  /** Set when EDGAR accepted the filing on a DIFFERENT day from the one it
-   * reports — filed after hours and processed later. The instant then dates
-   * nothing on the report day, so no time is shown and this day is. */
-  accepted_day?: string | null
   /** How far the price has moved since the report, in percent. Measured
    * from the last close before the results could be read: the prior session
    * for a morning report, the report day's own close for one after the bell.

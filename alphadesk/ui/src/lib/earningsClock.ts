@@ -26,10 +26,6 @@ export type WhenRow = {
   /** The day EDGAR accepted the filing, which can be later than the day the
    * results were released. */
   filed_on?: string | null
-  /** Set when EDGAR accepted the filing on a DIFFERENT day from the one it
-   * reports — filed after hours and processed later. The instant then dates
-   * nothing on the report day and is not shown as a time. */
-  accepted_day?: string | null
 }
 
 const ET = "America/New_York"
@@ -142,9 +138,11 @@ export function reportedLabel(r: WhenRow): string {
   if (clockAt) return etClock(clockAt, r.report_date)
   if (r.session === "BMO") return "pre-mkt"
   if (r.session === "AMC") return "after"
-  // No clock. Say what IS known rather than nothing: the day EDGAR accepted
-  // it, when that differs from the day it reports, or the filing day.
-  if (r.accepted_day) return `accepted ${r.accepted_day.slice(5)}`
+  // No clock: an 8-K may be filed up to four business days AFTER the release
+  // it reports, and there the filing's own time dates nothing. The filing day
+  // is shown instead. (A filing accepted BEFORE its administrative date is a
+  // different case and never reaches here: the row moves to the day it was
+  // accepted, so its clock is same-day.)
   return r.filed_on && r.filed_on !== r.report_date ? `filed ${r.filed_on.slice(5)}` : "—"
 }
 

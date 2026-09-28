@@ -1236,14 +1236,24 @@ def reported_between(start: str, end: str) -> list[dict]:
         # hours and processed later — so the cell read "6:20 PM" for a clock
         # belonging to a different day. A stamp from another day dates
         # nothing here and is dropped; the row then shows its filing day.
-        # AND SAY SO RATHER THAN SHOWING NOTHING. Westin Acquisition's 10-Q
-        # is dated the 28th and was accepted at 19:16 on the 25th, filed
-        # after hours and processed later. Dropping the clock is right — it
-        # dates nothing on the 28th — but a bare dash tells the reader less
-        # than the truth does, so the day it WAS accepted travels with the
-        # row and the cell prints it.
+        # AN ACCEPTANCE CANNOT PRECEDE PUBLICATION, so when it does, OUR DAY
+        # IS WRONG (2026-09-28). EDGAR dates a filing accepted after 17:30 to
+        # the NEXT business day: Westin Acquisition published at 19:16 on
+        # Friday the 25th and was given a filing date of Monday the 28th, an
+        # administrative date, not the day anything happened. Moving the row
+        # to the day it was accepted puts it where it occurred and makes the
+        # clock same-day by construction — which is why no "accepted on"
+        # label is needed, and why the first attempt at one was solving the
+        # wrong problem.
+        #
+        # THE OTHER DIRECTION IS LEFT ALONE. An 8-K may be filed up to four
+        # business days AFTER the release it reports, and there the release
+        # genuinely happened earlier: the day stands and the clock is
+        # dropped, because a filing days later times nothing.
         accepted_day = _et_day(clock) if clock else None
-        if clock and accepted_day != day:
+        if accepted_day and accepted_day < day:
+            day = accepted_day
+        elif clock and accepted_day != day:
             clock = None
         rows.append({
             "symbol": sym,
@@ -1257,7 +1267,6 @@ def reported_between(start: str, end: str) -> list[dict]:
             "filed_on": f["file_date"][:10],
             "filed_at": f.get("accepted_at"),
             "session": _session_of(clock) if clock else None,
-            "accepted_day": accepted_day if accepted_day != day else None,
             "form": f.get("form"),
             "accession": f.get("accession"),
             # The exchange comes from the SEC's own ticker file (symbol_meta),
