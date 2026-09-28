@@ -111,6 +111,11 @@ export interface EarningsRow {
   evidence?: "reported" | "announced" | "vendors" | "one_vendor"
   /** How many calendars listed this report. */
   vendor_count?: number
+  /** What the REPORT did to the price, close to close, in percent. The
+   * reacting session depends on when the company reported: the report day
+   * itself before the open, the NEXT session after the close, because a
+   * company reporting at 16:30 has already had its day. */
+  move_pct?: number | null
   /** Twenty-session annualised volatility, percent, from the user's chart vendor. */
   volatility?: number | null
   /** Twenty-session average dollar volume a day. */

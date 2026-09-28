@@ -661,3 +661,35 @@ def test_a_company_that_announced_on_an_8k_does_not_get_a_second_row(monkeypatch
     saved = []
     monkeypatch.setattr(er.store, "upsert_release", lambda *a, **k: saved.append(a[0]))
     assert er.refresh_periodic_day("2026-09-23") == 0 and saved == []
+
+
+def test_an_after_close_report_is_read_by_the_NEXT_session():
+    """A company reporting at 16:30 has already had its day: the report-day
+    move happened while the results were still unpublished. Measured on KB
+    Home, 2026-09-22: the report day was +1.53%, the session that could
+    actually read it -2.96%. Putting the first number beside the row would
+    date the reaction to before the news."""
+    import datetime as dt
+    from alphadesk.ingest import earnings_calendar as ec
+
+    def bar(day, close):
+        return {"ts": dt.datetime.fromisoformat(day + "T04:00:00+00:00"), "close": close}
+
+    bars = [bar("2026-09-21", 100.0), bar("2026-09-22", 110.0), bar("2026-09-23", 99.0)]
+    # Before the open: the report day's own move is the reaction.
+    assert ec._report_day_move(bars, "2026-09-22", "BMO") == 10.0
+    # After the close: the next session is.
+    assert ec._report_day_move(bars, "2026-09-22", "AMC") == -10.0
+    # No session named: treated as read on the day, like a daytime release.
+    assert ec._report_day_move(bars, "2026-09-22", None) == 10.0
+
+
+def test_no_move_until_the_reacting_session_has_closed():
+    """A part-day move is not a close, so nothing is shown for it."""
+    import datetime as dt
+    from alphadesk.ingest import earnings_calendar as ec
+    bars = [{"ts": dt.datetime.fromisoformat("2026-09-21T04:00:00+00:00"), "close": 100.0},
+            {"ts": dt.datetime.fromisoformat("2026-09-22T04:00:00+00:00"), "close": 110.0}]
+    assert ec._report_day_move(bars, "2026-09-22", "AMC") is None       # next session not in
+    assert ec._report_day_move(bars, "2026-09-25", "BMO") is None       # no bar for the day
+    assert ec._report_day_move([], "2026-09-22", "BMO") is None

@@ -357,6 +357,16 @@ def refresh_day(day: str) -> int:
     except Exception as exc:
         log.warning("8-K exhibit sweep failed for %s: %s", day, exc)
         exhibits = 0
+    # AND FILL THE TIMES AGAIN. fill_times runs above, BEFORE the three
+    # sweeps, so every row they add would wait a whole cycle for its
+    # acceptance stamp — fifteen minutes during which the tab shows a dash
+    # where a release time belongs. Cheap: it only looks at rows still
+    # missing one.
+    if periodic or exhibits or foreign:
+        try:
+            fill_times(day)
+        except Exception as exc:
+            log.warning("second fill_times pass failed for %s: %s", day, exc)
     return len(rows) + foreign + periodic + exhibits
 
 

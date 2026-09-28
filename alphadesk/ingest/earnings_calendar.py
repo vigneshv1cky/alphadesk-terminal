@@ -1231,6 +1231,13 @@ def reported_between(start: str, end: str) -> list[dict]:
         f = filings[0]
         sym = f["symbol"]
         clock = release_clock(f)
+        # AND THE ACCEPTANCE MUST BE ON THE DAY ITSELF. Armlogi's 10-K is
+        # dated the 28th and was accepted at 18:20 on the 25th — filed after
+        # hours and processed later — so the cell read "6:20 PM" for a clock
+        # belonging to a different day. A stamp from another day dates
+        # nothing here and is dropped; the row then shows its filing day.
+        if clock and _et_day(clock) != day:
+            clock = None
         rows.append({
             "symbol": sym,
             "company_name": f.get("company") or edgar.company_title(sym),
@@ -1282,6 +1289,13 @@ def reported_between(start: str, end: str) -> list[dict]:
                       if b else {"volatility": None, "liquidity": None})
                 r["volatility"], r["liquidity"] = st["volatility"], st["liquidity"]
                 r["low_liquidity"] = (st["liquidity"] < LOW_LIQUIDITY_DOLLAR_VOL) if st["liquidity"] is not None else None
+                # WHAT THE REPORT DID TO THE PRICE (2026-09-28, the owner).
+                # A feed of what filed says nothing about whether it mattered;
+                # this is the day's own close against the one before it, out
+                # of the SAME bars the volatility above is computed from, so
+                # it costs no extra request. None on the day itself until the
+                # session's bar exists — a part-day move is not a close.
+                r["move_pct"] = _report_day_move(b, r["report_date"], r.get("session"))
         except Exception as exc:
             # Enrichment, never the feed: a vendor refusing must not cost the
             # reader the list of who reported.
@@ -1291,12 +1305,22 @@ def reported_between(start: str, end: str) -> list[dict]:
                 r.setdefault("volatility", None)
                 r.setdefault("liquidity", None)
                 r.setdefault("low_liquidity", None)
+                r.setdefault("move_pct", None)
     # Newest release first within a day; a filing with no clock sorts after
     # the timed ones rather than jumping the queue on a null.
     rows.sort(key=lambda r: (r["report_date"], r.get("released_at") is None,
                              r.get("released_at") or "", r["symbol"]), reverse=False)
     rows.sort(key=lambda r: r["report_date"])
     return rows
+
+
+def _et_day(stamp: str) -> str | None:
+    """The New York calendar day an instant falls on."""
+    from alphadesk.config import ET
+    try:
+        return datetime.fromisoformat(stamp).astimezone(ET).date().isoformat()
+    except (ValueError, TypeError):
+        return None
 
 
 def _session_of(accepted_at: str) -> str | None:
@@ -1341,3 +1365,37 @@ def reported_week(start: Optional[str] = None) -> dict:
     return {"start": sunday.isoformat(), "end": saturday.isoformat(),
             "today": now_et().date().isoformat(), "days": days, "pending": {},
             "source": "edgar", "calendar_vendors": [], "forward_available": False}
+
+def _report_day_move(bars: list[dict], day: str, session: str | None = None) -> float | None:
+    """The move the REPORT caused, close to close, in percent.
+
+    WHICH SESSION REACTS DEPENDS ON WHEN THE COMPANY REPORTED, and getting
+    that wrong would put a number beside half the rows that predates their
+    news. A company reporting BEFORE the open is read by that day's market,
+    so the report day's own close-to-close move is the reaction. A company
+    reporting AFTER the close has already had its day: the market cannot
+    respond until the NEXT session, and the report-day move is what happened
+    while the results were still unpublished.
+
+    Close to close, not open to close, which is what a vendor's own movers
+    list means by the day's change — open to close would call a stock that
+    gapped up on the news and drifted back a loser. None when the reacting
+    session's bar is not in yet, because a part-day move is not a close.
+    """
+    if not bars:
+        return None
+    dated = [(_et_day(b["ts"].isoformat()) if hasattr(b.get("ts"), "isoformat") else None, b)
+             for b in bars]
+    dated = [(d, b) for d, b in dated if d]
+    at = next((i for i, (d, _) in enumerate(dated) if d == day), None)
+    if at is None:
+        return None
+    # After the close: the next session is the one that read the report.
+    react = at + 1 if (session or "").upper() == "AMC" else at
+    if react == 0 or react >= len(dated):
+        return None
+    was = dated[react - 1][1].get("close")
+    now = dated[react][1].get("close")
+    if not was or not now:
+        return None
+    return round((now - was) / was * 100, 2)

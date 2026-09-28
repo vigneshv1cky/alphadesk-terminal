@@ -246,6 +246,10 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
               <th className="hidden w-[90px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell" data-tip="Earnings per share as reported, once released" aria-description="Earnings per share as reported, once released">Actual EPS</th>
               <th className="w-[76px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="How far reported earnings per share came in above or below the estimate, in percent" aria-description="How far reported earnings per share came in above or below the estimate, in percent">Surprise</th>
               </>}
+              {!estimates && (
+                <th className="w-[76px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+                    data-tip="What the report did to the price, close to close. Which session counts depends on when the company reported: the report day itself before the open, the NEXT session after the close, because a company reporting at 16:30 has already had its day. Empty until that session closes — a part-day move is not a close.">Move</th>
+              )}
               <th className="w-[80px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                   data-tip="Market capitalisation today, from your company data vendor. Each day lists the largest companies first" aria-description="Market capitalisation today, from your company data vendor. Each day lists the largest companies first">Mkt cap</th>
               <th className="w-[74px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
@@ -399,6 +403,18 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                     )}
                   </td>
                   </>}
+                  {!estimates && (
+                    <td className={`tnum border-b border-row-rule px-2 py-1.5 text-right font-semibold ${
+                      r.move_pct == null ? "text-muted-foreground"
+                        : r.move_pct >= 0 ? "text-gain" : "text-loss"}`}
+                        title={r.move_pct == null
+                          ? "The session that reads this report has not closed yet"
+                          : r.session === "AMC"
+                            ? "The session AFTER the report, which is the first one that could read it"
+                            : "The report day's own close against the session before it"}>
+                      {r.move_pct == null ? "—" : `${r.move_pct >= 0 ? "+" : ""}${r.move_pct.toFixed(2)}%`}
+                    </td>
+                  )}
                   <td className="tnum border-b border-row-rule px-2 py-1.5 text-right">
                     {money(r.market_cap)}
                   </td>
