@@ -138,8 +138,11 @@ export function reportedLabel(r: WhenRow): string {
   if (clockAt) return etClock(clockAt, r.report_date)
   if (r.session === "BMO") return "pre-mkt"
   if (r.session === "AMC") return "after"
-  // No clock: the filing came in after the day it reports, so there is no
-  // release time to show and none is invented.
+  // No clock: an 8-K may be filed up to four business days AFTER the release
+  // it reports, and there the filing's own time dates nothing. The filing day
+  // is shown instead. (A filing accepted BEFORE its administrative date is a
+  // different case and never reaches here: the row moves to the day it was
+  // accepted, so its clock is same-day.)
   return r.filed_on && r.filed_on !== r.report_date ? `filed ${r.filed_on.slice(5)}` : "—"
 }
 

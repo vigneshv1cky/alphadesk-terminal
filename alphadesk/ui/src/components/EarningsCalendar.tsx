@@ -246,6 +246,10 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
               <th className="hidden w-[90px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell" data-tip="Earnings per share as reported, once released" aria-description="Earnings per share as reported, once released">Actual EPS</th>
               <th className="w-[76px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="How far reported earnings per share came in above or below the estimate, in percent" aria-description="How far reported earnings per share came in above or below the estimate, in percent">Surprise</th>
               </>}
+              {!estimates && (
+                <th className="w-[76px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+                    data-tip="How far the price has moved since the report. Measured from the last close before the results could be read — the prior session for a morning report, the report day\u2019s own close for one after the bell. Live while that session is still trading, and fixed at its close once it ends.">Move</th>
+              )}
               <th className="w-[80px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                   data-tip="Market capitalisation today, from your company data vendor. Each day lists the largest companies first" aria-description="Market capitalisation today, from your company data vendor. Each day lists the largest companies first">Mkt cap</th>
               <th className="w-[74px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
@@ -369,7 +373,9 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                     {r.company_name ?? ""}
                   </td>
                   <td className={`overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-2 py-1.5 text-label font-medium uppercase tracking-caps ${out ? "text-gain" : sure || past ? "text-muted-foreground" : "text-warn"}`}
-                      title={whenTitle}>
+                      title={estimates ? whenTitle
+                        : r.released_at ? `EDGAR accepted the filing ${etClock(r.released_at, r.report_date, true)} ET — at or after the moment the results went out`
+                        : "No acceptance time for this filing yet"}>
                     {when}
                   </td>
                   {estimates && <>
@@ -399,6 +405,18 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                     )}
                   </td>
                   </>}
+                  {!estimates && (
+                    <td className={`tnum border-b border-row-rule px-2 py-1.5 text-right font-semibold ${
+                      r.move_pct == null ? "text-muted-foreground"
+                        : r.move_pct >= 0 ? "text-gain" : "text-loss"}`}
+                        title={r.move_pct == null
+                          ? "No price yet for the session that reads this report"
+                          : r.session === "AMC"
+                            ? "Since the report day's close, which was printed before the results went out"
+                            : "Since the close of the session before the report"}>
+                      {r.move_pct == null ? "—" : `${r.move_pct >= 0 ? "+" : ""}${r.move_pct.toFixed(2)}%`}
+                    </td>
+                  )}
                   <td className="tnum border-b border-row-rule px-2 py-1.5 text-right">
                     {money(r.market_cap)}
                   </td>

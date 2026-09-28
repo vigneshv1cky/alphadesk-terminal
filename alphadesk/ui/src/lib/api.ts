@@ -111,6 +111,11 @@ export interface EarningsRow {
   evidence?: "reported" | "announced" | "vendors" | "one_vendor"
   /** How many calendars listed this report. */
   vendor_count?: number
+  /** How far the price has moved since the report, in percent. Measured
+   * from the last close before the results could be read: the prior session
+   * for a morning report, the report day's own close for one after the bell.
+   * Live while the reacting session trades, fixed at its close once it ends. */
+  move_pct?: number | null
   /** Twenty-session annualised volatility, percent, from the user's chart vendor. */
   volatility?: number | null
   /** Twenty-session average dollar volume a day. */

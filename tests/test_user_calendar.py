@@ -661,3 +661,48 @@ def test_a_company_that_announced_on_an_8k_does_not_get_a_second_row(monkeypatch
     saved = []
     monkeypatch.setattr(er.store, "upsert_release", lambda *a, **k: saved.append(a[0]))
     assert er.refresh_periodic_day("2026-09-23") == 0 and saved == []
+
+
+def test_the_baseline_is_the_close_before_the_results_could_be_read():
+    """A morning reporter's baseline is the PRIOR session; an after-close
+    reporter's is the report day's own close, which was printed at 16:00
+    while the results were still unpublished. Using the report day's close
+    for a morning reporter would fold the reaction into the baseline."""
+    import datetime as dt
+    from alphadesk.ingest import earnings_calendar as ec
+
+    def bar(day, close):
+        return {"ts": dt.datetime.fromisoformat(day + "T04:00:00+00:00"), "close": close}
+
+    bars = [bar("2026-09-21", 100.0), bar("2026-09-22", 110.0), bar("2026-09-23", 99.0)]
+    assert ec._base_close(bars, "2026-09-22", "BMO") == 100.0
+    assert ec._base_close(bars, "2026-09-22", "AMC") == 110.0
+    assert ec._base_close(bars, "2026-09-21", "BMO") is None      # nothing before it
+
+
+def test_close_to_current_while_open_and_close_to_close_once_ended():
+    """The owner's rule (2026-09-28): a report read this morning is still
+    moving and the reader wants the live number; once that session has
+    closed the close is final and stops the figure drifting with whatever
+    happened afterwards. The reacting session's BAR EXISTING is the signal."""
+    from alphadesk.ingest import earnings_calendar as ec
+    # Still trading: the live price decides.
+    assert ec.move_since_report(100.0, None, 107.0) == 7.0
+    # Closed: the close decides, and the live price is ignored.
+    assert ec.move_since_report(100.0, 104.0, 130.0) == 4.0
+    # Neither available.
+    assert ec.move_since_report(100.0, None, None) is None
+    assert ec.move_since_report(None, 104.0, 107.0) is None
+
+
+def test_the_reacting_session_is_the_next_one_after_a_close_report():
+    import datetime as dt
+    from alphadesk.ingest import earnings_calendar as ec
+
+    def bar(day, close):
+        return {"ts": dt.datetime.fromisoformat(day + "T04:00:00+00:00"), "close": close}
+
+    bars = [bar("2026-09-21", 100.0), bar("2026-09-22", 110.0)]
+    assert ec._reacting_close(bars, "2026-09-22", "BMO") == 110.0
+    assert ec._reacting_close(bars, "2026-09-22", "AMC") is None   # next session not in yet
+    assert ec._reacting_close(bars, "2026-09-21", "AMC") == 110.0
