@@ -700,6 +700,13 @@ export interface FilingFeedRow {
   url: string | null
   symbols: string[]
   group: string
+  /** An 8-K's item numbers with EDGAR's OWN descriptions — "3.01 Notice of
+   * Delisting…", "4.02 Non-Reliance on Previously Issued Financial
+   * Statements". The registrant picks these from the SEC's fixed list and
+   * files them under signature, so they are a record of what kind of event
+   * this is, not our reading of it. Empty for a form that carries no items
+   * (a 13D, an S-1), which is what that form is rather than a gap. */
+  items?: { number: string; label: string }[]
 }
 export interface FilingFeed {
   filings: FilingFeedRow[]

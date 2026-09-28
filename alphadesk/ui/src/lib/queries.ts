@@ -35,6 +35,7 @@ export const keys = {
   earningsFind: (symbol: string) => ["earnings-find", symbol] as const,
   earningsContext: (symbol: string) => ["earnings-context", symbol] as const,
   earningsFiled: (symbol: string, on?: string) => ["earnings-filed", symbol, on ?? ""] as const,
+  filingFeed: () => ["filing-feed"] as const,
   earningsHistory: (symbol: string) => ["earnings-history", symbol] as const,
   transcripts: (symbol: string) => ["transcripts", symbol] as const,
   transcript: (symbol: string, id: string) => ["transcript", symbol, id] as const,
@@ -95,6 +96,19 @@ export const useEarningsFiled = (symbol: string, reportDay?: string) =>
     queryFn: ({ signal }) => on(signal).earningsFiled(symbol, reportDay),
     enabled: !!symbol,
     staleTime: 30 * 60_000,
+  })
+
+/** The market's filings, shared by every panel that shows them — the News
+ * page's Filings and Earnings scopes and the "Just filed" tile all read this
+ * ONE request rather than each asking EDGAR separately. Filtering by item
+ * happens on the rows, not in the query, for the same reason. */
+export const useFilingFeed = () =>
+  useQuery({
+    queryKey: keys.filingFeed(),
+    queryFn: ({ signal }) => on(signal).filingFeed(120),
+    staleTime: 60_000,
+    refetchInterval: 3 * 60_000,
+    refetchIntervalInBackground: true,
   })
 
 export const useTranscripts = (symbol: string) =>

@@ -114,3 +114,40 @@ def test_the_market_feed_route_is_not_eaten_by_the_symbol_route(client):
 def test_one_companys_filings_still_answer(client):
     body = client.get("/api/filings/NVDA").json()
     assert body.get("symbol") == "NVDA"
+
+
+def test_items_come_from_the_secs_own_summary_not_from_us():
+    """An 8-K's items are picked by the registrant from the SEC's fixed list
+    and filed under signature, and EDGAR prints the description. So the row is
+    a RECORD of what kind of event this is -- which is what lets a catalyst
+    feed exist without breaking invariant 1. Never restate these in our words
+    and never rank them."""
+    from alphadesk.ingest import edgar_feed
+
+    summary = ("&lt;b&gt;Filed:&lt;/b&gt; 2026-09-28 &lt;b&gt;AccNo:&lt;/b&gt; 0001-26-1 "
+               "&lt;br&gt;Item 3.01: Notice of Delisting or Failure to Satisfy a Continued "
+               "Listing Rule or Standard\n&lt;br&gt;Item 5.02: Departure of Directors or "
+               "Certain Officers")
+    items = edgar_feed.parse_items(summary)
+    assert [i["number"] for i in items] == ["3.01", "5.02"]
+    assert items[0]["label"].startswith("Notice of Delisting")
+    assert "Departure of Directors" in items[1]["label"]
+
+
+def test_a_form_with_no_items_gives_an_empty_list_not_a_gap():
+    """A Schedule 13D carries no item numbers. That is what a 13D IS, not a
+    failure to read one -- so an empty list is the correct answer and must not
+    be dressed up as missing data."""
+    from alphadesk.ingest import edgar_feed
+
+    assert edgar_feed.parse_items("") == []
+    assert edgar_feed.parse_items("&lt;b&gt;Filed:&lt;/b&gt; 2026-09-28 &lt;b&gt;Size:&lt;/b&gt; 12 KB") == []
+
+
+def test_a_repeated_item_is_listed_once():
+    """EDGAR lists a filing under filer and subject both; a summary that
+    repeats an item must not print it twice."""
+    from alphadesk.ingest import edgar_feed
+
+    twice = "&lt;br&gt;Item 2.02: Results of Operations\n&lt;br&gt;Item 2.02: Results of Operations"
+    assert [i["number"] for i in edgar_feed.parse_items(twice)] == ["2.02"]

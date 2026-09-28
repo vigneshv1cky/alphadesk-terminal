@@ -8,14 +8,21 @@ import { NewsReader } from "@/components/NewsReader"
 import { on, api, isNeedsKey, type NewsArticle } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { boardStories, markSeen, readSeen } from "@/lib/newsSeen"
-import { useNews } from "@/lib/queries"
+import { useFilingFeed, useNews } from "@/lib/queries"
 import { Btn, Empty, fieldCls, Widget, btnCls, menuItemCls } from "@/components/terminal"
+import { MarketFilings } from "@/widgets/desk"
 import { Menu } from "@/components/ChartToolbar"
 import { cn } from "@/lib/utils"
 import { newsTime } from "@/lib/newsClock"
 import { useWindowedRows } from "@/lib/windowedRows"
 import { matchesStory } from "@/lib/newsMatch"
 import { useQuery } from "@tanstack/react-query"
+
+/** The SEC's own item for a results release. The company picks it from the
+ * SEC's fixed list and files it under signature, so an Earnings scope built
+ * on it filters by a record rather than by guessing which stories are about
+ * earnings. */
+const RESULTS_ITEM = "2.02"
 
 /** The news view — a reading list beside a reader.
  *
@@ -159,6 +166,12 @@ export default function NewsPage() {
   // delivers 24/7 Wall St., CNBC, Yahoo Finance and the rest — so a list of
   // thirty publishers on one feed is correct and looked alarming.
   const [feed, setFeed] = useState("")
+  // WHICH RECORD THE LIST IS SHOWING (2026-09-28, the owner: "I want filter
+  // in news tab and news grid to see these earnings, filings data"). null is
+  // stories; "all" is every material filing; "2.02" is the SEC's own Results
+  // of Operations item, which is what makes an Earnings scope a filter over a
+  // RECORD rather than a guess at which stories are about earnings.
+  const [filingItem, setFilingItem] = useState<string | null>(null)
   // POSTS ARE NOT STORIES, AND THIS PAGE COULD NOT SHOW THEM (2026-09-23,
   // the reader: "not able to filter and see only this in news"). They ride
   // the news TILE mixed into the stream, but every filter lives here — and a
@@ -223,7 +236,14 @@ export default function NewsPage() {
     const have = new Set(words.map(a => a.article_id))
     const extra = related.filter(a => !have.has(a.article_id) && keep(a))
     return [...words, ...extra].sort((a, b) => (b.published_at ?? "").localeCompare(a.published_at ?? ""))
-  }, [articles, needle, companies, onBoard, source, boardSymbols, meant, related])
+    // `feed` WAS MISSING HERE (2026-09-28, the reader: "not working" with the
+    // feed picker reading fmp). `keep` reads it, so without it in the
+    // dependencies the memo never recomputed: the picker changed, the state
+    // changed, and `shown` stayed the array from before. The publisher picker
+    // beside it worked throughout because `source` was listed — which is what
+    // made the fault look like "FMP is broken" rather than "one filter is".
+    // Every name `keep` and the body read belongs in this list.
+  }, [articles, needle, companies, onBoard, source, feed, boardSymbols, meant, related])
   const open = articles.find(a => a.article_id === openId) ?? window_.find(a => a.article_id === openId) ?? null
 
   // The list renders only what is on screen (#81). 104px is what a row
@@ -256,27 +276,58 @@ export default function NewsPage() {
   const [seenAtOpen] = useState(readSeen)
   const board = useMemo(() => boardStories(articles, boardSymbols, seenAtOpen), [articles, boardSymbols, seenAtOpen])
 
+  // One request serves the counts here, the list when a filings scope is
+  // picked, and the "Just filed" panel beside it — they share a query key.
+  const filingFeed = useFilingFeed()
+  const filings = filingFeed.data?.filings ?? []
+  const results = useMemo(
+    () => filings.filter(f => (f.items ?? []).some(i => i.number === RESULTS_ITEM)),
+    [filings],
+  )
+
   // The states this list can be in, narrowest last. Picking one clears the
   // other, because they exclude each other — a post carries no ticker, so
   // it can never be "on my board".
   const views = [
     {
-      id: "all", label: "All news", on: !postsOnly && !onBoard, off: false,
+      // `!filingItem` BELONGS HERE. Without it this view stayed "on" while a
+      // filings scope was showing -- it is the first match in the array, so
+      // the menu button kept reading "All news" over a list of filings. A
+      // control that misstates which scope is live is the same fault as a key
+      // prompt that misstates a source's state (#63).
+      id: "all", label: "All news", on: !postsOnly && !onBoard && !filingItem, off: false,
       why: "Every story in your window",
-      pick: () => { setPostsOnly(false); setOnBoard(false) },
+      pick: () => { setPostsOnly(false); setOnBoard(false); setFilingItem(null) },
     },
     {
       id: "board",
       label: `On my board${board.onBoard.size ? ` · ${board.onBoard.size}` : ""}${board.fresh.size ? ` (${board.fresh.size} new)` : ""}`,
       on: !postsOnly && onBoard, off: boardSymbols.length === 0,
       why: boardSymbols.length ? `Only stories naming ${boardSymbols.join(", ")}` : "Add chips to the board to use this",
-      pick: () => { setPostsOnly(false); setOnBoard(true) },
+      pick: () => { setPostsOnly(false); setOnBoard(true); setFilingItem(null) },
     },
     {
       id: "posts", label: `Posts${livePosts.length ? ` · ${livePosts.length}` : ""}`,
       on: postsOnly, off: livePosts.length === 0,
       why: "Social posts only. A post has no publisher, no feed and no ticker, so the pickers beside this cannot apply to one",
-      pick: () => { setPostsOnly(true); setOnBoard(false) },
+      pick: () => { setPostsOnly(true); setOnBoard(false); setFilingItem(null) },
+    },
+    // EACH CARRIES ITS COUNT, which is the lesson from the posts control
+    // (#64): a scope the reader cannot see the size of is one they have no
+    // reason to press. A filing is not a story -- no headline, no body -- so
+    // picking one of these REPLACES the list rather than mixing two row
+    // shapes into one virtualised column.
+    {
+      id: "filings", label: `Filings${filings.length ? ` · ${filings.length}` : ""}`,
+      on: filingItem === "all", off: filings.length === 0,
+      why: "What the market just filed with the SEC. Most of these never reach a newswire: a company must file within four business days and is never obliged to publicise",
+      pick: () => { setPostsOnly(false); setOnBoard(false); setFilingItem("all") },
+    },
+    {
+      id: "results", label: `Earnings${results.length ? ` · ${results.length}` : ""}`,
+      on: filingItem === RESULTS_ITEM, off: results.length === 0,
+      why: "Results filings only — the SEC's own Item 2.02, Results of Operations and Financial Condition, chosen by the company itself",
+      pick: () => { setPostsOnly(false); setOnBoard(false); setFilingItem(RESULTS_ITEM) },
     },
   ]
 
@@ -355,7 +406,7 @@ export default function NewsPage() {
             )}
           </Menu>
           <select value={source} onChange={e => setSource(e.target.value)} aria-label="Publisher"
-                  disabled={postsOnly}
+                  disabled={postsOnly || !!filingItem}
                   title="Who wrote the story. One feed can carry many publishers — an aggregating feed delivers dozens"
                   className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
             <option value="">All publishers</option>
@@ -366,7 +417,7 @@ export default function NewsPage() {
               choice. */}
           {feeds.length > 1 && (
             <select value={feed} onChange={e => setFeed(e.target.value)} aria-label="Feed"
-                    disabled={postsOnly}
+                    disabled={postsOnly || !!filingItem}
                     title="Which of your feeds delivered the story — the connection it came down, not who wrote it"
                     className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
               <option value="">All feeds</option>
@@ -374,14 +425,24 @@ export default function NewsPage() {
             </select>
           )}
           <span className="tnum ml-auto text-caption text-muted-foreground">
-            {shown.length} / {articles.length}
+            {filingItem
+              ? `${filingItem === RESULTS_ITEM ? results.length : filings.length} filings`
+              : `${shown.length} / ${articles.length}`}
           </span>
         </div>
         {/* THE POSTS VIEW REPLACES THE LIST rather than joining it: nothing
             here is a story, so the reader, the board's "new" marks and the
             word search would all be answering about something they were
             never given. Each row opens the post itself. */}
-        {postsOnly ? (
+        {/* A FILINGS SCOPE REPLACES THE LIST, for the same reason the posts
+            view does: nothing here is a story, so the reader pane, the "new"
+            marks and the word search would all be answering about something
+            they were never given. The publisher and feed pickers above are
+            disabled on these for the same reason — a filing has no publisher
+            and came down no feed, it is the SEC's own record. */}
+        {filingItem ? (
+          <MarketFilings onlyItem={filingItem === "all" ? undefined : filingItem} />
+        ) : postsOnly ? (
           posts.isPending ? <Empty>loading…</Empty>
           : isNeedsKey(posts.error) ? (
             <Empty>The social source is off — switch it on from the Account page.</Empty>
@@ -530,14 +591,33 @@ export default function NewsPage() {
       </Widget>
   ) : null
 
+  const filingsPanel = (
+    <Widget span={6} title="Just filed"
+            subtitle="what the market filed with the SEC, newest first — keyless">
+      <MarketFilings />
+    </Widget>
+  )
+
   return (
     <ComposedBoard
       page="news"
+      // FILINGS BELONG ON THIS PAGE (2026-09-28, the owner: "filings into
+      // news"). They are the same kind of object as a story -- something that
+      // just happened and might matter -- and they cover exactly where the
+      // wire is silent: a company must file within four business days and is
+      // never obliged to publicise, so an auditor resignation or a delisting
+      // notice reaches no newswire at all. Measured that day, a $6B registrant
+      // and a $1.5B one each filed material 8-Ks with no story on the feed.
+      // It sits BESIDE the stories rather than inside the list: a filing has
+      // no headline and no body, so interleaving it into a windowed story list
+      // would mean two row shapes in one virtualised column.
       panels={oneColumn
-        ? [{ id: "list", label: "Market news", node: listPanel }]
+        ? [{ id: "list", label: "Market news", node: listPanel },
+           { id: "filings", label: "Just filed", node: filingsPanel }]
         : [
             { id: "list", label: "Market news", node: listPanel },
             { id: "reader", label: "Reader", node: readerPanel },
+            { id: "filings", label: "Just filed", node: filingsPanel },
           ]}
     />
   )

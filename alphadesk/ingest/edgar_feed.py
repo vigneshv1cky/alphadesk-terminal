@@ -104,6 +104,7 @@ def parse_entries(xml: str) -> list[dict]:
         title = re.search(r"<title>(.*?)</title>", chunk, re.S)
         updated = re.search(r"<updated>(.*?)</updated>", chunk, re.S)
         link = re.search(r'<link[^>]*href="(.*?)"', chunk)
+        summary = re.search(r"<summary[^>]*>(.*?)</summary>", chunk, re.S)
         if not title or not updated:
             continue
         # Atom escapes the title, so a registrant reads "Helmerich &amp;
@@ -135,8 +136,47 @@ def parse_entries(xml: str) -> list[dict]:
             "filed_at": updated.group(1).strip(),
             "accession": accession,
             "url": url,
+            "items": parse_items(summary.group(1) if summary else ""),
         })
     return rows
+
+
+def parse_items(summary: str) -> list[dict]:
+    """The 8-K ITEM NUMBERS and their descriptions, out of the atom summary.
+
+    THE CLASSIFICATION IS THE SEC'S OWN AND THE COMPANY'S (2026-09-28, the
+    owner's catalyst feed). An 8-K's items are chosen by the registrant from
+    the SEC's fixed list and filed under signature; the description here is
+    the wording EDGAR itself prints. So a row saying "Item 4.02:
+    Non-Reliance on Previously Issued Financial Statements" is a RECORD, not
+    our reading of the filing -- which is the whole reason a catalyst feed
+    can exist here at all without touching invariant 1. Never substitute our
+    own words for these, and never rank them: which item matters is the
+    reader's judgment, the same one that removed screener ranking.
+
+    The summary is already in every atom entry this module fetches, so this
+    costs no request. It reads:
+
+        <b>Filed:</b> 2026-09-28 <b>AccNo:</b> 0001104659-26-111289 ...
+        <br>Item 2.02: Results of Operations and Financial Condition
+        <br>Item 9.01: Financial Statements and Exhibits
+
+    Forms other than 8-K carry no items and correctly give an empty list --
+    an absence of items is not a lack of information about a 13D, it is what
+    a 13D is. Pure.
+    """
+    if not summary:
+        return []
+    text = unescape(summary)
+    out: list[dict] = []
+    seen: set[str] = set()
+    for num, label in re.findall(r"Item\s+(\d+\.\d+)\s*:\s*([^<\n]+)", text):
+        number = num.strip()
+        if number in seen:
+            continue
+        seen.add(number)
+        out.append({"number": number, "label": re.sub(r"\s+", " ", label).strip()})
+    return out
 
 
 def _group(name: str) -> tuple[list[dict], float | None, str | None]:

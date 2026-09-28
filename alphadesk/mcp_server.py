@@ -1360,6 +1360,19 @@ def filing_feed(groups: str = "", limit: int = 30, symbol: str = "",
     York — the filing's clock, not ours — with the form, the registrant, its
     CIK, the ticker(s) the SEC lists against it, and a link to the filing.
 
+    AND WHAT KIND OF EVENT IT IS: `items` lists an 8-K's item numbers with
+    EDGAR's own descriptions — "3.01 Notice of Delisting…", "4.02
+    Non-Reliance on Previously Issued Financial Statements", "5.02 Departure
+    of Directors or Certain Officers". The registrant picks those from the
+    SEC's fixed list and files them under signature, so they are a record of
+    the event's kind and NOT our reading of the filing. Nothing here ranks
+    them: which item matters is yours to decide. A form that carries no items
+    (a 13D, an S-1) gives an empty list, which is what that form is rather
+    than something missing. Most of these events never reach a newswire —
+    measured 2026-09-28, a $6B registrant and a $1.5B one each filed material
+    8-Ks that day with no story on the feed at all, because a company is
+    obliged to file and never obliged to publicise.
+
     `groups` is a comma-separated pick from: events (8-K material events),
     stakes (Schedule 13D/G and tender offers), offerings (424B priced
     offerings), registrations (S-1), shelf (S-3). THE DEFAULT IS
