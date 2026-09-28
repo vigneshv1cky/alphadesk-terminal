@@ -369,6 +369,15 @@ export interface TranscriptRow {
   title: string
   period_end: string | null
   url: string | null
+  /** Where this document came from — the transcript vendor, "edgar" for a
+   * results release, or "news" for a call transcript the reader's own news
+   * feed published. On every row, not just the borrowed ones: marking only
+   * some implies the rest are something else by omission. */
+  from?: string
+  /** "call" on a news-sourced recorded call, so a mixed list can say which
+   * rows are calls and which are releases. */
+  kind?: "release" | "call"
+  source?: string | null
 }
 
 export interface TranscriptList {
@@ -377,6 +386,8 @@ export interface TranscriptList {
   kind: "release" | "call"
   transcripts: TranscriptRow[]
   error?: string
+  /** Why the vendor gave nothing, when the list was filled from elsewhere. */
+  note?: string
 }
 
 export interface TranscriptDoc extends TranscriptRow {
