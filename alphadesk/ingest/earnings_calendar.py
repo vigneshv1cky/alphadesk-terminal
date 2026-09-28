@@ -1282,6 +1282,11 @@ def reported_between(start: str, end: str) -> list[dict]:
             syms = sorted({r["symbol"] for r in rows})
             caps = router.get("market_caps", syms) or {}
             bars = router.get("daily_history", syms, 21) or {}
+            # ONE batched quote call: the bars give the baseline and the
+            # close for nothing, and the live price is the only thing here
+            # that cannot come out of them. Used only while the reacting
+            # session is still open.
+            live = router.get("quotes", syms) or {}
             for r in rows:
                 r["market_cap"] = caps.get(r["symbol"].upper())
                 b = bars.get(r["symbol"]) or []
@@ -1295,7 +1300,11 @@ def reported_between(start: str, end: str) -> list[dict]:
                 # of the SAME bars the volatility above is computed from, so
                 # it costs no extra request. None on the day itself until the
                 # session's bar exists — a part-day move is not a close.
-                r["move_pct"] = _report_day_move(b, r["report_date"], r.get("session"))
+                q = live.get(r["symbol"].upper()) or live.get(r["symbol"]) or {}
+                r["move_pct"] = move_since_report(
+                    _base_close(b, r["report_date"], r.get("session")),
+                    _reacting_close(b, r["report_date"], r.get("session")),
+                    q.get("price") if isinstance(q, dict) else None)
         except Exception as exc:
             # Enrichment, never the feed: a vendor refusing must not cost the
             # reader the list of who reported.
@@ -1366,36 +1375,56 @@ def reported_week(start: Optional[str] = None) -> dict:
             "today": now_et().date().isoformat(), "days": days, "pending": {},
             "source": "edgar", "calendar_vendors": [], "forward_available": False}
 
-def _report_day_move(bars: list[dict], day: str, session: str | None = None) -> float | None:
-    """The move the REPORT caused, close to close, in percent.
+def _base_close(bars: list[dict], day: str, session: str | None) -> float | None:
+    """The last close struck BEFORE the market could read the report.
 
-    WHICH SESSION REACTS DEPENDS ON WHEN THE COMPANY REPORTED, and getting
-    that wrong would put a number beside half the rows that predates their
-    news. A company reporting BEFORE the open is read by that day's market,
-    so the report day's own close-to-close move is the reaction. A company
-    reporting AFTER the close has already had its day: the market cannot
-    respond until the NEXT session, and the report-day move is what happened
-    while the results were still unpublished.
-
-    Close to close, not open to close, which is what a vendor's own movers
-    list means by the day's change — open to close would call a stock that
-    gapped up on the news and drifted back a loser. None when the reacting
-    session's bar is not in yet, because a part-day move is not a close.
+    The session before the report day for a company reporting in the morning;
+    the report day's OWN close for one reporting after the bell, because at
+    16:30 that close is already printed and still innocent of the results.
+    Getting this wrong folds the reaction into the baseline.
     """
-    if not bars:
-        return None
-    dated = [(_et_day(b["ts"].isoformat()) if hasattr(b.get("ts"), "isoformat") else None, b)
-             for b in bars]
-    dated = [(d, b) for d, b in dated if d]
+    dated = _dated(bars)
     at = next((i for i, (d, _) in enumerate(dated) if d == day), None)
     if at is None:
         return None
-    # After the close: the next session is the one that read the report.
+    base = at if (session or "").upper() == "AMC" else at - 1
+    return dated[base][1].get("close") if base >= 0 else None
+
+
+def _reacting_close(bars: list[dict], day: str, session: str | None) -> float | None:
+    """That session's close, once it HAS one — the session the report was
+    read in: the report day itself in the morning, the next one after the
+    bell. None while it is still trading."""
+    dated = _dated(bars)
+    at = next((i for i, (d, _) in enumerate(dated) if d == day), None)
+    if at is None:
+        return None
     react = at + 1 if (session or "").upper() == "AMC" else at
-    if react == 0 or react >= len(dated):
+    return dated[react][1].get("close") if react < len(dated) else None
+
+
+def _dated(bars: list[dict]) -> list[tuple[str, dict]]:
+    out = [(_et_day(b["ts"].isoformat()) if hasattr(b.get("ts"), "isoformat") else None, b)
+           for b in (bars or [])]
+    return [(d, b) for d, b in out if d]
+
+
+def move_since_report(base: float | None, close: float | None, live: float | None) -> float | None:
+    """How far the price has moved since the report, in percent.
+
+    CLOSE TO CURRENT WHILE THE SESSION IS OPEN, CLOSE TO CLOSE ONCE IT ENDS
+    (2026-09-28, the owner). A report read this morning is still moving and
+    the reader wants the live number, not one that arrives at the bell; once
+    that session has closed the close is the better number, because it is
+    final and it stops the figure drifting with everything that happened
+    afterwards. The reacting session's BAR EXISTING is exactly the signal
+    for which of the two applies, so nothing has to know the market clock.
+
+    Base is the last close before the results could be read, never the
+    report day's close for a morning reporter — that one already contains
+    the reaction.
+    """
+    end = close if close is not None else live
+    if not base or end is None:
         return None
-    was = dated[react - 1][1].get("close")
-    now = dated[react][1].get("close")
-    if not was or not now:
-        return None
-    return round((now - was) / was * 100, 2)
+    return round((end - base) / base * 100, 2)

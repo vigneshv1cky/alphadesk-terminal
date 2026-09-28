@@ -248,7 +248,7 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
               </>}
               {!estimates && (
                 <th className="w-[76px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
-                    data-tip="What the report did to the price, close to close. Which session counts depends on when the company reported: the report day itself before the open, the NEXT session after the close, because a company reporting at 16:30 has already had its day. Empty until that session closes — a part-day move is not a close.">Move</th>
+                    data-tip="How far the price has moved since the report. Measured from the last close before the results could be read — the prior session for a morning report, the report day\u2019s own close for one after the bell. Live while that session is still trading, and fixed at its close once it ends.">Move</th>
               )}
               <th className="w-[80px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                   data-tip="Market capitalisation today, from your company data vendor. Each day lists the largest companies first" aria-description="Market capitalisation today, from your company data vendor. Each day lists the largest companies first">Mkt cap</th>
@@ -408,10 +408,10 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                       r.move_pct == null ? "text-muted-foreground"
                         : r.move_pct >= 0 ? "text-gain" : "text-loss"}`}
                         title={r.move_pct == null
-                          ? "The session that reads this report has not closed yet"
+                          ? "No price yet for the session that reads this report"
                           : r.session === "AMC"
-                            ? "The session AFTER the report, which is the first one that could read it"
-                            : "The report day's own close against the session before it"}>
+                            ? "Since the report day's close, which was printed before the results went out"
+                            : "Since the close of the session before the report"}>
                       {r.move_pct == null ? "—" : `${r.move_pct >= 0 ? "+" : ""}${r.move_pct.toFixed(2)}%`}
                     </td>
                   )}
