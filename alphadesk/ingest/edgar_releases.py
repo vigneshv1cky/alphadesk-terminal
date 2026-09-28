@@ -224,25 +224,44 @@ def refresh_foreign_day(day: str) -> int:
     """Stamp every results 6-K filed on `day`. Returns how many rows."""
     found: dict[tuple[str, str], dict] = {}
     for phrase in _SIX_K_PHRASES:
-        try:
-            got = _search_text(day, phrase, "6-K")
-        except Exception as exc:
-            log.warning("EDGAR 6-K search failed for %s (%s): %s", day, phrase, exc)
-            continue
-        for row in foreign_candidates((got.get("hits") or {}).get("hits") or []):
-            key = (row["symbol"], row["accession"])
-            if row["is_exhibit"] or key not in found:
-                found[key] = row
+        # PAGED, like the 8-K sweep. This asked for ONE page and EDGAR's
+        # full-text search answers ten by default, so on 2026-09-21 the sweep
+        # saw 10 of the 46 filings the phrase actually returned — ZJK
+        # Industrial's results 6-K among the 36 it never looked at. Every
+        # measurement of this sweep's coverage before 2026-09-28 was of a
+        # fifth of its input.
+        for page in range(_MAX_PAGES):
+            try:
+                got = _search_text(day, phrase, "6-K", page * _PAGE)
+            except Exception as exc:
+                log.warning("EDGAR 6-K search failed for %s (%s) page %d: %s", day, phrase, page, exc)
+                break
+            hits = (got.get("hits") or {}).get("hits") or []
+            for row in foreign_candidates(hits):
+                key = (row["symbol"], row["accession"])
+                if row["is_exhibit"] or key not in found:
+                    found[key] = row
+            if len(hits) < _PAGE:
+                break
     # The day's sweep runs every quarter of an hour; a filing already read is
     # not read again, so the cost is one search plus the exhibits that are
     # new since the last pass.
     known = {(r["symbol"], r["accession"]) for r in store.releases_between(day, day)}
+    # SKIP FIRST, CAP SECOND (2026-09-28). The cap used to slice the candidate
+    # list BEFORE the known filter, so every pass examined the same head and a
+    # filing past the cap was not delayed but PERMANENTLY invisible — ZJK
+    # Industrial's results 6-K sat in the search results all along, kept by
+    # foreign_candidates, and was never once read. Same shape as the movers
+    # fault in #91, where a cap on a sorted list meant nothing past the letter
+    # T was ever asked about. Skipping what is already done first means each
+    # pass makes progress through the backlog instead of re-doing its head.
+    todo = [r for r in found.values()
+            if r.get("document") and r.get("file_date")
+            and (r["symbol"], r["accession"]) not in known]
+    seen = store.exhibit_checked(sorted({r["accession"] for r in todo}), "6-K")
+    todo = [r for r in todo if r["accession"] not in seen]
     stamped = 0
-    for row in list(found.values())[:_SIX_K_MAX_READS]:
-        if not row.get("document") or not row.get("file_date"):
-            continue
-        if (row["symbol"], row["accession"]) in known:
-            continue
+    for row in todo[:_SIX_K_MAX_READS]:
         url = (f"https://www.sec.gov/Archives/edgar/data/{int(row['cik'])}/"
                f"{row['accession'].replace('-', '')}/{row['document']}")
         try:
@@ -250,7 +269,21 @@ def refresh_foreign_day(day: str) -> int:
         except Exception as exc:
             log.debug("6-K exhibit text failed for %s %s: %s", row["symbol"], row["accession"], exc)
             continue
-        if not is_results_release(text):
+        hit = is_results_release(text)
+        # A FILING MAY CARRY SEVERAL EXHIBITS, AND THE FIRST NEED NOT BE THE
+        # ANNOUNCEMENT (2026-09-28). ZJK Industrial furnished three: 99.1 the
+        # unaudited financial statements, 99.2 the operating review, and 99.3
+        # the press release headed "Reports Financial Results for First Half
+        # of Fiscal Year 2026". This read 99.1, correctly judged it not an
+        # announcement, and dropped a real results release. The rest are
+        # opened only when the first one fails, so a filing whose exhibit is
+        # the announcement still costs exactly one fetch.
+        if not hit:
+            hit = _results_in_other_exhibits(row["cik"], row["accession"], row["document"])
+        # Remember the verdict either way, so a 6-K that is not a results
+        # release is never fetched a second time.
+        store.mark_exhibit_checked(row["accession"], hit, "6-K")
+        if not hit:
             continue
         released = dateline_day(text) or row["file_date"][:10]
         store.upsert_release(row["symbol"], row["accession"], row["cik"], row["file_date"],
@@ -258,6 +291,30 @@ def refresh_foreign_day(day: str) -> int:
         stamped += 1
     return stamped
 
+
+def _results_in_other_exhibits(cik: str, accession: str, skip: str,
+                               limit: int = 3) -> bool:
+    """Does any OTHER exhibit of this filing announce results? Opened only
+    after the first exhibit has failed, and capped: a filing with a dozen
+    attachments must not become a dozen fetches."""
+    import re
+    adsh = (accession or "").replace("-", "")
+    base = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{adsh}/"
+    try:
+        idx = edgar._get(base).decode("utf-8", "ignore")
+    except Exception as exc:
+        log.debug("exhibit index unreadable for %s: %s", accession, exc)
+        return False
+    docs = [d for d in sorted(set(re.findall(r'href="[^"]*/([^/"]+\.htm)"', idx)))
+            if re.search(r"ex-?_?99", d, re.I) and d != skip]
+    for d in docs[:limit]:
+        try:
+            text = edgar.fetch_filing_text(base + d, max_chars=6_000) or ""
+        except Exception:
+            continue
+        if is_results_release(text):
+            return True
+    return False
 
 def refresh_day(day: str) -> int:
     """Stamp every results 8-K filed on `day`. Returns how many rows."""
@@ -283,7 +340,24 @@ def refresh_day(day: str) -> int:
     except Exception as exc:
         log.warning("6-K sweep failed for %s: %s", day, exc)
         foreign = 0
-    return len(rows) + foreign
+    # AND THE TWO WAYS A COMPANY REPORTS WITHOUT SAYING SO (2026-09-28).
+    # Neither is obliged to announce itself: Item 2.02 is required only when
+    # results go out by some other means first, so a filer that simply
+    # publishes its 10-K owes no 8-K, and an 8-K whose substance is in an
+    # exhibit need tag nothing but 9.01. Both were invisible, and both are
+    # disproportionately the small companies no vendor lists either.
+    # Each is wrapped on its own: neither may cost the day's 8-K sweep.
+    try:
+        periodic = refresh_periodic_day(day)
+    except Exception as exc:
+        log.warning("10-K/10-Q sweep failed for %s: %s", day, exc)
+        periodic = 0
+    try:
+        exhibits = refresh_exhibit_day(day)
+    except Exception as exc:
+        log.warning("8-K exhibit sweep failed for %s: %s", day, exc)
+        exhibits = 0
+    return len(rows) + foreign + periodic + exhibits
 
 
 def fill_times(since: str) -> int:
@@ -447,5 +521,115 @@ def refresh_periodic_day(day: str) -> int:
                 continue                      # it announced on an 8-K; one event, one row
             store.upsert_release(r["symbol"], r["accession"], r["cik"], r["file_date"],
                                  None, r["company"], r["event_date"], form=form)
+            stored += 1
+    return stored
+
+
+# ── RESULTS THAT ONLY THE EXHIBIT KNOWS ABOUT (2026-09-28) ──────────────────
+# Two filings the sweep missed turned out to have the same shape: the cover
+# page and the item tags say nothing, and the results are in exhibit 99.1.
+#
+#   AnaptysBio  8-K 09-21, items "9.01" ALONE — no Item 2.02 — and the
+#               exhibit reads "Anaptys Announces Second Quarter and
+#               Transitional Fiscal Year 2026 Financial Results".
+#   ZJK         6-K 09-21, which has no items at all and which the two
+#               phrases the 6-K sweep searches for did not return.
+#
+# Item 2.02 is required only when results go out by some other means first,
+# and a foreign issuer has no items to tag, so NEITHER filing was obliged to
+# announce itself. `is_results_release()` already answers correctly for both
+# — it was simply never given the text.
+#
+# THE COST IS CONTROLLED IN THREE WAYS, because reading exhibits is a fetch
+# each and this runs every fifteen minutes:
+#   * only items that could plausibly carry results (7.01 Reg FD, 8.01 Other
+#     Events, or 9.01 alone). A 5.02 officer departure or a 1.01 agreement
+#     never does, and those are most of the 110 a day that carry 9.01.
+#   * only companies with NO release already stored for the quarter — the
+#     large filers that announced on their own 8-K are already known, and
+#     they are who most of the remainder are.
+#   * a hard cap per day, so a heavy filing day cannot run away with the loop.
+_EXHIBIT_ITEMS = {"9.01", "7.01", "8.01"}
+EXHIBIT_READ_CAP = 40
+
+
+def exhibit_candidates(hits: list[dict]) -> list[dict]:
+    """8-K hits that might carry results in an exhibit: they attach one
+    (9.01) and their other items are ones that could plausibly announce
+    results, and none is Item 2.02, which the main sweep already has. Pure."""
+    out: list[dict] = []
+    for h in hits:
+        src = h.get("_source") or {}
+        items = set(src.get("items") or [])
+        if not items or "2.02" in items or "9.01" not in items:
+            continue
+        if items - _EXHIBIT_ITEMS:
+            continue
+        out.append(h)
+    return out
+
+
+def _read_exhibit(cik: str, accession: str) -> str | None:
+    """The filing's exhibit 99.x as text — where a press release lives."""
+    import re
+    adsh = (accession or "").replace("-", "")
+    base = f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{adsh}/"
+    try:
+        idx = edgar._get(base).decode("utf-8", "ignore")
+    except Exception as exc:
+        log.debug("exhibit index unreadable for %s: %s", accession, exc)
+        return None
+    docs = [d for d in sorted(set(re.findall(r'href="[^"]*/([^/"]+\.htm)"', idx)))
+            if re.search(r"ex-?_?99", d, re.I)]
+    if not docs:
+        return None
+    return edgar.fetch_filing_text(base + docs[0], max_chars=20_000)
+
+
+def refresh_exhibit_day(day: str, forms: tuple[str, ...] = ("8-K",)) -> int:
+    """Store results releases whose only evidence is the exhibit."""
+    d = date.fromisoformat(day)
+    lo = (d - timedelta(days=PERIODIC_QUARTER_DAYS)).isoformat()
+    hi = (d + timedelta(days=PERIODIC_QUARTER_DAYS)).isoformat()
+    known = set(releases_by_symbol(lo, hi))
+    stored = reads = 0
+    for form in forms:
+        hits: list[dict] = []
+        for page in range(_MAX_PAGES):
+            try:
+                got = _search(day, page * _PAGE) if form == "8-K" else _search_form(day, form, page * _PAGE)
+            except Exception as exc:
+                log.warning("EDGAR %s sweep failed for %s page %d: %s", form, day, page, exc)
+                break
+            got_hits = (got.get("hits") or {}).get("hits") or []
+            hits.extend(got_hits)
+            if len(got_hits) < _PAGE:
+                break
+        # 8-Ks only: a 6-K reaches the same place through refresh_foreign_day,
+        # whose phrase search already finds them — the cap there was hiding
+        # them, not the search. Sweeping all ninety 6-Ks a day to re-find what
+        # one fixed slice already returns is work for nothing.
+        cands = exhibit_candidates(hits)
+        rows = parse_periodic_hits(cands)
+        # ONE READ PER FILING, EVER. A day carries about ninety 6-Ks and this
+        # loop runs every fifteen minutes; without this the same ninety
+        # exhibits would be fetched for ever. The cap below then bounds only
+        # the FIRST pass over a day, not the steady state.
+        seen = store.exhibit_checked(sorted({r["accession"] for r in rows}), "8-K")
+        for r in rows:
+            if r["symbol"] in known or r["accession"] in seen:
+                continue
+            if reads >= EXHIBIT_READ_CAP:
+                break
+            reads += 1
+            seen.add(r["accession"])
+            text = _read_exhibit(r["cik"], r["accession"])
+            hit = bool(text) and is_results_release(text)
+            store.mark_exhibit_checked(r["accession"], hit, "8-K")
+            if not hit:
+                continue
+            store.upsert_release(r["symbol"], r["accession"], r["cik"], r["file_date"],
+                                 None, r["company"], r["event_date"], form=form)
+            known.add(r["symbol"])
             stored += 1
     return stored

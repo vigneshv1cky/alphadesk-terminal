@@ -104,6 +104,24 @@ CREATE TABLE IF NOT EXISTS press_release_checks (
     PRIMARY KEY (owner, symbol)
 );
 
+-- WHICH FILINGS HAVE ALREADY BEEN OPENED (2026-09-28). A results release
+-- whose only evidence is its exhibit has to be read to be recognised, and a
+-- single day carries about ninety 6-Ks. Without remembering which accessions
+-- were examined the sweep would re-read all of them every fifteen minutes,
+-- for ever. NO OWNER COLUMN: a filing is identical for every reader, like
+-- annual_report_sections. Not pruned — EDGAR data is public.
+-- KEYED BY THE DOCUMENT, NOT JUST THE FILING: two sweeps read different
+-- exhibits of the same 6-K (99.1 is ZJK's financial statements, 99.3 its
+-- press release), and sharing one key let one path's verdict silence the
+-- other's read for ever.
+CREATE TABLE IF NOT EXISTS exhibit_checks (
+    accession  TEXT NOT NULL,
+    document   TEXT NOT NULL DEFAULT '',
+    checked_at TEXT NOT NULL,
+    is_results INTEGER,
+    PRIMARY KEY (accession, document)
+);
+
 CREATE TABLE IF NOT EXISTS earnings_forecasts (
     owner       TEXT NOT NULL,
     vendor      TEXT NOT NULL,
@@ -1592,6 +1610,29 @@ def delete_chart_state(user_id: str, key: str) -> bool:
         cur = conn.execute("DELETE FROM user_chart_state WHERE user_id=? AND key=?",
                            (user_id, key))
     return cur.rowcount > 0
+
+
+def exhibit_checked(accessions: list[str], document: str = "") -> set[str]:
+    """Of these filings, the ones whose `document` has already been read."""
+    if not accessions:
+        return set()
+    with _lock, _connect() as conn:
+        rows = conn.execute(
+            "SELECT accession FROM exhibit_checks WHERE document = ? AND accession IN (%s)"
+            % ",".join("?" * len(accessions)), (document, *accessions)).fetchall()
+    return {r[0] for r in rows}
+
+
+def mark_exhibit_checked(accession: str, is_results: bool, document: str = "") -> None:
+    """Record that this filing was opened, and what it turned out to be, so
+    it is never fetched again."""
+    with _lock, _connect() as conn:
+        conn.execute(
+            "INSERT INTO exhibit_checks (accession, document, checked_at, is_results) VALUES (?,?,?,?)"
+            " ON CONFLICT (accession, document) DO UPDATE SET checked_at=excluded.checked_at,"
+            " is_results=excluded.is_results",
+            (accession, document, datetime.now(timezone.utc).isoformat(timespec="seconds"),
+             1 if is_results else 0))
 
 
 def upsert_release(symbol: str, accession: str, cik: str | None, file_date: str,
