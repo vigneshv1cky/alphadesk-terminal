@@ -224,7 +224,14 @@ export default function NewsPage() {
     const have = new Set(words.map(a => a.article_id))
     const extra = related.filter(a => !have.has(a.article_id) && keep(a))
     return [...words, ...extra].sort((a, b) => (b.published_at ?? "").localeCompare(a.published_at ?? ""))
-  }, [articles, needle, companies, onBoard, source, boardSymbols, meant, related])
+    // `feed` WAS MISSING HERE (2026-09-28, the reader: "not working" with the
+    // feed picker reading fmp). `keep` reads it, so without it in the
+    // dependencies the memo never recomputed: the picker changed, the state
+    // changed, and `shown` stayed the array from before. The publisher picker
+    // beside it worked throughout because `source` was listed — which is what
+    // made the fault look like "FMP is broken" rather than "one filter is".
+    // Every name `keep` and the body read belongs in this list.
+  }, [articles, needle, companies, onBoard, source, feed, boardSymbols, meant, related])
   const open = articles.find(a => a.article_id === openId) ?? window_.find(a => a.article_id === openId) ?? null
 
   // The list renders only what is on screen (#81). 104px is what a row
