@@ -52,6 +52,61 @@ def text_key(provider: str, id: str) -> str:
     return f"tx:{provider}:{id}"
 
 
+# A CALL TRANSCRIPT IS OFTEN ALREADY IN THE READER'S NEWS FEED (2026-09-28,
+# the owner: "the calls come from news providers right?"). Benzinga publishes
+# full earnings-call transcripts as ordinary stories, tagged with the one
+# ticker and carrying their whole text, so a reader with an Alpaca key already
+# holds them and needs no transcript vendor at all.
+#
+# MEASURED before building on it, because the coverage is the whole question:
+# in one 500-story window there were four, every one full-text and tagged with
+# exactly one ticker — and of 39 companies that reported that week, three were
+# covered. That is thin, and it is stated as thin. It is still three panels
+# that said "no transcript source keyed" over a document the reader owned.
+#
+# The headline is the only index there is, so the match is deliberately narrow:
+# a story is a transcript when its title says so in one of the forms these
+# publishers actually use. "Earnings call" alone is not enough — a preview or a
+# report ABOUT a call is not the call.
+_CALL_TITLE = re.compile(
+    r"\b(full\s+)?transcript\b.*\bearnings\b|\bearnings\b.*\b(full\s+)?transcript\b"
+    r"|\bearnings\s+(conference\s+)?call\s+transcript\b|^transcript:",
+    re.I)
+
+NEWS_PROVIDER = "news"
+
+
+def _from_news(symbol: str) -> list[dict]:
+    """Call transcripts sitting in the reader's own news window, newest first.
+
+    Empty for a reader with no news feed, or none for this company — which is
+    the common case and is why this supplements a vendor rather than replacing
+    one.
+    """
+    from alphadesk.identity import request_user
+    uid = request_user()
+    if not uid:
+        return []
+    try:
+        rows = store.articles_for_symbol(uid, symbol.upper(), limit=60) or []
+    except Exception as exc:
+        log.debug("news transcripts unavailable for %s: %s", symbol, exc)
+        return []
+    out = []
+    for a in rows:
+        title = a.get("title") or ""
+        if not _CALL_TITLE.search(title):
+            continue
+        out.append({
+            "id": str(a.get("article_id") or a.get("id") or ""),
+            "title": title,
+            "date": (a.get("published_at") or "")[:10],
+            "url": a.get("url") or None,
+            "source": a.get("source") or None,
+        })
+    return [r for r in out if r["id"]]
+
+
 def list_transcripts(symbol: str) -> dict:
     prov = get_transcripts()
     try:
@@ -72,9 +127,41 @@ def list_transcripts(symbol: str) -> dict:
                    f"vendor on the Account page to read those instead.")
         else:
             why = f"{name} could not be reached for this symbol just now ({exc})."
+        # A REFUSED VENDOR IS NOT AN ABSENCE OF TRANSCRIPTS. The reader's own
+        # news feed may hold the call, and saying "your plan refuses this" over
+        # a document they already have is the same fault as a key prompt for a
+        # source already connected.
+        from_news = _from_news(symbol)
+        if from_news:
+            return {"symbol": symbol.upper(), "provider": NEWS_PROVIDER, "kind": "call",
+                    "transcripts": from_news, "note": why}
         return {"symbol": symbol.upper(), "provider": prov.name, "kind": prov.kind,
                 "transcripts": [], "error": why}
-    return {"symbol": symbol.upper(), "provider": prov.name, "kind": prov.kind, "transcripts": rows}
+    # THE CALL AND THE RELEASE ARE DIFFERENT DOCUMENTS, so a call found in the
+    # news feed JOINS the list rather than replacing it or waiting for it to be
+    # empty. The default source is EDGAR, which always has releases, so a
+    # "only when there is nothing" fallback would never once have fired — and
+    # the reader would keep being told no call was available while its whole
+    # text sat in their own news window.
+    merged = _merge(rows, _from_news(symbol), prov.name)
+    return {"symbol": symbol.upper(), "provider": prov.name, "kind": prov.kind,
+            "transcripts": merged}
+
+
+def _merge(vendor_rows: list[dict], news_rows: list[dict], vendor: str) -> list[dict]:
+    """Both sets, newest first, each row saying where it came from.
+
+    `from` is on EVERY row, vendor rows included: a picker that marks only the
+    borrowed ones implies the rest are something else by omission, and the
+    panel needs to know which reader to send an id back to.
+    """
+    out = [{**r, "from": r.get("from") or vendor} for r in (vendor_rows or [])]
+    seen = {str(r.get("id")) for r in out}
+    for r in news_rows or []:
+        if str(r.get("id")) not in seen:
+            out.append({**r, "from": NEWS_PROVIDER, "kind": "call"})
+    out.sort(key=lambda r: str(r.get("date") or ""), reverse=True)
+    return out
 
 
 def get_transcript(symbol: str, id: str) -> dict | None:
@@ -83,6 +170,21 @@ def get_transcript(symbol: str, id: str) -> dict | None:
     means different documents on different sources. The cache row is a
     JSON envelope (meta + text) in the filing text cache — a transcript is
     never a row in the filings table, so the Filings panel never lists it."""
+    # A NEWS-SOURCED TRANSCRIPT IS READ FROM THE NEWS STORE, not from the
+    # transcript vendor — the id is an article id and means nothing to them.
+    from_news = next((r for r in _from_news(symbol) if r["id"] == id), None)
+    if from_news is not None:
+        from alphadesk.identity import request_user
+        from alphadesk.ingest.news import full_story
+        uid = request_user()
+        story = full_story(uid, id) if uid else None
+        text = (story or {}).get("body") or (story or {}).get("text") or ""
+        if text:
+            return {"id": id, "symbol": symbol.upper(), "provider": NEWS_PROVIDER,
+                    "kind": "call", "date": from_news["date"], "period_end": None,
+                    "title": from_news["title"], "url": from_news["url"], "text": text}
+        return None
+
     prov = get_transcripts()
     key = text_key(prov.name, id)
     cached = store.get_filing_text(key)

@@ -29,12 +29,23 @@ export function EarningsTranscriptPanel({ symbol, span = 6, scroll }: { symbol: 
   const id = picked ?? rows[0]?.id ?? null
   const doc = useTranscript(symbol, id)
   const kind = list.data?.kind
-  // No keyed vendor: the server falls back to EDGAR's releases, which are
-  // not transcripts. Nothing is drawn but the way to get one.
-  const unkeyed = !!list.data && list.data.provider === "edgar"
+  // THE LIST CAN HOLD BOTH KINDS (2026-09-28): a results release from EDGAR
+  // and a recorded call the reader's news feed published are different
+  // documents about the same quarter.
+  const fromNews = rows.filter(r => r.from === "news").length
+  // No keyed vendor AND no call to show: only then is the pitch the right
+  // thing to draw. `provider === "edgar"` alone used to decide it, so a reader
+  // whose own news feed had published the call was shown a page asking them to
+  // buy one — the same fault as a key prompt for a source already connected.
+  const unkeyed = !!list.data && list.data.provider === "edgar" && fromNews === 0
+  // EDGAR GIVES RELEASES, NOT RECORDED CALLS, so the subtitle must not say
+  // "recorded call · edgar" — which is what the vendor branch produced once a
+  // news-sourced call made `unkeyed` false.
+  const base = !list.data ? "" : list.data.provider === "edgar" ? "SEC releases" : `recorded call · ${list.data.provider}`
+  const calls = fromNews ? `${fromNews} call${fromNews === 1 ? "" : "s"} from your news feed` : ""
   const subtitle = !list.data ? "loading…"
     : unkeyed ? "no transcript source keyed"
-    : `recorded call · ${list.data.provider}`
+    : [base, calls].filter(Boolean).join(" · ")
   const release = unkeyed ? rows[0] : undefined
 
   const paragraphs = useMemo(() => {
@@ -61,10 +72,18 @@ export function EarningsTranscriptPanel({ symbol, span = 6, scroll }: { symbol: 
             // document to scroll.
             scroll={unkeyed || list.data?.error || rows.length === 0
               ? undefined : (scroll ?? "max(520px, calc(100vh - 320px))")}
-            actions={rows.length > 0 && !unkeyed ? (
+            actions={rows.length > 1 && !unkeyed ? (
               <select value={id ?? ""} onChange={e => setPicked(e.target.value)}
                       aria-label="Which document" className={`${fieldCls} h-[24px] max-w-[260px] py-0 text-caption`}>
-                {rows.map(r => <option key={r.id} value={r.id}>{r.title}{r.date ? ` · ${r.date}` : ""}</option>)}
+                {/* The source rides on each option: a call and a release for
+                    the same quarter are otherwise told apart only by wording
+                    the publisher chose. */}
+                {rows.map(r => (
+                  <option key={r.id} value={r.id}>
+                    {r.title}{r.date ? ` · ${r.date}` : ""}
+                    {r.from === "news" ? ` · ${r.source ?? "news feed"}` : ""}
+                  </option>
+                ))}
               </select>
             ) : undefined}>
       {list.isPending ? <Empty>loading…</Empty>
