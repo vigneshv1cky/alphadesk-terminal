@@ -706,3 +706,66 @@ def test_the_reacting_session_is_the_next_one_after_a_close_report():
     assert ec._reacting_close(bars, "2026-09-22", "BMO") == 110.0
     assert ec._reacting_close(bars, "2026-09-22", "AMC") is None   # next session not in yet
     assert ec._reacting_close(bars, "2026-09-21", "AMC") == 110.0
+
+
+def test_the_range_columns_measure_the_same_window_as_the_move():
+    """Max up and Max down come off the SAME baseline as Move and the SAME
+    session, so the three always bracket each other."""
+    import datetime as dt
+
+    from alphadesk.ingest import earnings_calendar as ec
+
+    def bar(day, close, high, low):
+        return {"ts": dt.datetime.fromisoformat(day + "T04:00:00+00:00"),
+                "close": close, "high": high, "low": low}
+
+    bars = [bar("2026-09-21", 100.0, 101.0, 99.0),
+            bar("2026-09-22", 110.0, 125.0, 95.0)]
+
+    # A MORNING report: the reacting session is the report day itself, and the
+    # baseline is the close before it. The stock round-tripped -- it reached
+    # +25% and -5% on its way to closing +10%, which the move alone cannot say.
+    base = ec._base_close(bars, "2026-09-22", "BMO")
+    react = ec._reacting_bar(bars, "2026-09-22", "BMO")
+    assert ec.move_since_report(base, react["close"], None) == 10.0
+    assert ec.move_extremes(base, react, None, False) == (25.0, -5.0)
+
+    # AFTER THE BELL: the report day's own close is the baseline, and the
+    # session that reads it has not happened in these bars.
+    assert ec._reacting_bar(bars, "2026-09-22", "AMC") is None
+    assert ec.move_extremes(ec._base_close(bars, "2026-09-22", "AMC"), None, None, False) == (None, None)
+
+
+def test_a_best_below_the_baseline_is_kept_negative():
+    """NOT floored at zero. A stock that gapped down and never traded back
+    through the baseline has a negative best, and that is the fact: the
+    reaction only ever ran one way."""
+    from alphadesk.ingest import earnings_calendar as ec
+
+    gapped = {"close": 80.0, "high": 88.0, "low": 78.0}
+    assert ec.move_extremes(100.0, gapped, None, False) == (-12.0, -22.0)
+
+
+def test_the_live_quote_stands_in_only_for_the_session_that_reads_the_report():
+    """The quote carries the CURRENT session's range. Using it for an
+    after-the-bell report on the report day would print that day's range --
+    struck entirely BEFORE the release -- as the reaction to it."""
+    from alphadesk.ingest import earnings_calendar as ec
+
+    assert ec.live_reads_report("2026-09-28", "BMO", "2026-09-28") is True
+    assert ec.live_reads_report("2026-09-28", "AMC", "2026-09-28") is False
+    assert ec.live_reads_report("2026-09-28", "AMC", "2026-09-29") is True
+    assert ec.live_reads_report("2026-09-28", "BMO", "2026-09-29") is False
+
+    quote = {"day_high": 120.0, "day_low": 90.0}
+    assert ec.move_extremes(100.0, None, quote, True) == (20.0, -10.0)
+    # The same quote is refused when it is not the reacting session.
+    assert ec.move_extremes(100.0, None, quote, False) == (None, None)
+
+
+def test_the_range_is_dropped_rather_than_guessed_when_a_bar_lacks_it():
+    from alphadesk.ingest import earnings_calendar as ec
+
+    assert ec.move_extremes(100.0, {"close": 110.0}, None, False) == (None, None)
+    assert ec.move_extremes(None, {"high": 1.0, "low": 1.0}, None, False) == (None, None)
+    assert ec.move_extremes(0.0, {"high": 1.0, "low": 1.0}, None, False) == (None, None)

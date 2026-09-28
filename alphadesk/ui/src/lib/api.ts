@@ -116,6 +116,11 @@ export interface EarningsRow {
    * for a morning report, the report day's own close for one after the bell.
    * Live while the reacting session trades, fixed at its close once it ends. */
   move_pct?: number | null
+  /** The best and worst the price reached in that same window, off the same
+   * baseline. Neither is clamped at zero: a stock that gapped down and never
+   * traded back through the baseline has a negative best, which is the point. */
+  move_high_pct?: number | null
+  move_low_pct?: number | null
   /** Twenty-session annualised volatility, percent, from the user's chart vendor. */
   volatility?: number | null
   /** Twenty-session average dollar volume a day. */

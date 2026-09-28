@@ -227,9 +227,11 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
       </h3>
       {/* The one table. Most small reporters carry no consensus estimate, so
           Surprise is an em dash for most rows — they stay: they reported. */}
-      {/* Eight columns need ~640px; a narrower tile scrolls them sideways
-          rather than squeezing Mkt cap, Volatility and Liquidity out of view. */}
-      <div className="overflow-x-auto"><div className="min-w-[560px]">
+      {/* A narrower tile scrolls sideways rather than squeezing Mkt cap,
+          Volatility and Liquidity out of view. The wider floor applies from lg,
+          where Max up and Max down join and the fixed columns total 684px —
+          below lg those two are hidden and the old floor still fits. */}
+      <div className="overflow-x-auto"><div className="min-w-[560px] lg:min-w-[724px]">
       <table className="w-full table-fixed border-separate border-spacing-0 text-body">
           <thead>
             <tr>
@@ -250,6 +252,15 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                 <th className="w-[76px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                     data-tip="How far the price has moved since the report. Measured from the last close before the results could be read — the prior session for a morning report, the report day\u2019s own close for one after the bell. Live while that session is still trading, and fixed at its close once it ends.">Move</th>
               )}
+              {/* The range of the SAME window Move measures, off the same
+                  baseline. They hide below lg: nine columns crush the company
+                  name at a narrow viewport, and these are secondary to Move. */}
+              {!estimates && <>
+              <th className="hidden w-[76px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell"
+                  data-tip="The highest the price reached in the same window Move measures, against the same baseline. Not floored at zero: a stock that gapped down and never traded back above the baseline shows a negative best, which says the reaction only ran one way.">Max up</th>
+              <th className="hidden w-[84px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell"
+                  data-tip="The lowest the price reached in the same window Move measures, against the same baseline. Regular-session figures, so an after-hours reaction to a release after the bell is not in them until the next session opens.">Max down</th>
+              </>}
               <th className="w-[80px] whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                   data-tip="Market capitalisation today, from your company data vendor. Each day lists the largest companies first" aria-description="Market capitalisation today, from your company data vendor. Each day lists the largest companies first">Mkt cap</th>
               <th className="w-[74px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
@@ -369,7 +380,11 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                       </span>
                     )}
                   </td>
-                  <td className="hidden overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-2 py-1.5 text-muted-foreground md:table-cell">
+                  {/* Titled because the range columns narrowed this one enough
+                      to truncate: a name cut to "WEBUY GLO…" has to be legible
+                      somewhere. */}
+                  <td title={r.company_name ?? undefined}
+                      className="hidden overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-2 py-1.5 text-muted-foreground md:table-cell">
                     {r.company_name ?? ""}
                   </td>
                   <td className={`overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-2 py-1.5 text-label font-medium uppercase tracking-caps ${out ? "text-gain" : sure || past ? "text-muted-foreground" : "text-warn"}`}
@@ -417,6 +432,27 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                       {r.move_pct == null ? "—" : `${r.move_pct >= 0 ? "+" : ""}${r.move_pct.toFixed(2)}%`}
                     </td>
                   )}
+                  {/* Coloured by their own sign, not by the move's: a best of
+                      -5% is a stock that never recovered, and painting it green
+                      because it is the "up" column would say the opposite. */}
+                  {!estimates && <>
+                  <td className={`tnum hidden border-b border-row-rule px-2 py-1.5 text-right lg:table-cell ${
+                    r.move_high_pct == null ? "text-muted-foreground"
+                      : r.move_high_pct >= 0 ? "text-gain" : "text-loss"}`}
+                      title={r.move_high_pct == null
+                        ? "No completed session yet for the window this measures"
+                        : "The highest the price traded in the same window as Move, from the same baseline"}>
+                    {r.move_high_pct == null ? "—" : `${r.move_high_pct >= 0 ? "+" : ""}${r.move_high_pct.toFixed(2)}%`}
+                  </td>
+                  <td className={`tnum hidden border-b border-row-rule px-2 py-1.5 text-right lg:table-cell ${
+                    r.move_low_pct == null ? "text-muted-foreground"
+                      : r.move_low_pct >= 0 ? "text-gain" : "text-loss"}`}
+                      title={r.move_low_pct == null
+                        ? "No completed session yet for the window this measures"
+                        : "The lowest the price traded in the same window as Move, from the same baseline"}>
+                    {r.move_low_pct == null ? "—" : `${r.move_low_pct >= 0 ? "+" : ""}${r.move_low_pct.toFixed(2)}%`}
+                  </td>
+                  </>}
                   <td className="tnum border-b border-row-rule px-2 py-1.5 text-right">
                     {money(r.market_cap)}
                   </td>
