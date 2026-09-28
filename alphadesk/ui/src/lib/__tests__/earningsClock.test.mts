@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { ago, etClock, etDayClock, inBackfillWindow, nextDay, sessionLabel, timely, whenLabel } from "../earningsClock.ts"
+import { ago, etClock, etDayClock, inBackfillWindow, nextDay, reportedLabel, sessionLabel, timely, whenLabel } from "../earningsClock.ts"
 
 // Instants are written in UTC; New York is UTC-4 in September (EDT).
 const FRI = "2026-09-11"
@@ -78,4 +78,29 @@ test("session words and ages", () => {
   assert.equal(ago("2026-09-13T09:00:00Z", now), "3 h ago")
   assert.equal(ago("2026-09-10T12:00:00Z", now), "3 d ago")
   assert.equal(ago("2026-09-13T13:00:00Z", now), "")   // the future is not an age
+})
+
+// ── The results feed's clock (2026-09-28) ─────────────────────────────────
+// The reader, looking at the live tab: "OUT is not needed right?" — on a feed
+// where every row has reported it is on every line and says nothing.
+test("reportedLabel drops Out and shows the clock alone", () => {
+  assert.equal(reportedLabel({
+    report_date: "2026-09-22", session: "BMO",
+    released_at: "2026-09-22T06:55:14-04:00", released_on: "2026-09-22",
+  }), etClock("2026-09-22T06:55:14-04:00", "2026-09-22"))
+})
+
+test("a filing accepted on a LATER day claims no release time", () => {
+  // EDGAR's acceptance is at or after the release, never before it, so a
+  // filing that landed days later cannot date the release and does not try.
+  assert.equal(reportedLabel({
+    report_date: "2026-09-22", session: null,
+    released_on: "2026-09-22", filed_on: "2026-09-25",
+  }), "filed 09-25")
+})
+
+test("no clock and no later filing falls back to the session", () => {
+  assert.equal(reportedLabel({ report_date: "2026-09-22", session: "AMC", released_on: "2026-09-22" }), "after")
+  assert.equal(reportedLabel({ report_date: "2026-09-22", session: "BMO", released_on: "2026-09-22" }), "pre-mkt")
+  assert.equal(reportedLabel({ report_date: "2026-09-22", session: null, released_on: "2026-09-22" }), "—")
 })

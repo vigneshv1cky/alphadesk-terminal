@@ -23,6 +23,9 @@ export type WhenRow = {
   /** The company's usual session from its SEC history, when no vendor has
    * confirmed one ("BMO" / "AMC"). A prediction, shown with an asterisk. */
   session_predicted?: string | null
+  /** The day EDGAR accepted the filing, which can be later than the day the
+   * results were released. */
+  filed_on?: string | null
 }
 
 const ET = "America/New_York"
@@ -125,6 +128,21 @@ export function sessionLabel(r: Pick<WhenRow, "session" | "confirmed" | "eps_act
  * projection and nothing came out (Not seen). Ahead of the day: the
  * session once the company has named it, "TBA" while the date is only a
  * projection. `todayEt` is injectable for tests. */
+/** On a RESULTS FEED every row has reported, so "Out" is on every line and
+ * says nothing (2026-09-28, the reader: "OUT is not needed right?"). The
+ * clock stands alone — and it is EDGAR's ACCEPTANCE of the filing, which is
+ * at or after the release, never before it, so a row whose filing landed on
+ * a later day shows the filing date rather than a time it cannot claim. */
+export function reportedLabel(r: WhenRow): string {
+  const clockAt = r.released_at ?? (r.actual_at && timely(r.actual_at, r.report_date) ? r.actual_at : null)
+  if (clockAt) return etClock(clockAt, r.report_date)
+  if (r.session === "BMO") return "pre-mkt"
+  if (r.session === "AMC") return "after"
+  // No clock: the filing came in after the day it reports, so there is no
+  // release time to show and none is invented.
+  return r.filed_on && r.filed_on !== r.report_date ? `filed ${r.filed_on.slice(5)}` : "—"
+}
+
 export function whenLabel(r: WhenRow, todayEt: string = todayInEt()): string {
   const out = r.eps_actual != null || !!r.released_at || !!r.released_on
   const sure = !!r.confirmed || out
