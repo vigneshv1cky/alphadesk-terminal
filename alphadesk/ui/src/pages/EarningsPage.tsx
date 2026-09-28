@@ -12,6 +12,7 @@ import { Widget } from "@/components/terminal"
 import { MarketChart } from "@/widgets/chart"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { normalize } from "@/lib/symbols"
+import { FiledQuarterPanel } from "@/components/FiledQuarterPanel"
 
 /** The earnings hub (2026-09-14: the market-wide calendars — economic,
  * dividends, IPOs, splits — moved to their own Calendars tab, and the
@@ -93,6 +94,19 @@ export default function EarningsPage() {
         {
           id: "chart", label: "Chart",
           node: <MarketChart symbol={symbol} />,
+        },
+        // WHAT THE REPORT SAID, straight after the chart: the company's own
+        // filed figures against the year-ago quarter. Keyless SEC data, so it
+        // is there for a reader with no vendor at all -- and it states figures
+        // and direction only, never a verdict (invariant 1).
+        {
+          id: "filed", label: "What the report said",
+          node: symbol
+            ? <Widget span={6} title="What the report said"
+                      subtitle="the company's own figures, as filed with the SEC">
+                <FiledQuarterPanel symbol={symbol} reportDate={report?.report_date} />
+              </Widget>
+            : needPick("What the report said"),
         },
         {
           id: "revenue", label: "Revenue & earnings",

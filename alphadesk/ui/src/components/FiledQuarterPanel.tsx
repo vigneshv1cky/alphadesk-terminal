@@ -1,0 +1,121 @@
+/** WHAT THE COMPANY FILED — its own XBRL from SEC EDGAR, each figure against
+ * the same quarter a year earlier.
+ *
+ * NO VERDICT IS RENDERED and none should be added. The panel states figures
+ * and their direction; whether that is a good report is the reader's call
+ * (invariant 1, and the same call that removed screener ranking). The market's
+ * own reading is already on the calendar row beside this, as the price move.
+ *
+ * THE PERIOD IS ALWAYS NAMED IN THE HEADER, because "the quarter just
+ * reported" is a claim this data cannot support: XBRL lands with the 10-Q,
+ * which can trail the 8-K by weeks, and an Item 2.02 8-K is sometimes a
+ * guidance update carrying no period at all (Gray Media, 2026-09-28). */
+import { Empty } from "@/components/terminal"
+import { useEarningsFiled } from "@/lib/queries"
+import { QueryFailure } from "@/components/KeyPrompt"
+
+function money(v?: number | null): string {
+  if (v == null) return "—"
+  const a = Math.abs(v)
+  const s = v < 0 ? "-" : ""
+  if (a >= 1e12) return `${s}$${(a / 1e12).toFixed(2)}T`
+  if (a >= 1e9) return `${s}$${(a / 1e9).toFixed(2)}B`
+  if (a >= 1e6) return `${s}$${(a / 1e6).toFixed(2)}M`
+  if (a >= 1e3) return `${s}$${(a / 1e3).toFixed(1)}K`
+  return `${s}$${a.toFixed(2)}`
+}
+
+function shown(v: number | null | undefined, unit: string): string {
+  if (v == null) return "—"
+  return unit === "percent" ? `${v.toFixed(2)}%` : money(v)
+}
+
+/** The change, said the way the figure allows: a percent where the base is
+ * positive, percentage points for a margin, and the bare direction through a
+ * sign change — where a percent of a negative base would read as a collapse. */
+function change(m: { change_pct?: number | null; change_pp?: number | null; direction?: string | null }) {
+  if (m.change_pp != null) return `${m.change_pp >= 0 ? "+" : ""}${m.change_pp.toFixed(2)}pp`
+  if (m.change_pct != null) return `${m.change_pct >= 0 ? "+" : ""}${m.change_pct.toFixed(1)}%`
+  if (m.direction === "up") return "up"
+  if (m.direction === "down") return "down"
+  if (m.direction === "flat") return "flat"
+  return "—"
+}
+
+function day(d?: string | null): string {
+  if (!d) return "—"
+  return new Date(`${d}T12:00:00`).toLocaleDateString("en-US",
+    { month: "short", day: "numeric", year: "numeric" })
+}
+
+export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; reportDate?: string }) {
+  const { data, isPending, isError, error } = useEarningsFiled(symbol, reportDate)
+  if (isPending) return <Empty>loading…</Empty>
+  if (isError) return <QueryFailure error={error}>the filed figures could not be read</QueryFailure>
+  if (!data) return <Empty>the filed figures could not be read</Empty>
+
+  // An empty answer says what the SEC holds, never that the company was
+  // silent -- invariant 8's rule about empty panels, on a keyless source.
+  if (!data.metrics.length) {
+    return <Empty>{data.note ?? "SEC EDGAR holds no quarterly figures for this filer."}</Empty>
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-row-rule px-3 py-2.5">
+        <span className="text-caption font-semibold text-foreground">
+          Quarter ended {day(data.period_end)}
+        </span>
+        <span className="text-caption text-muted-foreground">
+          against {day(data.prior_end)}
+        </span>
+        {/* Marked, not hidden: these figures are true of the period named, and
+            saying which period that is is what keeps them true. */}
+        {data.covers_report === false && (
+          <span className="text-caption font-semibold text-warn"
+                title={data.note ?? undefined}>
+            the quarter behind this report is not filed yet
+          </span>
+        )}
+        <span className="ml-auto text-caption text-muted-foreground"
+              title="The company's own XBRL from SEC EDGAR. No vendor key is used and no figure here is a summary.">
+          as filed with the SEC
+        </span>
+      </div>
+      <table className="w-full table-fixed border-separate border-spacing-0 text-body">
+        <thead>
+          <tr>
+            <th className="border-b border-row-rule bg-panel px-3 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground">Figure</th>
+            <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">This quarter</th>
+            <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">Year ago</th>
+            <th className="w-[86px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.metrics.map(m => (
+            <tr key={m.id} className="hover:bg-foreground/5">
+              <td className="overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-3 py-1.5">
+                {m.label}
+                {m.filed === false && (
+                  <span className="ml-1 text-label text-muted-foreground"
+                        title="Derived: arithmetic on two filed figures, not a figure the company filed">·calc</span>
+                )}
+              </td>
+              <td className="tnum border-b border-row-rule px-2 py-1.5 text-right font-semibold">{shown(m.value, m.unit)}</td>
+              <td className="tnum border-b border-row-rule px-2 py-1.5 text-right text-muted-foreground">{shown(m.prior, m.unit)}</td>
+              <td className={`tnum border-b border-row-rule px-2 py-1.5 text-right font-semibold ${
+                m.direction === "up" ? "text-gain" : m.direction === "down" ? "text-loss" : "text-muted-foreground"}`}
+                  title={m.change_pct == null && m.change_pp == null && m.direction
+                    ? "One of the two periods is negative, so a percentage would read as a collapse rather than a recovery. The direction is stated instead."
+                    : undefined}>
+                {change(m)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export default FiledQuarterPanel
