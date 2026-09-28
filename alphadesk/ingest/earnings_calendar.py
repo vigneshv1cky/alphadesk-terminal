@@ -35,11 +35,19 @@ log = logging.getLogger("alphadesk.earnings_calendar")
 LOW_LIQUIDITY_DOLLAR_VOL = 10_000_000
 
 
-def _vendor_rows(router, start: str, end: str) -> list[tuple[str, list[dict]]]:
+def _vendor_rows(router, start: str, end: str, *, required: bool = True) -> list[tuple[str, list[dict]]]:
+    """Each connected calendar vendor's rows for the window.
+
+    `required=False` returns an EMPTY list instead of raising when nobody
+    carries the surface — the caller then builds the calendar from SEC
+    filings alone. See the note on the EDGAR spine in rows_between.
+    """
     got: list[tuple[str, list[dict]]] = []
     refused: list[str] = []
     order = router._order("earnings_calendar", "earnings_calendar")
     if not order:
+        if not required:
+            return []
         raise NeedsKey("earnings_calendar", [], signed_in=router.uid is not None)
     for name in order:
         try:
@@ -53,6 +61,8 @@ def _vendor_rows(router, start: str, end: str) -> list[tuple[str, list[dict]]]:
         if rows is not None:
             got.append((name, rows))
     if not got:
+        if not required:
+            return []
         raise NeedsKey("earnings_calendar", refused, signed_in=router.uid is not None)
     return got
 
@@ -61,6 +71,10 @@ def combine(per_vendor: list[tuple[str, list[dict]]]) -> list[dict]:
     """The vendors' rows as one list: the first vendor's rows as primary,
     the others unioned in, moved reports collapsed. Pure."""
     from alphadesk.ingest.earnings import collapse_moved, union_calendars
+    if not per_vendor:
+        # No calendar vendor connected: the caller builds the week from SEC
+        # filings alone (see rows_between). Not an error — an empty union.
+        return []
     primary_name, primary = per_vendor[0]
     prim = [{**r, "sources": primary_name} for r in primary]
     others = [{**r, "source": name} for name, rows in per_vendor[1:] for r in rows]
@@ -805,9 +819,31 @@ def evidence_rank(row: dict) -> int:
 
 
 def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | None = None) -> list[dict]:
-    """Every report the user's vendors list in [start, end]. Raises NeedsKey
-    when no connected vendor carries an earnings calendar. Lookups too many to
-    wait for are filled in the background and counted in `pending`."""
+    """Every report in [start, end], from SEC filings and the reader's
+    vendors. Lookups too many to wait for are filled in the background and
+    counted in `pending`.
+
+    THE SPINE IS EDGAR, THE VENDORS ARE ENRICHMENT (2026-09-28, the owner's
+    call). This used to raise NeedsKey the moment no vendor carried the
+    surface, so a reader with no calendar key got a 428 and an empty page —
+    on a product whose self-hosted path is first-class and whose readers
+    bring their own keys. But a results filing is MANDATORY and EDGAR is
+    keyless, so the past is knowable for nothing: `edgar_only_rows` already
+    builds a row for every results filing no vendor listed, and given no
+    vendor rows at all it builds the whole calendar.
+
+    What the vendors still own is the FUTURE. EDGAR has no forward-looking
+    date — no filing says "we will report on the 28th" — so without a vendor
+    the calendar is complete about what has happened and silent about what
+    has not. `week()` reports which case the reader is in.
+
+    THIS NARROWS INVARIANT 8's "never answer a missing key with an empty
+    200", deliberately and in its spirit rather than its letter. That rule
+    exists so absence never reads as "no data exists". Here the answer is
+    not empty: it is every company that actually reported, and the payload
+    says plainly that upcoming reports need a calendar vendor. Answering 428
+    instead would hide real, free, official data behind a key prompt.
+    """
     from alphadesk.ingest import edgar, edgar_releases
     from alphadesk.ingest.movers import stats_from_bars
     from alphadesk.providers import get_prices
@@ -816,7 +852,7 @@ def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | No
     # vendor dates two weeks early still lands here once its 8-K is joined.
     fetch_lo = (date.fromisoformat(start) - timedelta(days=LATER_FILING_DAYS)).isoformat()
     fetch_hi = (date.fromisoformat(end) + timedelta(days=EARLIER_FILING_DAYS)).isoformat()
-    per_vendor = _vendor_rows(router, fetch_lo, fetch_hi)
+    per_vendor = _vendor_rows(router, fetch_lo, fetch_hi, required=False)
     rows = combine(per_vendor)
     _capture_forecasts(router, per_vendor, rows, (fetch_lo, fetch_hi))
     listed = edgar._ticker_cik_map()
@@ -980,8 +1016,17 @@ def week(start: Optional[str] = None) -> dict:
         d = sunday + timedelta(days=i)
         key = d.isoformat()
         days.append({"date": key, "weekday": d.strftime("%a"), "count": len(by_day.get(key, [])), "rows": by_day.get(key, [])})
+    # WHICH CALENDAR THE READER IS ACTUALLY LOOKING AT. With no calendar
+    # vendor the week is built from SEC filings alone: complete about what
+    # has happened, silent about what has not, because no filing announces a
+    # future date. Saying so is the whole reason this may answer 200 rather
+    # than a key prompt — an unexplained week that stops at today would read
+    # as "nothing is coming", which is worse than a 428.
+    calendars = list(get_prices()._order("earnings_calendar", "earnings_calendar") or [])
     built = {"start": sunday.isoformat(), "end": saturday.isoformat(), "today": now_et().date().isoformat(),
-             "days": days, "pending": pending}
+             "days": days, "pending": pending,
+             "calendar_vendors": calendars,
+             "forward_available": bool(calendars)}
     # A week still waiting on background lookups is NOT kept: it is asked
     # again every few seconds precisely so those fill in.
     if not any(pending.values()):

@@ -2257,7 +2257,16 @@ def api_earnings():
         v = e.get("low_liquidity")
         e["low_liquidity"] = bool(v) if v is not None else None
 
-    return {"upcoming": upcoming, "reported": reported}
+    # SAY WHICH CALENDAR THIS IS (2026-09-28). With no calendar vendor the
+    # window is built from SEC filings alone: complete about what has
+    # reported, silent about what is coming, because no filing announces a
+    # future date. An unexplained empty "upcoming" would read as "nothing is
+    # due" — the very thing invariant 8's key prompt exists to prevent — so
+    # the payload states it and the page can offer the vendors that would fill it.
+    from alphadesk.providers import get_prices
+    calendars = list(get_prices()._order("earnings_calendar", "earnings_calendar") or [])
+    return {"upcoming": upcoming, "reported": reported,
+            "calendar_vendors": calendars, "forward_available": bool(calendars)}
 
 
 @app.get("/api/earnings/find")

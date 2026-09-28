@@ -178,22 +178,28 @@ def test_find_asks_for_one_symbol_and_dates_it_like_the_week(vendors, monkeypatc
     assert uc.find("ZZZZ", today="2026-09-13")["listed"] is False
 
 
-def test_no_calendar_vendor_is_a_key_prompt_and_a_refusal_is_named(vendors):
+def test_the_week_stands_on_sec_filings_with_no_calendar_vendor(vendors):
+    """THE SPINE IS EDGAR (2026-09-28). With no calendar vendor this used to
+    raise NeedsKey, so a self-hosted reader got a 428 and an empty page. A
+    results filing is mandatory and EDGAR is keyless, so the past is knowable
+    for nothing: the week is built from filings alone rather than refused."""
     vendors(alpaca=_Bars())
-    with pytest.raises(NeedsKey):
-        uc.rows_between("2026-09-10", "2026-09-10")
+    rows = uc.rows_between("2026-09-10", "2026-09-10")
+    assert isinstance(rows, list)          # answered, not refused
 
+
+def test_a_refusal_is_still_named_where_a_prompt_is_still_raised(vendors):
+    """The per-company lookup still needs a calendar — EDGAR cannot answer
+    when a company will NEXT report — so it still prompts, and still names
+    the vendor that refused rather than the ones the reader lacks."""
     class _Refuses:
         name = "fmp"
         def earnings_calendar(self, s, e, symbol=None):
             raise EntitlementError("HTTP 402")
-    vendors(fmp=_Refuses())
+    vendors(alpaca=_Bars(), fmp=_Refuses())
     with pytest.raises(NeedsKey) as exc:
-        uc.rows_between("2026-09-10", "2026-09-10")
-    assert exc.value.prompt()["refused"] == ["Financial Modeling Prep"]
-    assert uc.upcoming(7) == [] and uc.report_row("ADBE", "2026-09-10") is None
-    with pytest.raises(NeedsKey):
         uc.find("ADBE")
+    assert exc.value.prompt()["refused"] == ["Financial Modeling Prep"]
 
 
 def test_previous_weekday_skips_the_weekend():
