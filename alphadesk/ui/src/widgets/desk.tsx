@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { on, type Quote } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
-import { useEarnings, useFundamentals, useQuote, useQuotes, useThemes } from "@/lib/queries"
+import { useEarnings, useFilingFeed, useFundamentals, useQuote, useQuotes, useThemes } from "@/lib/queries"
 import { ComparisonPanel } from "@/components/ComparisonPanel"
 import { DividendsPanel, SplitsPanel } from "@/components/CorporateActions"
 import { InsiderTradesPanel, InstitutionalOwnershipPanel, StockOwnershipPanel } from "@/components/Ownership"
@@ -263,16 +263,17 @@ function FundamentalsTile() {
  * what that drops, because securitisation trusts and Federal Home Loan Banks
  * file constantly and trade nowhere — a list without that reads as noise.
  */
-export function MarketFilings() {
+/** `onlyItem` keeps filings carrying one SEC item number — "2.02" is Results
+ * of Operations, which is what the News page's Earnings scope shows. The pick
+ * is the SEC's own classification, so filtering by it is filtering by a
+ * record; nothing here decides which items matter. */
+export function MarketFilings({ onlyItem }: { onlyItem?: string } = {}) {
   const { add } = useBoardSymbols()
-  const q = useQuery({
-    queryKey: ["filing-feed"],
-    queryFn: ({ signal }) => on(signal).filingFeed(40),
-    staleTime: 60_000,
-    refetchInterval: 3 * 60_000,
-    refetchIntervalInBackground: true,
-  })
-  const rows = q.data?.filings ?? []
+  const q = useFilingFeed()
+  const all = q.data?.filings ?? []
+  const rows = onlyItem
+    ? all.filter(f => (f.items ?? []).some(i => i.number === onlyItem))
+    : all
   const off = Object.entries(q.data?.unavailable ?? {})
   if (q.isPending) return <Empty>loading…</Empty>
   if (q.isError) return <QueryFailure error={q.error}>the market's filings are unavailable right now</QueryFailure>
@@ -333,7 +334,12 @@ export function MarketFilings() {
           })}
         </ul>
       )}
-      {(q.data?.unlisted_hidden ?? 0) > 0 && (
+      {/* ONLY WHEN NOTHING IS FILTERED OUT BY ITEM. This count is the whole
+          feed's -- registrants the SEC lists no ticker for -- and under a
+          list narrowed to one item it would read as "6 more RESULTS filings
+          are hidden", which is not known and probably false. A number that
+          does not describe the list above it is worse than no number. */}
+      {!onlyItem && (q.data?.unlisted_hidden ?? 0) > 0 && (
         <p className="px-3 py-2 text-caption text-muted-foreground">
           {q.data!.unlisted_hidden} more from registrants the SEC lists no ticker for — trusts and
           agency banks, which file constantly and trade nowhere.
