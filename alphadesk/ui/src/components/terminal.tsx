@@ -293,8 +293,36 @@ export function Widget({
   // no cap to override and the control looked broken on exactly the tiles a
   // reader is most likely to want shortened. An explicit choice outranks a
   // default; `ownHeight` is for a tile whose height is not a cap at all.
+  // "FILL" MEANS TO THE FOOT OF THE WINDOW (2026-09-29, the owner: "fill
+  // should fill till bottom of screen"). It used to mean `100vh - 190px`,
+  // which is a guess about what sits ABOVE a tile and says nothing about what
+  // sits BELOW — the board reserves 120px under its last row, so a tile that
+  // "filled" overshot by that reserve and the board scrolled when nothing was
+  // below it. Measured from this tile's own body, so it is right on every
+  // page whatever heading each one carries. Falls back to the old envelope
+  // before the first measurement and for a tile below the fold.
+  const fillRef = React.useRef<HTMLDivElement | null>(null)
+  const [fillPx, setFillPx] = React.useState<number | null>(null)
+  const wantsFill = step === "fill" && !ownHeight
+  React.useLayoutEffect(() => {
+    if (!wantsFill) { setFillPx(null); return }
+    const measure = () => {
+      const el = fillRef.current
+      if (!el) return
+      const board = el.closest(".collage")
+      const reserved = board ? parseFloat(getComputedStyle(board).paddingBottom) || 0 : 0
+      const room = window.innerHeight - el.getBoundingClientRect().top - reserved
+      setFillPx(room > 120 ? Math.round(room) : null)
+    }
+    measure()
+    window.addEventListener("resize", measure)
+    return () => window.removeEventListener("resize", measure)
+  }, [wantsFill])
+
   const chosen = step !== undefined && !ownHeight
-  const bodyHeight = chosen ? (step === "fill" ? BODY_VIEWPORT_CAP : step) : scroll
+  const bodyHeight = chosen
+    ? (step === "fill" ? (fillPx ?? BODY_VIEWPORT_CAP) : step)
+    : scroll
   // A CHOSEN HEIGHT IS EXACT. Left on, the viewport floor would quietly
   // overrule every step below it and the two short ones would do nothing.
   const fits = chosen ? false : fitViewport
@@ -430,6 +458,7 @@ export function Widget({
         // reads whole on a normal screen and only a list longer than the
         // screen scrolls inside its tile. The page scrolls instead — one
         // scrollbar rather than one per tile.
+        ref={wantsFill ? fillRef : undefined}
         style={typeof bodyHeight === "string" ? { height: bodyHeight }
              : typeof bodyHeight === "number"
                ? { maxHeight: fits ? `max(${bodyHeight}px, ${BODY_VIEWPORT_CAP})` : `${bodyHeight}px` }

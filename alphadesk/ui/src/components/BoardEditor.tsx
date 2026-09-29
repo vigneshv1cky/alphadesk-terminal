@@ -133,7 +133,9 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
           faster than a menu naming them, and they are a different kind of
           choice. Columns are headed, so nothing has to be guessed from
           position. */}
-      <div className="hidden items-center gap-2 border-b border-row-rule px-2.5 pb-1.5 text-label uppercase tracking-caps text-muted-foreground md:flex">
+      {/* 32px, the height the system gives a TABLE ROW — this is one, and at
+          23px it sat squashed against the bar above it. */}
+      <div className="hidden min-h-[32px] items-center gap-2 border-b border-row-rule px-2.5 text-label uppercase tracking-caps text-muted-foreground md:flex">
         <span className="min-w-[120px] flex-1">Tile</span>
         <span className="w-[64px] text-center">Move</span>
         <span className="w-[92px]">Width</span>
