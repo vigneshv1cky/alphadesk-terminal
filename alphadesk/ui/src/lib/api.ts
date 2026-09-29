@@ -82,6 +82,7 @@ export interface EarningsRow {
   /** A results 8-K landed days before this still-to-come report — preliminary
    * or restated figures, not this quarter — so the date was left alone. */
   earlier_release_on?: string | null
+  earlier_release_form?: string | null
   /** No calendar vendor listed it; the row is the results 8-K alone. */
   edgar_only?: boolean
   released_on?: string | null
@@ -275,6 +276,7 @@ export interface EarningsFindReport {
   edgar_only: boolean
   date_from_edgar?: boolean
   earlier_release_on?: string | null
+  earlier_release_form?: string | null
   announcement?: EarningsAnnouncement | null
 }
 /** The left rail's three numbers, and the board's story identities — what

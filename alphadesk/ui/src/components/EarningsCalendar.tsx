@@ -426,7 +426,7 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                         the date stands (Hub Group, 2026-09-15). */}
                     {r.earlier_release_on && (
                       <span className="ml-1 text-label text-warn"
-                            title={`A results 8-K on EDGAR carries a release on ${r.earlier_release_on} — earlier figures, not this report, so this date is unchanged`}>·8-K {r.earlier_release_on.slice(5)}</span>
+                            title={`A results ${r.earlier_release_form || "filing"} on EDGAR carries a release on ${r.earlier_release_on} — earlier figures, not this report, so this date is unchanged`}>·{r.earlier_release_form || "filed"} {r.earlier_release_on.slice(5)}</span>
                     )}
                     {/* Below md the name column is hidden, so the name rides
                         under the ticker — a bare ticker list meant nothing
