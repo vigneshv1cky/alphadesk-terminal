@@ -168,11 +168,10 @@ export const HeightOverride = React.createContext<number | null>(null)
  * The middle step is the standard tile body, so "medium" is what an unedited
  * board already shows and choosing it changes nothing — a reader who opens
  * the control and picks the value it is already at should see no movement. */
-export const TILE_HEIGHT_PX: Record<number, number | "fill"> = {
+export const TILE_HEIGHT_PX: Record<number, number> = {
   1: 260,
   2: TILE_BODY_HEIGHT,
   3: 620,
-  4: "fill",
 }
 
 /** A board slot: the reader's width, place and height for the tile inside. */
