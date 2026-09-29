@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useLocation, useSearchParams } from "react-router-dom"
 import { widgets } from "@/widgets/registry"
+import { useExternalWidgets } from "@/lib/queries"
 import { whichWins } from "@/lib/boardSync"
 import { parseLayout, resolveLayout, serializeLayout, type LayoutEntry, type TileAlign, type TileHeight } from "@/lib/layoutEntries"
 
@@ -170,8 +171,30 @@ export type LayoutApi<T extends PanelDef> = {
 }
 
 /** The Markets board's layout — the registry is its panel list. */
+/** A TILE THAT CANNOT RENDER IS NOT OFFERED (2026-09-29, the owner: "what is
+ * this external tiles?").
+ *
+ * External tiles are the fourth plugin seam: a widget backend contributes a
+ * shape and its data, and with none configured the component returns null. It
+ * was still a registered widget, so the board editor gave it a row with a
+ * width, a height and a place — three controls over nothing, on a deployment
+ * that has no backends, which is every deployment until someone sets
+ * ALPHADESK_WIDGET_BACKENDS.
+ *
+ * Filtered here rather than at registration, because whether a backend exists
+ * is an ANSWER FROM THE SERVER and registration happens at import time. The
+ * row comes back on its own the day a backend is configured — nothing to
+ * re-enable, and no saved layout to repair, since a layout naming a tile
+ * nothing registers is already dropped rather than rendered.
+ */
 export function useBoardLayout() {
-  return usePageLayout("markets", widgets())
+  const external = useExternalWidgets()
+  const hasExternal = (external.data?.widgets?.length ?? 0) > 0
+  const all = useMemo(
+    () => widgets().filter(w => w.id !== "external" || hasExternal),
+    [hasExternal],
+  )
+  return usePageLayout("markets", all)
 }
 
 /** Any page's composition, keyed by page. Same contract everywhere: ?tiles=

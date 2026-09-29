@@ -6,7 +6,7 @@ import { ChartSurface } from "@/components/chart/ChartSurface"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { resetChartPrefs } from "@/lib/chartPrefs"
 import { ChartRanges, ChartToolbar } from "@/components/ChartToolbar"
-import { Empty, HeightOverride, Widget } from "@/components/terminal"
+import { Empty, HeightOverride, TILE_HEIGHT_PX, Widget } from "@/components/terminal"
 import { useChartEngine } from "@/lib/chartEngine"
 import { useChartCapabilities } from "@/lib/queries"
 import { registerWidget } from "@/widgets/registry"
@@ -69,11 +69,6 @@ const COLLAPSED = TILE_BODY_HEIGHT - CHART_CHROME
  * `scroll` stays undefined: a chart must still show WHOLE, toolbar and range
  * row included, and a cap put the toolbar behind an inner scrollbar (below).
  */
-const CHART_STEP_PX: Record<number, number> = {
-  1: TILE_BODY_HEIGHT,   // the standard tile: 288px of plot, the old default
-  2: 620,                // 506px of plot
-  3: 840,                // 726px of plot
-}
 
 function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
   // THE READER'S STEP WINS OVER THE MEASUREMENT (2026-09-29). The board
@@ -86,17 +81,17 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
   //
   // "fill" and no step both measure, because filling the room available IS
   // the chart's own default.
-  // A CHART'S LADDER STARTS A RUNG HIGHER (2026-09-29, the owner: "for
-  // charts consider medium height as small, large as medium"). A step is a
-  // BODY height, and a chart spends 114px of any body on its toolbar, readout
-  // and range row before a single candle is drawn — so the small step, fine
-  // for a list, left it 146px of plot, which is not a chart. Each step gives
-  // the chart what the next one up gives everything else: small is the
-  // standard tile, medium is the tall step, large is taller again. The labels
-  // stay shared because they mean the same thing to a reader — this tile,
-  // roughly this size — and only the pixels differ.
+  // ONE HEIGHT STANDARD (2026-09-29, the owner: "lets have one height
+  // standard", after seeing a chart ladder and a tile ladder side by side).
+  // A chart had its own numbers for a real reason — it spends 114px of any
+  // body on toolbar, readout and range row before a candle is drawn, so the
+  // same step buys it less — but two ladders meant S was not S, and a step
+  // that means different things on different tiles is worse than a step that
+  // is honestly small. The cost is stated rather than hidden: at S a chart
+  // has 146px of plot, which is a sparkline. M is the smallest step worth
+  // giving a chart.
   const step = React.useContext(HeightOverride)
-  const fixed = step && step !== 4 ? CHART_STEP_PX[step] : null
+  const fixed = step ? TILE_HEIGHT_PX[step] : null
   const [h, setH] = useState(COLLAPSED)
   useLayoutEffect(() => {
     const measure = () => {
