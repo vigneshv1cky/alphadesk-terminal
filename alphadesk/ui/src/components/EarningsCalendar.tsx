@@ -202,6 +202,27 @@ function placeholderTitle(r: EarningsRow): string {
   return `${who} lists an actual of ${eps(r.placeholder_actual)}, exactly its estimate, and the company has filed nothing with the SEC for this report — treated as a placeholder, not a result`
 }
 
+/** EDGAR's own page for one filing. Every row in the results feed was built
+ * FROM a filing — the payload has carried its accession and form all along and
+ * the table offered no way to open it, so a reader who wanted to check what a
+ * row was claiming had to go and search for it (2026-09-29).
+ *
+ * The index page rather than a document inside it: an 8-K's exhibits are not
+ * predictably named, and the index lists them all with the acceptance stamp
+ * the When column is showing.
+ *
+ * THE CIK IN THE PATH IS THE ACCESSION'S OWN PREFIX, which is the FILING
+ * AGENT's number and not the registrant's — and EDGAR serves the document
+ * either way, because the Archives path accepts any CIK associated with the
+ * filing. Checked rather than assumed: Gray Media's 8-K returns the identical
+ * 10,845 bytes under both, and four accessions from four different agents all
+ * resolve. It matters because the row does not carry the registrant's CIK. */
+function filingUrl(accession?: string | null): string | null {
+  if (!accession) return null
+  const bare = accession.replace(/-/g, "")
+  return `https://www.sec.gov/Archives/edgar/data/${bare.slice(0, 10)}/${bare}/${accession}-index.htm`
+}
+
 function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
   /** False on a RESULTS FEED, which carries no analyst consensus: the
    * estimate columns are then dropped rather than rendered empty, the
@@ -427,7 +448,18 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                       title={estimates ? whenTitle
                         : r.released_at ? `EDGAR accepted the filing ${etClock(r.released_at, r.report_date, true)} ET — at or after the moment the results went out`
                         : `The company filed on ${r.filed_on ?? "a later day"}, after the results were released, so EDGAR times the filing and not the release. The day is the company's own; the hour is not in the record.`}>
-                    {when}
+                    {/* THE ROW OPENS ITS OWN FILING. The clock came from this
+                        document's acceptance header, so the link belongs on the
+                        clock — and it stops the row's press from selecting the
+                        company, which is the table's own gesture. */}
+                    {!estimates && filingUrl(r.accession) ? (
+                      <a href={filingUrl(r.accession) as string} target="_blank" rel="noopener noreferrer"
+                         onClick={e => e.stopPropagation()}
+                         title={`Open the ${r.form ?? "filing"} this row was built from on SEC EDGAR`}
+                         className="underline decoration-dotted underline-offset-2 hover:text-accent-700">
+                        {when}
+                      </a>
+                    ) : when}
                   </td>
                   {estimates && <>
                   <td className="tnum border-b border-row-rule px-2 py-1.5 text-right"

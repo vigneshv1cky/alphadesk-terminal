@@ -109,9 +109,25 @@ def _days(v: dict) -> int | None:
         return None
 
 
+# A HALF-YEAR IS NEITHER (2026-09-29). A foreign private issuer files interim
+# figures on a 6-K covering six months -- 180 and 181 days, measured on
+# Inventiva, TSMC and WEBUY -- which falls outside both windows below, so those
+# rows contributed nothing at all. They get a grain of their own rather than
+# being folded into either: a half-year's revenue set beside a full year's
+# reads as a collapse, and beside a quarter's as a doubling.
+HALF_MIN, HALF_MAX = 170, 195
+
+
 def series_from_rows(rows: list[dict]) -> tuple[dict[str, float], dict[str, float]]:
     """(quarterly by end, annual by end) from one concept's filed rows. Pure."""
+    q, _h, y = _series_by_grain(rows)
+    return q, y
+
+
+def _series_by_grain(rows: list[dict]) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
+    """(quarterly, half-yearly, annual) by period end. Pure."""
     quarters: dict[str, float] = {}
+    halves: dict[str, float] = {}
     years: dict[str, tuple[str, float]] = {}
     cumulative: dict[str, list[tuple[str, float]]] = {}     # start -> [(end, val)]
     for v in rows:
@@ -122,6 +138,8 @@ def series_from_rows(rows: list[dict]) -> tuple[dict[str, float], dict[str, floa
             continue
         if 80 <= d <= 100:
             quarters[v["end"]] = float(v["val"])
+        elif HALF_MIN <= d <= HALF_MAX:
+            halves[v["end"]] = float(v["val"])
         elif 350 <= d <= 380:
             years[v["end"]] = (v["start"], float(v["val"]))
         if 80 <= d <= 380:
@@ -138,7 +156,7 @@ def series_from_rows(rows: list[dict]) -> tuple[dict[str, float], dict[str, floa
         inside = [q for q in quarters if start < q < end]
         if len(inside) == 3:
             quarters[end] = total - sum(quarters[q] for q in inside)
-    return quarters, {e: v for e, (_s, v) in years.items()}
+    return quarters, halves, {e: v for e, (_s, v) in years.items()}
 
 
 def _facts(symbol: str) -> dict | None:
@@ -197,7 +215,12 @@ def _currency(tags: dict, concepts: list[str]) -> str:
 
 
 def fundamentals_series(symbol: str, period: str = "quarterly", limit: int = 20) -> dict:
-    """{symbol, period, metrics, series, source} — the chart's Metrics menu."""
+    """{symbol, period, metrics, series, source} — the chart's Metrics menu.
+
+    `period` is "quarterly", "half" or "annual". Half-yearly exists for the
+    foreign private issuers that file six-month interim figures on a 6-K and
+    nothing quarterly at all.
+    """
     sym = symbol.upper()
     found = _facts(sym) or {}
     tags_by_concept: dict = found.get("tags") or {}
@@ -216,12 +239,14 @@ def fundamentals_series(symbol: str, period: str = "quarterly", limit: int = 20)
         # A per-share figure is filed under "<currency>/shares", everything
         # else under the bare currency.
         unit = f"{currency}/shares" if spec.get("units", "").endswith("/shares") else currency
+        h_all: dict[str, float] = {}
         for tag in reversed(concepts_for(mid, spec)):
             rows = ((tags_by_concept.get(tag) or {}).get("units") or {}).get(unit) or []
-            q, y = series_from_rows(rows)
+            q, h, y = _series_by_grain(rows)
             q_all.update(q)
+            h_all.update(h)
             y_all.update(y)
-        picked = q_all if period == "quarterly" else y_all
+        picked = {"quarterly": q_all, "half": h_all}.get(period, y_all)
         if not picked:
             continue
         sign = -1.0 if spec.get("negate") else 1.0
@@ -236,3 +261,31 @@ def fundamentals_series(symbol: str, period: str = "quarterly", limit: int = 20)
             series["fcf"] = fcf
     return {"symbol": sym, "period": period, "metrics": metrics, "series": series,
             "source": "sec-edgar", "taxonomy": taxonomy, "currency": currency}
+
+
+def newest_end(payload: dict) -> str:
+    """The latest period end anywhere in a series payload, or ""."""
+    ends = [pt["t"] for pts in (payload.get("series") or {}).values() for pt in pts if pt.get("t")]
+    return max(ends) if ends else ""
+
+
+def best_series(symbol: str, limit: int = 24) -> dict:
+    """The series at the grain that actually answers for this filer.
+
+    QUARTERLY WHERE THERE IS ONE, and otherwise the FRESHEST of half-yearly
+    and annual — not a fixed order, because which is newer differs by company
+    and the measurement says so: Inventiva's newest half-year ends 2025-06-30
+    against an annual 2024-12-31, six months older, while WEBUY's annual
+    (2025-12-31) is newer than its half (2025-06-30). Picking annual by rule
+    would have shown Inventiva figures half a year stale; picking half by rule
+    would have done the same to WEBUY.
+
+    One place decides it so every panel on the page agrees about which period
+    it is looking at.
+    """
+    q = fundamentals_series(symbol, "quarterly", limit=limit)
+    if q.get("series"):
+        return q
+    rest = [fundamentals_series(symbol, g, limit=limit) for g in ("half", "annual")]
+    rest = [r for r in rest if r.get("series")]
+    return max(rest, key=newest_end) if rest else q

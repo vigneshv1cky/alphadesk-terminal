@@ -126,6 +126,33 @@ export function EarningsTranscriptPanel({ symbol, span = 6, scroll }: { symbol: 
               </a>
             )}
           </div>
+          {/* GUIDANCE, IN THE COMPANY'S OWN SENTENCES (2026-09-29). Above the
+              document because that is what a reader opens it for, and INSIDE
+              it because a quote and its source belong together — every one of
+              these is a verbatim substring of the text below, re-checked
+              server-side before it was sent.
+              THEY ARE NOT PARSED INTO FIGURES. "13% to 16%" in a revenue field
+              would drop "approximately", "or better" and the fact that it is
+              growth rather than a level. And they are in the document's own
+              order, never ranked: which sentence matters is the reader's. */}
+          {(doc.data?.guidance?.length ?? 0) > 0 && (
+            <div className="border-b border-row-rule bg-panel/60 px-3 py-2.5">
+              <p className="text-label font-medium uppercase tracking-caps text-muted-foreground">
+                Guidance · the company's own words
+              </p>
+              <ul className="mt-1.5 space-y-1.5">
+                {doc.data!.guidance!.map((q, i) => (
+                  <li key={i} className="border-l-2 border-card-rule pl-2.5 text-body leading-[1.5]">
+                    {q}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-caption text-muted-foreground">
+                Quoted from the document below, unedited. Nothing here is a reading of it —
+                what the figures mean is yours to judge.
+              </p>
+            </div>
+          )}
           <div className="space-y-3 px-3 py-3 text-body leading-[1.55]">
             {paragraphs.map((p, i) => {
               const m = kind === "call" ? p.match(/^([^:]{2,60}):\s/) : null

@@ -71,6 +71,14 @@ const WHAT: Record<string, string> = {
   net_income_margin: "DERIVED, not filed: net income as a percentage of revenue. Computed here from two filed figures.",
 }
 
+/** What one period of this filer's reporting is called. A foreign private
+ * issuer files half-years on a 6-K and years on a 20-F; a US filer quarters.
+ * "Year ended", "Half-year ended" and "Quarter ended" are not interchangeable
+ * and the header exists to say which. */
+function grainWord(p?: string | null): string {
+  return p === "annual" ? "Year" : p === "half" ? "Half-year" : "Quarter"
+}
+
 function day(d?: string | null): string {
   if (!d) return "—"
   return new Date(`${d}T12:00:00`).toLocaleDateString("en-US",
@@ -96,7 +104,7 @@ export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; repo
             "Quarter ended" over its annual figures would misstate the period
             the numbers cover, which is the one thing this header exists for. */}
         <span className="text-caption font-semibold text-foreground">
-          {data.period === "annual" ? "Year" : "Quarter"} ended {day(data.period_end)}
+          {grainWord(data.period)} ended {day(data.period_end)}
         </span>
         <span className="text-caption text-muted-foreground">
           against {day(data.prior_end)}
@@ -106,7 +114,7 @@ export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; repo
         {data.covers_report === false && (
           <span className="text-caption font-semibold text-warn"
                 title={data.note ?? undefined}>
-            the {data.period === "annual" ? "year" : "quarter"} behind this report is not filed yet
+            the {grainWord(data.period).toLowerCase()} behind this report is not filed yet
           </span>
         )}
         <span className="ml-auto text-caption text-muted-foreground"
@@ -122,7 +130,7 @@ export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; repo
                 figures are a YEAR's, and "This quarter" over them is the same
                 misstatement one level down. */}
             <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">
-              This {data.period === "annual" ? "year" : "quarter"}
+              This {grainWord(data.period).toLowerCase()}
               {data.currency && data.currency !== "USD" ? ` (${data.currency})` : ""}
             </th>
             <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">

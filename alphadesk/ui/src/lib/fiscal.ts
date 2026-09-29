@@ -34,13 +34,23 @@ export function fiscalQuarter(periodEnd: string, fyEndMonth: number | null): { q
 
 /** "Q3 FY26" for a quarter, "FY26" for a year; the calendar fallback when
  * the fiscal year end is unknown ("Q2 '26", "2026"). */
-export function periodLabel(periodEnd: string, period: "quarterly" | "annual", fyEndMonth: number | null): string {
+/** "half" labels the six-month interim period a foreign private issuer files
+ * on a 6-K — H1 or H2 of its fiscal year. Derived from the fiscal QUARTER the
+ * period ends in, so a non-calendar year end is handled the same way it is for
+ * quarters: Q1 and Q2 close H1, Q3 and Q4 close H2. */
+export function periodLabel(periodEnd: string, period: "quarterly" | "half" | "annual", fyEndMonth: number | null): string {
   const d = new Date(`${periodEnd.slice(0, 10)}T12:00:00Z`)
   if (Number.isNaN(d.getTime())) return periodEnd
   const fq = fiscalQuarter(periodEnd, fyEndMonth)
-  if (fq) return period === "annual" ? `FY${String(fq.fy).slice(2)}` : `Q${fq.q} FY${String(fq.fy).slice(2)}`
+  if (fq) {
+    if (period === "annual") return `FY${String(fq.fy).slice(2)}`
+    if (period === "half") return `H${fq.q <= 2 ? 1 : 2} FY${String(fq.fy).slice(2)}`
+    return `Q${fq.q} FY${String(fq.fy).slice(2)}`
+  }
   if (period === "annual") return String(d.getUTCFullYear())
-  return `Q${Math.floor(d.getUTCMonth() / 3) + 1} '${String(d.getUTCFullYear()).slice(2)}`
+  const cq = Math.floor(d.getUTCMonth() / 3) + 1
+  const yy = String(d.getUTCFullYear()).slice(2)
+  return period === "half" ? `H${cq <= 2 ? 1 : 2} '${yy}` : `Q${cq} '${yy}`
 }
 
 /** The fiscal quarter a report on `reportDate` is FOR: companies report

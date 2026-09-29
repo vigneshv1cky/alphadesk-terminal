@@ -1083,25 +1083,22 @@ def api_fundamentals(symbol: str, period: str = "quarterly"):
     Only metrics upstream actually reports for this company are returned, so
     the chart's Metrics menu offers nothing that would draw an empty line.
     """
-    from alphadesk.ingest.edgar_financials import fundamentals_series
+    from alphadesk.ingest.edgar_financials import best_series, fundamentals_series
     sym = "".join(c for c in symbol.upper() if c.isalnum() or c in ".-^=")[:14]
     if not sym:
         raise HTTPException(400, "bad symbol")
     if period not in ("quarterly", "annual"):
         raise HTTPException(400, "period must be quarterly or annual")
-    out = fundamentals_series(sym, period)
     # A FOREIGN PRIVATE ISSUER FILES NO QUARTERS (2026-09-28, found on WEBUY
-    # Global, whose panels were empty while the SEC held its full annual
-    # figures in US-GAAP). It reports once a year on a 20-F, so asking for
-    # quarters finds nothing. The annual series answers instead, and the
-    # payload says which it gave: a year is not a quarter and no panel may
-    # print one as the other. Answering here rather than in each panel is
-    # what keeps the three of them agreeing.
-    if period == "quarterly" and not (out.get("series") or {}):
-        annual = fundamentals_series(sym, "annual")
-        if (annual.get("series") or {}):
-            return annual
-    return out
+    # Global, whose panels were empty while the SEC held its full figures). It
+    # reports annually on a 20-F and half-yearly on a 6-K, so asking for
+    # quarters finds nothing. `best_series` picks the grain that answers and
+    # the payload says which it gave -- a year is not a quarter and no panel
+    # may print one as the other. Deciding here rather than in each panel is
+    # what keeps them agreeing about the period on screen.
+    if period == "quarterly":
+        return best_series(sym)
+    return fundamentals_series(sym, period)
 
 
 @app.get("/api/movers")
@@ -2402,7 +2399,16 @@ def api_transcript(symbol: str, id: str):
     doc = transcripts.get_transcript(sym, id.strip()[:64])
     if doc is None:
         raise HTTPException(404, "that document is not available from the transcript source")
-    return doc
+    # GUIDANCE, IN THE COMPANY'S OWN SENTENCES (2026-09-29). Located in the
+    # document already in hand, never parsed into figures: the moment a number
+    # is lifted out of its sentence it becomes our reading rather than the
+    # company's statement, and it silently drops the conditions the sentence
+    # carries ("the midpoint of", "approximately", "or better"). Attached here
+    # rather than in get_transcript because that has three return paths — the
+    # cache, the news store and the vendor — and this belongs on all of them.
+    from alphadesk.ingest import guidance
+    quotes = guidance.find(doc.get("text") or "")
+    return {**doc, "guidance": guidance.verified(quotes, doc.get("text") or "")}
 
 
 @app.get("/api/earnings/history/{symbol}")

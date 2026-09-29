@@ -101,3 +101,56 @@ def test_a_half_year_is_not_mistaken_for_either_window():
     rows = [{"form": "6-K", "start": "2024-01-01", "end": "2024-06-30", "val": 9_198_000.0}]
     q, y = ef.series_from_rows(rows)
     assert q == {} and y == {}
+
+
+def test_a_half_year_gets_its_own_grain():
+    """A HALF-YEAR IS NEITHER (2026-09-29). Inventiva, TSMC and WEBUY file
+    six-month interim figures on a 6-K -- 180 and 181 days -- which fell
+    outside both windows, so those rows contributed nothing at all. Folding
+    them into either would be worse than dropping them: a half-year's revenue
+    beside a full year's reads as a collapse, beside a quarter's as a
+    doubling."""
+    rows = [
+        {"form": "6-K", "start": "2025-01-01", "end": "2025-06-30", "val": 4_454_000.0},
+        {"form": "20-F", "start": "2024-01-01", "end": "2024-12-31", "val": 9_198_000.0},
+        {"form": "10-Q", "start": "2025-01-01", "end": "2025-03-31", "val": 1_000.0},
+    ]
+    q, h, y = ef._series_by_grain(rows)
+    assert h == {"2025-06-30": 4_454_000.0}
+    assert y == {"2024-12-31": 9_198_000.0}
+    # AND Q2 FALLS OUT OF IT. The half-year and the first quarter share a
+    # start, so the existing cumulative-difference machinery reads the second
+    # quarter as H1 minus Q1 -- 4,454,000 less 1,000. That is the machinery
+    # working rather than a leak: a filer reporting both genuinely has told you
+    # its second quarter. Inventiva files no 10-Q at all, so it has no Q1 to
+    # difference against and lands on the half-year grain, which is what the
+    # live data shows.
+    assert q == {"2025-03-31": 1_000.0, "2025-06-30": 4_453_000.0}
+
+
+def test_the_grain_is_picked_by_which_is_fresher_not_by_rule(monkeypatch):
+    """MEASURED, and it is why there is no fixed order: Inventiva's newest
+    half-year ends 2025-06-30 against an annual 2024-12-31 -- six months
+    older -- while WEBUY's annual (2025-12-31) is newer than its half
+    (2025-06-30). A rule either way shows one of them stale figures."""
+    def series(sym, period="quarterly", **k):
+        data = {
+            "IVA": {"quarterly": {}, "half": {"2025-06-30": 1.0}, "annual": {"2024-12-31": 2.0}},
+            "WBUY": {"quarterly": {}, "half": {"2025-06-30": 1.0}, "annual": {"2025-12-31": 2.0}},
+            "NTWK": {"quarterly": {"2026-06-30": 3.0}, "half": {"2025-12-31": 1.0},
+                     "annual": {"2026-06-30": 2.0}},
+        }[sym][period]
+        return {"period": period, "series": ({"revenue": [{"t": t, "v": v} for t, v in data.items()]}
+                                             if data else {})}
+
+    monkeypatch.setattr(ef, "fundamentals_series", series)
+    assert ef.best_series("IVA")["period"] == "half"        # the half-year is fresher
+    assert ef.best_series("WBUY")["period"] == "annual"     # here the year is
+    assert ef.best_series("NTWK")["period"] == "quarterly"  # quarters always win
+
+
+def test_a_filer_with_nothing_at_any_grain_still_answers(monkeypatch):
+    monkeypatch.setattr(ef, "fundamentals_series",
+                        lambda sym, period="quarterly", **k: {"period": period, "series": {}})
+    out = ef.best_series("X")
+    assert out["series"] == {} and out["period"] == "quarterly"

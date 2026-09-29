@@ -240,7 +240,8 @@ export function EpsPanel({ symbol }: { symbol: string }) {
   // quarters, so the endpoint answers with its yearly series — and labelling
   // those "Q4 FY21" would call a full year its fourth quarter. The payload
   // says which grain it gave; the labels follow it.
-  const grain = data?.period === "annual" ? "annual" : "quarterly"
+  const grain: MetricPeriod = data?.period === "annual" ? "annual"
+    : data?.period === "half" ? "half" : "quarterly"
   // Earnings per SHARE are per share of the reporting currency: Novo Nordisk's
   // are kroner a share. The subtitle names it rather than leaving a bare
   // number to be read as dollars.
@@ -315,7 +316,7 @@ export function EpsPanel({ symbol }: { symbol: string }) {
           return (
             <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-caption">
               <span className="font-semibold">{p.label}</span>
-              <span className="num text-muted-foreground">{grain === "annual" ? "year" : "quarter"} ended {p.t}</span>
+              <span className="num text-muted-foreground">{grain === "annual" ? "year" : grain === "half" ? "half-year" : "quarter"} ended {p.t}</span>
               <span className="num">Diluted EPS <span className="font-semibold">{p.v.toFixed(2)}</span></span>
               {prior && (
                 <span className="num text-muted-foreground">
@@ -331,7 +332,7 @@ export function EpsPanel({ symbol }: { symbol: string }) {
 
   return (
     <Widget span={6} symbol={symbol} title="Earnings per share"
-            subtitle={`diluted${grain === "annual" ? ", by year" : ""}, as filed with the SEC${
+            subtitle={`diluted${grain === "annual" ? ", by year" : grain === "half" ? ", by half-year" : ""}, as filed with the SEC${
               epsCur === "USD" ? "" : ` · ${epsCur}`}`}>
       {body()}
     </Widget>
@@ -354,10 +355,28 @@ export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: str
   const fyEnd = fiscalYearEndMonth(quote?.fiscal_year_end)
   // An annual filer's rows are YEARS. Calling the column "Quarter" over them
   // would misstate every period in the table.
-  const grain = data?.period === "annual" ? "annual" : "quarterly"
+  const grain: MetricPeriod = data?.period === "annual" ? "annual"
+    : data?.period === "half" ? "half" : "quarterly"
   const cur = data?.currency || "USD"
   const money = (v: number | null) => compact(v, cur)
   const unit = cur === "USD" ? "" : ` (${cur})`
+
+  // A COLUMN THE COMPANY NEVER REPORTS IS DROPPED, NOT DASHED (2026-09-29,
+  // the reader: "why grml revenue is blank here"). Greenland Mines is an
+  // exploration-stage miner and tags no revenue concept at all — the only
+  // revenue-shaped thing in its whole filing is a tax liability. So the dash
+  // was TRUE, and it read exactly like "we could not find it", which is the
+  // one thing it did not mean.
+  // This is the convention the movers tables already set: currencies and
+  // yields drop the Liquidity column rather than render it empty, because an
+  // empty column reads as missing data. A dropped column is stated below the
+  // table so its absence is a fact rather than an oversight.
+  const has = (k: string) => ((data?.series?.[k] ?? []).length > 0)
+  const showRevenue = has("revenue")
+  const showNet = has("net_income")
+  const showEps = has("diluted_eps")
+  const absent = [!showRevenue && "revenue", !showNet && "net income",
+                  !showEps && "earnings per share"].filter(Boolean) as string[]
 
   const rows = useMemo(() => {
     const rev = data?.series?.revenue ?? []
@@ -374,7 +393,7 @@ export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: str
 
   return (
     <Widget span={span} symbol={symbol} title="Earnings history"
-            subtitle={`every ${grain === "annual" ? "year" : "quarter"} as filed with the SEC`} scroll={scroll ?? 420}>
+            subtitle={`every ${grain === "annual" ? "year" : grain === "half" ? "half-year" : "quarter"} as filed with the SEC`} scroll={scroll ?? 420}>
       {isPending ? <Empty>loading…</Empty>
         : rows.length === 0 ? (
           <Empty>SEC EDGAR holds no filed periods for {symbol}. That is usual for a foreign
@@ -382,27 +401,37 @@ export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: str
         ) : (
         <Table>
           <THead>
-            <TH className="w-[104px]" title="The fiscal period, by the period end the company filed">{grain === "annual" ? "Year" : "Quarter"}</TH>
-            <TH align="right" className="w-[92px]" title="Revenue for the period, as filed">Revenue{unit}</TH>
-            <TH align="right" className="w-[92px]" title="Net income for the period, as filed. Green above zero, red below — which is a fact about the figure, not a judgment on it">Net income{unit}</TH>
-            <TH align="right" className="w-[80px]" title="Diluted earnings per share, as filed">Diluted EPS</TH>
-            <TH align="right" title="Net margin: net income over revenue. Derived from two filed figures, and shown only where revenue is positive in the period">Net margin</TH>
+            <TH className="w-[104px]" title="The fiscal period, by the period end the company filed">{grain === "annual" ? "Year" : grain === "half" ? "Half-year" : "Quarter"}</TH>
+            {showRevenue && <TH align="right" className="w-[92px]" title="Revenue for the period, as filed">Revenue{unit}</TH>}
+            {showNet && <TH align="right" className="w-[92px]" title="Net income for the period, as filed. Green above zero, red below — which is a fact about the figure, not a judgment on it">Net income{unit}</TH>}
+            {showEps && <TH align="right" className="w-[80px]" title="Diluted earnings per share, as filed">Diluted EPS</TH>}
+            {showRevenue && showNet && <TH align="right" title="Net margin: net income over revenue. DERIVED from two filed figures, not a figure the company filed, and shown only where revenue is positive in the period">Net margin</TH>}
           </THead>
           <tbody>
             {rows.map(r => {
               const margin = r.revenue && r.revenue > 0 && r.net != null ? (r.net / r.revenue) * 100 : null
               return (
                 <tr key={r.t}>
-                  <TD mono title={`${grain === "annual" ? "Year" : "Quarter"} ended ${r.t}`}>{r.label}</TD>
-                  <TD align="right" mono>{money(r.revenue)}</TD>
-                  <TD align="right" mono className={r.net == null ? "" : r.net >= 0 ? "text-gain" : "text-loss"}>{money(r.net)}</TD>
-                  <TD align="right" mono className={r.eps == null ? "" : r.eps >= 0 ? "text-gain" : "text-loss"}>{eps(r.eps)}</TD>
-                  <TD align="right" mono className="text-muted-foreground">{margin == null ? "—" : `${margin.toFixed(1)}%`}</TD>
+                  <TD mono title={`${grain === "annual" ? "Year" : grain === "half" ? "Half-year" : "Quarter"} ended ${r.t}`}>{r.label}</TD>
+                  {showRevenue && <TD align="right" mono>{money(r.revenue)}</TD>}
+                  {showNet && <TD align="right" mono className={r.net == null ? "" : r.net >= 0 ? "text-gain" : "text-loss"}>{money(r.net)}</TD>}
+                  {showEps && <TD align="right" mono className={r.eps == null ? "" : r.eps >= 0 ? "text-gain" : "text-loss"}>{eps(r.eps)}</TD>}
+                  {showRevenue && showNet && <TD align="right" mono className="text-muted-foreground">{margin == null ? "—" : `${margin.toFixed(1)}%`}</TD>}
                 </tr>
               )
             })}
           </tbody>
         </Table>
+      )}
+      {/* THE ABSENCE IS STATED, or a dropped column is indistinguishable from
+          one nobody thought to add. An exploration-stage miner reporting no
+          revenue is a fact about the company, and this is where it is said. */}
+      {!isPending && rows.length > 0 && absent.length > 0 && (
+        <p className="px-3 py-2 text-caption text-muted-foreground">
+          {symbol} files no {absent.join(", ").replace(/, ([^,]*)$/, " or $1")} with
+          the SEC, so {absent.length === 1 ? "that column is" : "those columns are"} not
+          shown. Pre-revenue and exploration-stage companies commonly report none.
+        </p>
       )}
     </Widget>
   )

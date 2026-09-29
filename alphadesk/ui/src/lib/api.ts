@@ -47,6 +47,11 @@ export interface Plan {
 
 export interface EarningsRow {
   symbol: string
+  /** THE FILING THIS ROW WAS BUILT FROM. Every row in the results feed comes
+   * from one SEC filing — its accession and form — and the payload has carried
+   * both all along while the table offered no way to open it. */
+  accession?: string | null
+  form?: string | null
   company_name?: string | null
   report_date: string
   session: string | null
@@ -391,6 +396,11 @@ export interface TranscriptList {
 }
 
 export interface TranscriptDoc extends TranscriptRow {
+  /** The company's own guidance SENTENCES from this document, verbatim and in
+   * the order it wrote them — never parsed into figures, because a bare number
+   * drops the conditions its sentence carries. Each is re-checked as a
+   * substring of `text` before it is sent. */
+  guidance?: string[]
   symbol: string
   provider: string
   kind: "release" | "call"
@@ -425,7 +435,10 @@ export interface SymbolHit {
   asset_class: string | null
 }
 
-export type MetricPeriod = "quarterly" | "annual"
+/** "half" is for the foreign private issuers that file six-month interim
+ * figures on a 6-K and nothing quarterly at all — a half-year is neither a
+ * quarter nor a year and must not be folded into either. */
+export type MetricPeriod = "quarterly" | "half" | "annual"
 export type MetricStyle = "bars" | "line" | "area"
 
 export interface FundamentalMetric {
@@ -1438,7 +1451,7 @@ export type FiledQuarter = {
    * arrives with the 10-Q/10-K, which can trail the 8-K by weeks. */
   /** "quarterly", or "annual" for a foreign private issuer that files a 20-F
    * and no quarters. A year is not a quarter and the panel must say which. */
-  period?: "quarterly" | "annual"
+  period?: "quarterly" | "half" | "annual"
   /** The currency the company REPORTS in, read off its own filings — DKK for
    * Novo Nordisk, CNY for Alibaba, VND for VinFast. It travels with the
    * figures because without it they are a lie. */

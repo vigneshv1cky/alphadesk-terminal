@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
-import { on, type ChartRange } from "@/lib/api"
+import { on, type ChartRange, type MetricPeriod } from "@/lib/api"
 import { loadChartPrefs } from "@/lib/chartPrefs"
 import { useLiveEnabled } from "@/lib/liveState"
 import { watch } from "@/lib/liveStream"
@@ -146,7 +146,7 @@ export const useEarningsInsights = (symbol: string) =>
     staleTime: 10 * 60_000,
   })
 
-export const useFundamentals = (symbol: string, period: "quarterly" | "annual") =>
+export const useFundamentals = (symbol: string, period: MetricPeriod) =>
   useQuery({
     queryKey: keys.fundamentals(symbol, period),
     queryFn: ({ signal }) => on(signal).fundamentals(symbol, period),
