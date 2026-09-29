@@ -42,7 +42,7 @@ export type TileAlign = "center" | "right"
  * clamped, because a step this build does not know came from a deployment
  * with more of them, and the tile's own default is a better answer than the
  * nearest one we happen to have. */
-export const TILE_HEIGHT_STEPS = [1, 2, 3] as const
+export const TILE_HEIGHT_STEPS = [0, 1, 2, 3, 4] as const
 export type TileHeight = (typeof TILE_HEIGHT_STEPS)[number]
 
 export type LayoutEntry = {
@@ -55,7 +55,7 @@ export type LayoutEntry = {
 export type LayoutPanel = { id: string; optIn?: boolean }
 
 /** `id`, `id:span`, either with `@c` or `@r` for its place in the row, and
- * `~1`–`~4` for its height; a span is 3–12 grid columns.
+ * `~0`–`~4` for its height (XS to XL); a span is 3–12 grid columns.
  *
  * The height is read LAST so it may follow either form — `id~3`, `id:6~3`
  * and `id:6@c~3` all parse — and an unreadable step is dropped rather than
@@ -75,7 +75,7 @@ function parseEntry(s: string): LayoutEntry | null {
     id,
     span: Number.isFinite(n) ? Math.max(3, Math.min(12, n)) : null,
     ...(align ? { align } : {}),
-    ...(height ? { height } : {}),
+    ...(height != null ? { height } : {}),
   }
 }
 
@@ -134,7 +134,8 @@ export function serializeLayout(
   const parts = visible.map(e =>
     `${e.span ? `${e.id}:${e.span}` : e.id}`
     + `${e.align === "center" ? "@c" : e.align === "right" ? "@r" : ""}`
-    + `${e.height ? `~${e.height}` : ""}`)
+    // `!= null`: Extra small is step 0, and truthiness dropped it silently.
+    + `${e.height != null ? `~${e.height}` : ""}`)
   if (recordHidden) {
     const shown = new Set(visible.map(e => e.id))
     const known = new Set(all.map(p => p.id))

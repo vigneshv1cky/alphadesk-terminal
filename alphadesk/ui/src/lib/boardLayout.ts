@@ -149,7 +149,7 @@ export type PanelDef = {
    * every board that never saved a layout. */
   optIn?: boolean
   /** The smallest height step this panel is worth offering (2026-09-29). */
-  minStep?: 1 | 2 | 3
+  minStep?: 0 | 1 | 2 | 3 | 4
 }
 
 /** What a page's layout hook hands back — the editor renders against this

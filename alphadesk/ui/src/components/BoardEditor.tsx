@@ -2,7 +2,7 @@ import { AlignCenter, AlignLeft, AlignRight } from "lucide-react"
 import type { TileAlign, TileHeight } from "@/lib/layoutEntries"
 import { useState } from "react"
 import { Btn, useScreenBand } from "@/components/terminal"
-import { STEP_LABEL, STEP_NAME, TILE_PX, stepFor, type ScreenBand } from "@/lib/tileHeight"
+import { STEP_LABEL, STEP_NAME, TILE_PX, TILE_STEPS, stepFor, type ScreenBand } from "@/lib/tileHeight"
 import { WidgetLibraryDialog } from "@/components/WidgetLibrary"
 import type { LayoutApi, PanelDef } from "@/lib/boardLayout"
 
@@ -58,7 +58,7 @@ const pickerCls = "h-[28px] w-[92px] border border-border bg-panel px-1.5 text-c
  * hand-written label cannot follow. The label names the size the READER'S
  * screen will give, which is the only one they can check. */
 function heightOptions(band: ScreenBand): { label: string; height: TileHeight; why: string }[] {
-  return ([1, 2, 3] as const).map(h => ({
+  return TILE_STEPS.map(h => ({
     label: STEP_LABEL[h],
     height: h as TileHeight,
     why: `${STEP_NAME[h]} — ${TILE_PX[band][h]}px on this screen`,
@@ -226,7 +226,7 @@ export function BoardEditor({
                     className={pickerCls}>
               {heights.map(o => (
                 <option key={o.label} value={o.height} title={o.why}
-                        disabled={!!w.minStep && o.height < w.minStep}>
+                        disabled={w.minStep != null && o.height < w.minStep}>
                   {o.label}
                 </option>
               ))}

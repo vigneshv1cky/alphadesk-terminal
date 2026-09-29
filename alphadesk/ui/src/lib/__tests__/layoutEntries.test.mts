@@ -79,15 +79,34 @@ test("a step this build does not know is dropped, not clamped", () => {
   // A link from a deployment with more steps than this one. The tile's own
   // default is a better answer than the nearest step we happen to have —
   // clamping would silently render a height the writer never chose.
-  //
-  // THE RETIRED "FILL" STEP IS ONE OF THESE. A board saved while it existed
-  // falls back to no step, which is what fill was reaching for anyway: a
-  // tile that grows with its content to the foot of the window.
   const all = [{ id: "chart" }]
-  assert.deepEqual(parseLayout("chart~4", all).visible, [{ id: "chart", span: null }])
   assert.deepEqual(parseLayout("chart~9", all).visible, [{ id: "chart", span: null }])
-  assert.deepEqual(parseLayout("chart~0", all).visible, [{ id: "chart", span: null }])
   assert.deepEqual(parseLayout("chart~x", all).visible, [{ id: "chart", span: null }])
+  assert.deepEqual(parseLayout("chart~-1", all).visible, [{ id: "chart", span: null }])
+})
+
+test("the whole ladder survives a round trip, extra small included", () => {
+  // Step 0 is Extra small and a real choice, so it must SURVIVE being written
+  // down. Truthiness dropped it in two places when it was added — the layout
+  // string simply lost the size and the tile came back at the default.
+  const all = [{ id: "chart" }]
+  for (const h of [0, 1, 2, 3, 4]) {
+    const raw = `chart~${h}`
+    const parsed = parseLayout(raw, all).visible
+    assert.deepEqual(parsed, [{ id: "chart", span: null, height: h }], `step ${h} did not parse`)
+    assert.equal(serializeLayout(parsed, all, false), raw, `step ${h} did not serialize`)
+  }
+})
+
+test("a board saved with the retired Fill step reads as Extra large", () => {
+  // Fill was step 4 before it was removed, and 4 is now Extra large. That is
+  // the closest thing left to what Fill meant — the largest size the screen
+  // offers — so such a board lands somewhere sensible rather than nowhere.
+  // Stated because it is a coincidence of numbering, not a design: if the
+  // ladder is ever extended again, check what an old step now collides with.
+  const all = [{ id: "chart" }]
+  assert.deepEqual(parseLayout("chart~4", all).visible,
+                   [{ id: "chart", span: null, height: 4 }])
 })
 
 test("a height survives a round trip and is omitted when unset", () => {

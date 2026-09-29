@@ -24,7 +24,7 @@ export type ComposedPanel = {
    * declares one here matches what the registry declares for the same
    * component on the Markets board; without it the picker would say Small
    * over a tile drawn at Medium (2026-09-29). */
-  minStep?: 1 | 2 | 3
+  minStep?: 0 | 1 | 2 | 3 | 4
 }
 
 /** The heading each board carries, by its layout key. */

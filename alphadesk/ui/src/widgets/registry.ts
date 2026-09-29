@@ -26,7 +26,7 @@ export type WidgetDef = {
    * exists, so the small step leaves a sparkline, and it has a floor that
    * would override the choice anyway. A step the tile will not honour must
    * not be offered — that is a control that lies. */
-  minStep?: 1 | 2 | 3
+  minStep?: 0 | 1 | 2 | 3 | 4
   /** Grid width is NOT declared here: the component renders its own
    * `<Widget span={n}>`, so duplicating it in the registry would be a second
    * source of truth that drifts. The layout editor composes and orders tiles;
