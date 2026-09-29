@@ -17,20 +17,29 @@ import { Empty, Table, TD, TH, THead, TR, Widget, btnCls } from "@/components/te
  * is a direction against the estimate.
  */
 
-const compact = (n: number | null | undefined): string => {
+/** A DOLLAR SIGN ONLY WHERE THE COMPANY FILED DOLLARS (2026-09-29). TSMC
+ * reports NT$2.89 trillion and Novo Nordisk DKK 309 billion; a "$" over either
+ * misstates it by an order of magnitude. Non-USD figures carry no symbol and
+ * the column heading names the currency once. */
+const compact = (n: number | null | undefined, currency = "USD"): string => {
   if (n == null) return "—"
+  // THE SIGN GOES OUTSIDE THE SYMBOL. Prefixing "$" to a number that already
+  // carries its own minus prints "$-4M" for a loss (2026-09-29, caught on
+  // Graphjet's history the moment the symbol was added).
+  const c = currency === "USD" ? "$" : ""
   const a = Math.abs(n)
-  if (a >= 1e12) return `${(n / 1e12).toFixed(2)}T`
-  if (a >= 1e9) return `${(n / 1e9).toFixed(1)}B`
-  if (a >= 1e6) return `${(n / 1e6).toFixed(0)}M`
+  const g = n < 0 ? "-" : ""
+  if (a >= 1e12) return `${g}${c}${(a / 1e12).toFixed(2)}T`
+  if (a >= 1e9) return `${g}${c}${(a / 1e9).toFixed(1)}B`
+  if (a >= 1e6) return `${g}${c}${(a / 1e6).toFixed(0)}M`
   // THOUSANDS WERE MISSING (2026-09-28, the reader, on Northann's chart).
   // The scale jumped from millions straight to two decimals, so 171,895 read
   // "171895.00" -- nine characters and a fraction in a 38px axis gutter, which
   // ran off the left of the viewBox and was clipped mid-number. It was also a
   // discontinuity in its own right: 999,999 printed in full while 1,000,000
   // printed as "1M".
-  if (a >= 1e3) return `${(n / 1e3).toFixed(1)}K`
-  return n.toFixed(2)
+  if (a >= 1e3) return `${g}${c}${(a / 1e3).toFixed(1)}K`
+  return `${g}${c}${a.toFixed(2)}`
 }
 
 function PeriodToggle({ value, onChange }: {
@@ -67,6 +76,9 @@ const PLOT_B = 150
 export function RevenueEarningsPanel({ symbol }: { symbol: string }) {
   const [period, setPeriod] = useState<MetricPeriod>("quarterly")
   const { data, isPending } = useFundamentals(symbol, period)
+  // The axis and the readout are money, so they follow the filer's own
+  // currency — TSMC's bars are trillions of NT$, not of dollars.
+  const cur = data?.currency || "USD"
   const { data: quote } = useQuote(symbol)
   const fyEnd = fiscalYearEndMonth(quote?.fiscal_year_end)
   // The bar under the cursor; the readout below the chart follows it and
@@ -124,7 +136,7 @@ export function RevenueEarningsPanel({ symbol }: { symbol: string }) {
               the EPS panel below already did. */}
           {[maxVal, (maxVal + minVal) / 2, minVal].map((v, i) => (
             <text key={i} x={PLOT_L - 6} y={y(v) + 3} textAnchor="end"
-                  className="fill-n600" fontSize="9.5">{compact(v)}</text>
+                  className="fill-n600" fontSize="9.5">{compact(v, cur)}</text>
           ))}
           {/* right axis: margin % */}
           {margins.length > 0 && [mHi, (mHi + mLo) / 2].map((v, i) => (
@@ -175,8 +187,8 @@ export function RevenueEarningsPanel({ symbol }: { symbol: string }) {
             <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-caption">
               <span className="font-semibold">{fiscalPeriodLabel(g.t, period, fyEnd)}</span>
               <span className="num text-muted-foreground">{period === "annual" ? "year" : "quarter"} ended {g.t.slice(0, 10)}</span>
-              <span className="num">Revenue <span className="font-semibold">{compact(g.rev)}</span></span>
-              <span className="num">Net income <span className="font-semibold">{g.net == null ? "—" : compact(g.net)}</span></span>
+              <span className="num">Revenue <span className="font-semibold">{compact(g.rev, cur)}</span></span>
+              <span className="num">Net income <span className="font-semibold">{g.net == null ? "—" : compact(g.net, cur)}</span></span>
               <span className="num">Margin <span className="font-semibold">{g.margin == null ? "—" : `${g.margin.toFixed(1)}%`}</span></span>
             </div>
           )
@@ -229,6 +241,10 @@ export function EpsPanel({ symbol }: { symbol: string }) {
   // those "Q4 FY21" would call a full year its fourth quarter. The payload
   // says which grain it gave; the labels follow it.
   const grain = data?.period === "annual" ? "annual" : "quarterly"
+  // Earnings per SHARE are per share of the reporting currency: Novo Nordisk's
+  // are kroner a share. The subtitle names it rather than leaving a bare
+  // number to be read as dollars.
+  const epsCur = data?.currency || "USD"
   const points = useMemo(() => {
     const series = data?.series?.diluted_eps ?? []
     return series.slice(-8).map(p => ({
@@ -315,7 +331,8 @@ export function EpsPanel({ symbol }: { symbol: string }) {
 
   return (
     <Widget span={6} symbol={symbol} title="Earnings per share"
-            subtitle={grain === "annual" ? "diluted, by year as filed with the SEC" : "diluted, as filed with the SEC"}>
+            subtitle={`diluted${grain === "annual" ? ", by year" : ""}, as filed with the SEC${
+              epsCur === "USD" ? "" : ` · ${epsCur}`}`}>
       {body()}
     </Widget>
   )
@@ -338,6 +355,9 @@ export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: str
   // An annual filer's rows are YEARS. Calling the column "Quarter" over them
   // would misstate every period in the table.
   const grain = data?.period === "annual" ? "annual" : "quarterly"
+  const cur = data?.currency || "USD"
+  const money = (v: number | null) => compact(v, cur)
+  const unit = cur === "USD" ? "" : ` (${cur})`
 
   const rows = useMemo(() => {
     const rev = data?.series?.revenue ?? []
@@ -363,8 +383,8 @@ export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: str
         <Table>
           <THead>
             <TH className="w-[104px]" title="The fiscal period, by the period end the company filed">{grain === "annual" ? "Year" : "Quarter"}</TH>
-            <TH align="right" className="w-[92px]" title="Revenue for the period, as filed">Revenue</TH>
-            <TH align="right" className="w-[92px]" title="Net income for the period, as filed. Green above zero, red below — which is a fact about the figure, not a judgment on it">Net income</TH>
+            <TH align="right" className="w-[92px]" title="Revenue for the period, as filed">Revenue{unit}</TH>
+            <TH align="right" className="w-[92px]" title="Net income for the period, as filed. Green above zero, red below — which is a fact about the figure, not a judgment on it">Net income{unit}</TH>
             <TH align="right" className="w-[80px]" title="Diluted earnings per share, as filed">Diluted EPS</TH>
             <TH align="right" title="Net margin: net income over revenue. Derived from two filed figures, and shown only where revenue is positive in the period">Net margin</TH>
           </THead>
@@ -374,8 +394,8 @@ export function EarningsHistoryPanel({ symbol, span = 6, scroll }: { symbol: str
               return (
                 <tr key={r.t}>
                   <TD mono title={`${grain === "annual" ? "Year" : "Quarter"} ended ${r.t}`}>{r.label}</TD>
-                  <TD align="right" mono>{compact(r.revenue)}</TD>
-                  <TD align="right" mono className={r.net == null ? "" : r.net >= 0 ? "text-gain" : "text-loss"}>{compact(r.net)}</TD>
+                  <TD align="right" mono>{money(r.revenue)}</TD>
+                  <TD align="right" mono className={r.net == null ? "" : r.net >= 0 ? "text-gain" : "text-loss"}>{money(r.net)}</TD>
                   <TD align="right" mono className={r.eps == null ? "" : r.eps >= 0 ? "text-gain" : "text-loss"}>{eps(r.eps)}</TD>
                   <TD align="right" mono className="text-muted-foreground">{margin == null ? "—" : `${margin.toFixed(1)}%`}</TD>
                 </tr>

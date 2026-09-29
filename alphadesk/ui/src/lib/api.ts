@@ -442,6 +442,11 @@ export interface Fundamentals {
    * that would draw an empty line is not offered at all. */
   metrics: FundamentalMetric[]
   series: Record<string, { t: string; v: number }[]>
+  /** "us-gaap" or "ifrs-full" — which taxonomy the filer tags under. */
+  taxonomy?: string
+  /** The currency the company REPORTS in, counted off its own filings. Not
+   * always USD even under US-GAAP: Alibaba files renminbi and VinFast dong. */
+  currency?: string
 }
 
 /** Crypto rows reuse MoverRow: same columns, same renderer. `all` is the
@@ -1434,6 +1439,10 @@ export type FiledQuarter = {
   /** "quarterly", or "annual" for a foreign private issuer that files a 20-F
    * and no quarters. A year is not a quarter and the panel must say which. */
   period?: "quarterly" | "annual"
+  /** The currency the company REPORTS in, read off its own filings — DKK for
+   * Novo Nordisk, CNY for Alibaba, VND for VinFast. It travels with the
+   * figures because without it they are a lie. */
+  currency?: string
   covers_report?: boolean | null
   lag_days?: number | null
   note?: string | null

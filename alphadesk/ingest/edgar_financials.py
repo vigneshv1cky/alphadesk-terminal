@@ -44,6 +44,30 @@ METRICS: dict[str, dict] = {
               "tags": ["PaymentsToAcquirePropertyPlantAndEquipment"], "negate": True},
 }
 
+# THE SAME LINES UNDER THE IFRS TAXONOMY (2026-09-29, the owner). A foreign
+# private issuer files a 20-F tagged `ifrs-full`, not `us-gaap` — the SEC holds
+# 229 concepts for Inventiva, 253 for Novo Nordisk, 334 for TSMC and 368 for
+# SAP, and reading one namespace out of two is why their panels were empty.
+#
+# Checked against all four before writing it: every metric below is present on
+# each, bar gross profit for Inventiva (a clinical-stage biotech with no
+# product revenue, so genuinely absent) and capex under this tag for SAP.
+#
+# THESE ARE NOT TRANSLATIONS OF THE US-GAAP CONCEPTS but the IFRS statement's
+# own lines, which is why operating income is ProfitLossFromOperatingActivities
+# rather than an OperatingIncomeLoss alias: IFRS states it as a subtotal of
+# profit, and the two are not defined identically. What they share is the row a
+# reader is looking for.
+IFRS_TAGS: dict[str, list[str]] = {
+    "revenue": ["Revenue", "RevenueFromContractsWithCustomers", "RevenueFromSaleOfGoods"],
+    "gross_profit": ["GrossProfit"],
+    "operating_income": ["ProfitLossFromOperatingActivities", "OperatingIncomeLoss"],
+    "net_income": ["ProfitLoss", "ProfitLossAttributableToOwnersOfParent"],
+    "diluted_eps": ["DilutedEarningsLossPerShare", "BasicAndDilutedEarningsLossPerShare"],
+    "ocf": ["CashFlowsFromUsedInOperatingActivities"],
+    "capex": ["PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities"],
+}
+
 _cache: dict[str, tuple[float, dict | None]] = {}
 _TTL_S = 6 * 3600
 # A FOREIGN PRIVATE ISSUER'S ANNUAL REPORT COUNTS (2026-09-28, the reader:
@@ -104,6 +128,13 @@ def series_from_rows(rows: list[dict]) -> tuple[dict[str, float], dict[str, floa
 
 
 def _facts(symbol: str) -> dict | None:
+    """The company's tagged facts and which taxonomy they are in.
+
+    `us-gaap` where the registrant files under it — including plenty of
+    foreign issuers, Alibaba and VinFast among them — and `ifrs-full` where it
+    does not. A filer has one or the other, never a useful mix, so the larger
+    set wins and the answer says which so the concepts can be matched to it.
+    """
     sym = symbol.upper()
     hit = _cache.get(sym)
     if hit and time.monotonic() - hit[0] < _TTL_S:
@@ -112,7 +143,10 @@ def _facts(symbol: str) -> dict | None:
     cik10 = edgar.cik_for(sym)
     if cik10:
         try:
-            out = (json.loads(edgar._get(edgar._FACTS_URL.format(cik10=cik10), timeout=30.0)).get("facts") or {}).get("us-gaap") or {}
+            facts = json.loads(edgar._get(edgar._FACTS_URL.format(cik10=cik10), timeout=30.0)).get("facts") or {}
+            gaap, ifrs = facts.get("us-gaap") or {}, facts.get("ifrs-full") or {}
+            out = {"tags": gaap, "taxonomy": "us-gaap"} if len(gaap) >= len(ifrs) \
+                else {"tags": ifrs, "taxonomy": "ifrs-full"}
         except Exception as exc:
             log.warning("EDGAR company facts failed for %s: %s", sym, exc)
     if len(_cache) > 512:
@@ -121,17 +155,55 @@ def _facts(symbol: str) -> dict | None:
     return out
 
 
+def _currency(tags: dict, concepts: list[str]) -> str:
+    """The currency a filer actually reports in, read off its own facts.
+
+    THE REPORTING CURRENCY, NOT USD — and the choice is settled by counting
+    rows rather than by preferring one. A USD column in a foreign filing is a
+    convenience translation at one date's rate; the primary statement is the
+    company's own currency, and it is also the one with the series in it.
+    Measured on the four filers this was built against:
+
+        TSMC   TWD 26 rows  USD 9      SAP    EUR 27 rows  USD 1
+        Alibaba CNY 47 rows USD 16     VinFast VND 11 rows USD 4
+
+    SAP settles it: preferring USD would draw a one-point chart. Counting also
+    covers the filers with no USD at all — Novo Nordisk files only DKK and
+    Inventiva only EUR, where assuming dollars would print kroner behind a
+    dollar sign. A domestic filer has USD alone and picks it either way.
+
+    This is not IFRS-specific: Alibaba and VinFast file US-GAAP in renminbi and
+    dong, so the same counting runs for both taxonomies.
+    """
+    counts: dict[str, int] = {}
+    for c in concepts:
+        for unit, rows in ((tags.get(c) or {}).get("units") or {}).items():
+            counts[unit.split("/")[0]] = counts.get(unit.split("/")[0], 0) + len(rows or [])
+    return max(counts, key=lambda u: counts[u]) if counts else "USD"
+
+
 def fundamentals_series(symbol: str, period: str = "quarterly", limit: int = 20) -> dict:
     """{symbol, period, metrics, series, source} — the chart's Metrics menu."""
     sym = symbol.upper()
-    gaap = _facts(sym) or {}
+    found = _facts(sym) or {}
+    tags_by_concept: dict = found.get("tags") or {}
+    taxonomy = found.get("taxonomy") or "us-gaap"
+    ifrs = taxonomy == "ifrs-full"
+    # The currency is read from the filer's OWN revenue facts, not assumed:
+    # Novo Nordisk files only DKK and Inventiva only EUR, and a dollar sign
+    # over either would be a plain misstatement of what the company earned.
+    concepts_for = (lambda mid, spec: IFRS_TAGS.get(mid, [])) if ifrs else (lambda mid, spec: spec["tags"])
+    currency = _currency(tags_by_concept, concepts_for("revenue", METRICS["revenue"]))
     metrics: list[dict] = []
     series: dict[str, list[dict]] = {}
     for mid, spec in METRICS.items():
         q_all: dict[str, float] = {}
         y_all: dict[str, float] = {}
-        for tag in reversed(spec["tags"]):
-            rows = ((gaap.get(tag) or {}).get("units") or {}).get(spec.get("units", "USD")) or []
+        # A per-share figure is filed under "<currency>/shares", everything
+        # else under the bare currency.
+        unit = f"{currency}/shares" if spec.get("units", "").endswith("/shares") else currency
+        for tag in reversed(concepts_for(mid, spec)):
+            rows = ((tags_by_concept.get(tag) or {}).get("units") or {}).get(unit) or []
             q, y = series_from_rows(rows)
             q_all.update(q)
             y_all.update(y)
@@ -148,4 +220,5 @@ def fundamentals_series(symbol: str, period: str = "quarterly", limit: int = 20)
         if fcf:
             metrics.append({"id": "fcf", "label": "Free Cash Flow", "group": "Cash flow", "unit": "currency"})
             series["fcf"] = fcf
-    return {"symbol": sym, "period": period, "metrics": metrics, "series": series, "source": "sec-edgar"}
+    return {"symbol": sym, "period": period, "metrics": metrics, "series": series,
+            "source": "sec-edgar", "taxonomy": taxonomy, "currency": currency}
