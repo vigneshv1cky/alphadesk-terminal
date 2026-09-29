@@ -51,11 +51,21 @@ export default function FilingsPage() {
   }, [filings])
 
   return (
+    <>
+      {/* THE PAGE SAYS WHICH PAGE IT IS (2026-09-29, the owner: "include
+          heading in filings and posts too"). Every composed board carries one
+          above its tiles; these two are single panels on no board, so they
+          had none and read as a panel floating with no context. Same type and
+          inset as the board heading, without the Customize control — there is
+          no board here to compose. */}
+      <div className="px-4 pt-2">
+        <h1 className="mb-2 text-emph font-extrabold tracking-tight">Filings</h1>
+      </div>
     <Widget
       span={12}
       title="Market filings"
       subtitle="what companies just filed with the SEC — most of it never reaches a newswire"
-      scroll="calc(100vh - 212px)"
+      scroll="fit"
       // OUTSIDE THE SCROLLER, like the News toolbar beside it: a control that
       // names what the list shows must not scroll away with the rows it
       // labels. It wraps rather than scrolling sideways, which is the rule for
@@ -85,5 +95,6 @@ export default function FilingsPage() {
     >
       <MarketFilings onlyItem={item || undefined} />
     </Widget>
+    </>
   )
 }

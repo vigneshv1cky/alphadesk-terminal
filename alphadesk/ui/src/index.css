@@ -490,8 +490,14 @@
     grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: 16px;
     /* Room below the last tile (2026-09-11, the reader's call): the board
-       ends with air, not with a tile against the bottom edge. */
-    padding: 16px 16px 120px;
+       ends with air, not with a tile against the bottom edge. 120px of it
+       until 2026-09-29, when a tile that fits the viewport started measuring
+       to the foot LESS this reserve — so every one of them was 120px shorter
+       than the window allows, and the News page read as small beside Filings
+       and Posts, which are bare panels on no board and so pay no reserve at
+       all. 16px is the gutter: the board still ends with air rather than a
+       tile flush to the edge, and hands 104px back. */
+    padding: 16px;
     background: transparent;
     /* Tiles end where their content does (2026-09-02): a short tile is not
        stretched to its row's tallest neighbour, so a three-row stat grid is a
@@ -505,7 +511,7 @@
   }
   /* Phone: the gutters tighten so the single column keeps its width. */
   @media (max-width: 640px) {
-    .collage { gap: 8px; padding: 12px 8px 80px; }
+    .collage { gap: 8px; padding: 12px 8px; }
   }
 }
 

@@ -173,20 +173,24 @@ export const HeightOverride = React.createContext<number | null>(null)
  * board already shows and choosing it changes nothing — a reader who opens
  * the control and picks the value it is already at should see no movement. */
 export const TILE_HEIGHT_PX: Record<number, number> = {
-  // AN EVEN LADDER, 180px A RUNG (2026-09-29, the owner: "make the small and
-  // medium a bit more larger too"). S was 260 and M the old 402 standard,
-  // which left a 318px jump to L once that grew — the two small steps sat
-  // bunched at the bottom and the reader had one usable size. 360 / 540 / 720
-  // climbs evenly and L is exactly twice S, so the names mean something
-  // relative to each other.
-  1: 360,
-  2: 540,
-  // L IS THE STEP FOR A TILE YOU MEAN TO READ, so it sits just under the room
-  // a tile has on a common window: at 994px of viewport a board gives its top
-  // row about 730px before the foot, and 720 clears that without scrolling.
-  // It was 620 and read as barely taller than M (2026-09-29, the owner: "I
-  // think large should be a bit more large").
-  3: 720,
+  // AN EVEN LADDER, 210px A RUNG (2026-09-29). S was 260 and M the old 402
+  // standard, which left the two small steps bunched at the bottom with one
+  // usable size above them.
+  //
+  // RE-TUNED when the board's bottom reserve went from 120px to the 16px
+  // gutter: L had been set just under the room a tile had on a 994px window,
+  // and that room grew by 104px, so the tallest STEP was suddenly short of
+  // what "auto" gives on the same screen — a named size should not be beaten
+  // by the absence of one.
+  //
+  // THEN RAISED PAST IT (the owner: "increase the height of L a bit then").
+  // L is now LARGER than a 994px window can show, and that is allowed: a
+  // named step is a fixed size, so picking one taller than the window means
+  // scrolling to its foot, and on the bigger monitor this is read on it fits.
+  // "auto" remains the step for "as much as this screen has".
+  1: 420,
+  2: 660,
+  3: 900,
 }
 
 /** A board slot: the reader's width, place and height for the tile inside. */
@@ -346,7 +350,17 @@ export function Widget({
   // for the page rather than one per tile — is real, and it is what the owner
   // gave up here. A tile shorter than the room is untouched either way, so
   // only the tiles that overflowed change.
-  const wantsFill = fitViewport && !ownHeight && step === undefined
+  // "fit" IS A MEASURED EXACT HEIGHT (2026-09-29). A page that wants a
+  // viewport-fitting panel used to write its own `calc(100vh - 212px)`, which
+  // carries the same blind spot the shared cap had — it guesses what is above
+  // and says nothing about the board's reserve below, so the News page
+  // overshot by ~144px. `fit` measures instead, and stays a STRING height:
+  // an exact height is what puts the children in an absolutely-positioned
+  // scroller, which is the element the windowed news list listens to (#81).
+  // Switching that tile to a number would take its scroller away.
+  const wantsFill = fitViewport && !ownHeight
+    && (step === undefined || typeof scroll === "string")
+    && (typeof scroll === "number" || scroll === "fit")
   React.useLayoutEffect(() => {
     if (!wantsFill) { setFillPx(null); return }
     const measure = () => {
@@ -366,9 +380,31 @@ export function Widget({
       const px = room > MIN_ROOM ? room : budget
       setFillPx(px > MIN_ROOM ? Math.round(px) : null)
     }
+    // WATCHED, NOT MEASURED ONCE. A tile's body moves down the page after
+    // mount whenever something above it appears — the Filings toolbar is
+    // built from the items the feed returns, so it does not exist on the
+    // first layout, and a height measured before it arrived left that page
+    // 47px past the foot. Observing the SECTION catches the header and
+    // toolbar appearing; observing the body alone would not, because what
+    // changes is the body's TOP, not its size.
     measure()
+    const section = fillRef.current?.parentElement
+    const ro = new ResizeObserver(measure)
+    if (section) ro.observe(section)
+    if (fillRef.current) ro.observe(fillRef.current)
+    // AND SETTLE AFTERWARDS. The observer catches a box changing size, which
+    // is not the same event as this tile's body moving DOWN the page: the
+    // Filings toolbar is built from the items the feed returns, so it mounts
+    // a beat later and the height measured before it existed was 37px too
+    // tall. Two late passes cost nothing and cover any such shift, whatever
+    // caused it — a font landing, an image, a slow query.
+    const timers = [120, 400, 1200].map(ms => window.setTimeout(measure, ms))
     window.addEventListener("resize", measure)
-    return () => window.removeEventListener("resize", measure)
+    return () => {
+      ro.disconnect()
+      timers.forEach(window.clearTimeout)
+      window.removeEventListener("resize", measure)
+    }
   }, [wantsFill])
 
   // A STEP IS A TILE HEIGHT, NOT A BODY HEIGHT (2026-09-29, the owner: "both
@@ -384,7 +420,16 @@ export function Widget({
   // height, which is the point.
   const chrome = (title || actions ? HEADER_BAND : 0) + (toolbar ? TOOLBAR_H : 0)
   const chosen = step !== undefined && !ownHeight
-  const bodyHeight = chosen ? Math.max(80, step - chrome) : scroll
+  // A TILE THAT ASKED FOR AN EXACT HEIGHT KEEPS ONE, step or no step: the
+  // scroller its children live in depends on the height being a string, and a
+  // reader picking S must not quietly remove it.
+  const exact = typeof scroll === "string"
+  const picked = chosen ? Math.max(80, step - chrome) : null
+  const bodyHeight = exact
+    ? (picked !== null ? `${picked}px`
+       : scroll === "fit" ? (fillPx !== null ? `${fillPx}px` : BODY_VIEWPORT_CAP)
+       : scroll)
+    : (picked !== null ? picked : scroll)
   // A CHOSEN HEIGHT IS EXACT. Left on, the viewport floor would quietly
   // overrule every step below it and the two short ones would do nothing.
   const fits = chosen ? false : fitViewport

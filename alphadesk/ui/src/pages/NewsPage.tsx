@@ -306,7 +306,7 @@ export default function NewsPage() {
         subtitle={readingInList ? undefined
           : search ? `search of all stored news for “${search.q}”${search.rows ? ` · ${search.rows.length} stories` : " · searching…"}`
           : data ? `${articles.length} stories, newest first · new stories arrive as they publish` : "loading…"}
-        scroll="calc(100vh - 212px)"
+        scroll="fit"
         scrollRef={win.attach}
         // THE CONTROLS MUST NOT SCROLL AWAY WITH THE ROWS THEY LABEL
         // (2026-09-29, the owner: "dont scroll these at the top too"). They
@@ -500,7 +500,7 @@ export default function NewsPage() {
       <Widget
         span={5}
         title="Reader"
-        scroll="calc(100vh - 212px)"
+        scroll="fit"
        
         actions={
           <button type="button" aria-label="Close the reader" title="Close"
