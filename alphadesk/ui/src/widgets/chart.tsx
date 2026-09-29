@@ -228,8 +228,9 @@ export function MarketChart({ span = 6, symbol: symbolProp }: {
   )
 }
 
-// TALL BY DEFAULT ON A BOARD NOBODY HAS EDITED (2026-09-29, the owner's own
-// arrangement): half the row beside the news list, at the L step. A chart
-// spends ~135px of any tile on toolbar, readout and range row, so the
-// smaller steps leave it little plot.
-registerWidget({ id: "market-chart", label: "Chart", order: 12, height: 3, component: MarketChart })
+// NO DEFAULT HEIGHT: "auto" already fills the room to the foot of the window,
+// which on a common screen is within a few pixels of L, and unlike L it grows
+// with the window instead of being pinned (2026-09-29, the owner: "auto
+// should be L right?"). A registry default would also have shown as a
+// reader's own choice in the board editor, which it is not.
+registerWidget({ id: "market-chart", label: "Chart", order: 12, component: MarketChart })

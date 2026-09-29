@@ -1,7 +1,7 @@
 import { AlignCenter, AlignLeft, AlignRight } from "lucide-react"
 import type { TileAlign, TileHeight } from "@/lib/layoutEntries"
 import { useState } from "react"
-import { Btn } from "@/components/terminal"
+import { Btn, TILE_HEIGHT_PX } from "@/components/terminal"
 import { WidgetLibraryDialog } from "@/components/WidgetLibrary"
 import type { LayoutApi, PanelDef } from "@/lib/boardLayout"
 
@@ -44,9 +44,16 @@ const pickerCls = "h-[28px] w-[92px] border border-border bg-panel px-1.5 text-c
 
 const HEIGHTS: { label: string; height: TileHeight | null; why: string }[] = [
   { label: "auto", height: null, why: "grows with its content, to the foot of the window" },
-  { label: "S", height: 1, why: "short — 260px of content" },
-  { label: "M", height: 2, why: "the standard tile, 402px" },
-  { label: "L", height: 3, why: "tall — 620px" },
+  // THE PIXELS COME FROM THE TABLE, NOT FROM A COPY OF IT (2026-09-29, the
+  // owner spotting a stale tooltip). These said 260 / 402 / 620 while the
+  // steps were 360 / 540 / 720 — the numbers moved three times in an hour and
+  // a hand-written label cannot be expected to follow. Read from the same
+  // constant the layout uses, so the two cannot disagree again.
+  ...([1, 2, 3] as const).map((h, i) => ({
+    label: ["S", "M", "L"][i],
+    height: h as TileHeight,
+    why: `${["short", "medium", "tall"][i]} — ${TILE_HEIGHT_PX[h]}px tall`,
+  })),
 ]
 
 /** A tile's place in its row when it is narrower than the row. */
