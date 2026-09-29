@@ -44,7 +44,10 @@ fi
 sha="$(git rev-parse HEAD)"
 image="${REGION}-docker.pkg.dev/${PROJECT}/${SERVICE}/app:${sha}"
 echo "building ${sha:0:8} as ${ACCOUNT} on ${PROJECT}"
-gcloud builds submit --tag "$image" --project "$PROJECT" --account "$ACCOUNT" --quiet --suppress-logs
+cache="${REGION}-docker.pkg.dev/${PROJECT}/${SERVICE}/app:cache"
+gcloud builds submit --config cloudbuild.yaml \
+  --substitutions "_IMAGE=${image},_CACHE=${cache}" \
+  --project "$PROJECT" --account "$ACCOUNT" --quiet --suppress-logs
 gcloud run deploy "$SERVICE" --image "$image" --region "$REGION" --project "$PROJECT" --account "$ACCOUNT" --quiet
 
 # The live page must name this build's bundle.
