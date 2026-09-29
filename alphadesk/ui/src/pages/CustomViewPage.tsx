@@ -9,6 +9,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from "react-rout
 import { BoardEditor } from "@/components/BoardEditor"
 import { Empty, OverflowMenu, TileSlot, Widget, btnCls } from "@/components/terminal"
 import { usePageLayout } from "@/lib/boardLayout"
+import { serializeLayout } from "@/lib/layoutEntries"
 import { useMyViews, viewLayoutKey, type MyViewsApi } from "@/lib/customViews"
 import { WidgetLibraryDialog } from "@/components/WidgetLibrary"
 import { widgets } from "@/widgets/registry"
@@ -99,10 +100,17 @@ function Board({ viewId, viewName, mine, editorOpen, onEditorOpenChange, library
   // Save the composition back to the account, debounced while editing and
   // FLUSHED on unmount and on the editor's Save — a navigation inside the
   // debounce window must never lose the change (it once did).
+  // THE CANONICAL SERIALISER, not a copy of it (2026-09-29). This was a
+  // hand-rolled duplicate of serializeLayout that knew about spans and
+  // places, so when heights arrived it silently dropped them: a height set
+  // inside a view survived until you navigated, and was gone when you came
+  // back. Anything the layout format gains from here on travels with a view
+  // because this no longer has its own opinion about the format.
   const serialized = useMemo(
-    () => layout.items.map(({ def, span, align }) =>
-      `${span ? `${def.id}:${span}` : def.id}${align === "center" ? "@c" : align === "right" ? "@r" : ""}`).join(","),
-    [layout.items],
+    () => serializeLayout(
+      layout.items.map(({ def, span, align, height }) => ({ id: def.id, span, align, height })),
+      layout.all, false),
+    [layout.items, layout.all],
   )
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pending = useRef<string | null>(null)
@@ -146,6 +154,10 @@ function Board({ viewId, viewName, mine, editorOpen, onEditorOpenChange, library
       <div className="px-4 pt-2">
         <BoardEditor
           layout={layout}
+          // A VIEW HAS NO DEFAULT TO RETURN TO: its tiles are its definition,
+          // and clearing the layout means "no layout", which the board reads
+          // as the page's default — every registered widget.
+          showReset={false}
           open={editorOpen}
           onOpenChange={v => { if (!v) flushRef.current(); onEditorOpenChange(v) }}
           doneLabel="Save"

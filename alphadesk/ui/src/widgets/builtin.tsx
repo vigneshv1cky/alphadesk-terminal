@@ -23,7 +23,10 @@ import { newsTime } from "@/lib/newsClock"
  * between these without renumbering.
  */
 
-export function NewsTape({ span = 12 }: {
+// HALF THE ROW BY DEFAULT, so it sits beside the chart on the Markets
+// board. Every other caller passes its own span, so this default is the
+// registry's render and nothing else.
+export function NewsTape({ span = 6 }: {
   /** The markets board runs this full width; the news view runs it at 4 as the
    * secondary column beside the window, the way their news view puts a
    * headline list beside the main list. */
@@ -261,4 +264,7 @@ export function NewsTape({ span = 12 }: {
 // so they were duplicates that made the board ragged for no new information.
 // Deleted rather than left unregistered — an unused component is a component
 // nobody maintains. Git has them if a deployment wants the tiles back.
-registerWidget({ id: "news-tape", label: "Market news", order: 30, component: NewsTape })
+// NEWS LEADS THE MARKETS BOARD (2026-09-29, the owner's own arrangement):
+// the headlines beside the chart of whatever the board is scoped to, then
+// the company panels, then the movers. It sat at 30, below every mover.
+registerWidget({ id: "news-tape", label: "Market news", order: 11, component: NewsTape })

@@ -66,7 +66,7 @@ test("a tile's height rides beside its span and place", () => {
   const all = [{ id: "chart" }, { id: "news" }]
   // Every form parses: bare, with a span, and with a span and a place.
   assert.deepEqual(parseLayout("chart~3", all).visible, [{ id: "chart", span: null, height: 3 }])
-  assert.deepEqual(parseLayout("chart:6~4", all).visible, [{ id: "chart", span: 6, height: 4 }])
+  assert.deepEqual(parseLayout("chart:6~1", all).visible, [{ id: "chart", span: 6, height: 1 }])
   assert.deepEqual(parseLayout("chart:6@c~2", all).visible,
                    [{ id: "chart", span: 6, align: "center", height: 2 }])
   // NO HEIGHT IS NOT HEIGHT ZERO: a tile without a step keeps its own
@@ -79,7 +79,12 @@ test("a step this build does not know is dropped, not clamped", () => {
   // A link from a deployment with more steps than this one. The tile's own
   // default is a better answer than the nearest step we happen to have —
   // clamping would silently render a height the writer never chose.
+  //
+  // THE RETIRED "FILL" STEP IS ONE OF THESE. A board saved while it existed
+  // falls back to no step, which is what fill was reaching for anyway: a
+  // tile that grows with its content to the foot of the window.
   const all = [{ id: "chart" }]
+  assert.deepEqual(parseLayout("chart~4", all).visible, [{ id: "chart", span: null }])
   assert.deepEqual(parseLayout("chart~9", all).visible, [{ id: "chart", span: null }])
   assert.deepEqual(parseLayout("chart~0", all).visible, [{ id: "chart", span: null }])
   assert.deepEqual(parseLayout("chart~x", all).visible, [{ id: "chart", span: null }])

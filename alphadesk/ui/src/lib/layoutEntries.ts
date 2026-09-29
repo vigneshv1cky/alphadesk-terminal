@@ -30,8 +30,15 @@ export type TileAlign = "center" | "right"
  *
  * Steps rather than pixels, like the span: a free number invites a board of
  * 41 different heights, and the point is a composed board, not a ransom note.
- * `fill` is the viewport envelope the tall tiles already use. */
-export const TILE_HEIGHT_STEPS = [1, 2, 3, 4] as const
+ *
+ * THERE IS NO "FILL" STEP (2026-09-29, the owner: "remove fill in customize,
+ * it just cause confusions"). It was a near-duplicate of no step at all: a
+ * tile with no step ALREADY grows to what the window can show, so the two
+ * differed by almost nothing and the reader had to guess which was which.
+ * What fill was reaching for — the foot of the window, exactly — is now what
+ * the default does, so removing the option lost nothing. A board saved with
+ * the old step falls back to no step, which is that same behaviour. */
+export const TILE_HEIGHT_STEPS = [1, 2, 3] as const
 export type TileHeight = (typeof TILE_HEIGHT_STEPS)[number]
 
 export type LayoutEntry = {

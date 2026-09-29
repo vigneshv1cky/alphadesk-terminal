@@ -2,7 +2,6 @@ import * as React from "react"
 import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { useModalFocus, usePopoverFocus } from "@/lib/focus"
-import { TILE_BODY_HEIGHT } from "@/widgets/tile"
 
 /** The terminal primitives — hand-rolled, dependency-free replacements for
  * the shadcn/ui set that used to live in components/ui/.
@@ -151,6 +150,11 @@ const HEADER_H = 38
 // Must match the widget-toolbar band below — this is the height the tile's
 // minimum reserves for it.
 const TOOLBAR_H = 40
+/** What the header BAND actually measures — the `h-[40px]` on widget-header.
+ * Deliberately not HEADER_H above, which is 38 and is the reserve the
+ * section's MINIMUM accounts for; two numbers for two jobs, and using the
+ * reserve here would leave every stepped tile 2px tall. */
+export const HEADER_BAND = 40
 
 /** The reader's width for a tile, provided by the board's layout around a
  * tile component (lib/boardLayout). Null everywhere else, so a Widget off
@@ -162,18 +166,29 @@ export const AlignOverride = React.createContext<"center" | "right" | null>(null
  * tile's own default, which is what every board saved before this holds. */
 export const HeightOverride = React.createContext<number | null>(null)
 
-/** The reader's height steps, in pixels of BODY. Step 4 is the viewport
- * envelope rather than a number, so a filled tile tracks the window.
+/** The reader's height steps, as a SHARE OF THE ROOM A TILE HAS — not pixels
+ * (2026-09-29, the owner: "s, m, l are in pixels, not good for different
+ * screens").
  *
- * The middle step is the standard tile body, so "medium" is what an unedited
- * board already shows and choosing it changes nothing — a reader who opens
- * the control and picks the value it is already at should see no movement. */
-export const TILE_HEIGHT_PX: Record<number, number | "fill"> = {
-  1: 260,
-  2: TILE_BODY_HEIGHT,
-  3: 620,
-  4: "fill",
+ * They were absolute: 420 / 660 / 900. On a 900px laptop L was the entire
+ * window and S a third of it; on a 1440px monitor L was well under half. The
+ * same named size meant a different thing on every screen, which is the one
+ * thing a named size must not do — and it drifted, because each time the
+ * chrome around a tile changed the numbers had to be re-tuned by hand.
+ *
+ * A step is a fraction of what "auto" would give, so the ladder is the same
+ * shape everywhere: about half the screen, two thirds, most of it. `auto`
+ * remains all of it. Nothing to re-tune when the chrome moves — the room is
+ * measured, and the fractions ride on top.
+ */
+export const TILE_HEIGHT_SHARE: Record<number, number> = {
+  1: 0.45,
+  2: 0.68,
+  3: 0.9,
 }
+/** No screen is so short that a tile becomes unreadable: below this a step
+ * gives what it can rather than a sliver. */
+const MIN_STEP_PX = 220
 
 /** A board slot: the reader's width, place and height for the tile inside. */
 export function TileSlot({ span, align, height, children }: {
@@ -194,6 +209,15 @@ export function TileSlot({ span, align, height, children }: {
 /** How tall a capped tile body may grow: the viewport less the app header,
  * the symbol strip, the page heading and the tile's own header. */
 export const BODY_VIEWPORT_CAP = "calc(100vh - 190px)"
+
+/** What sits ABOVE the first tile on a board: the app header, the symbol
+ * strip, the page heading and the tile's own header. The same 190px the cap
+ * above has always used — kept as a number so a tile below the fold, which
+ * cannot measure its distance to the foot, can still be given the budget it
+ * would have had at the top. */
+const TOP_CHROME = 190
+/** Below this there is no usable room, so the measurement is not trusted. */
+const MIN_ROOM = 200
 
 export function Widget({
   title, symbol, subtitle, actions, toolbar, toolbarWraps, span = 12, className, bodyClassName,
@@ -284,7 +308,6 @@ export function Widget({
   // takes no cap at all (the chart, which must show whole) is left alone —
   // capping it is what put its toolbar behind an inner scrollbar.
   const overrideHeight = React.useContext(HeightOverride)
-  const step = overrideHeight ? TILE_HEIGHT_PX[overrideHeight] : undefined
   const cols = overrideSpan ?? span
   // THE READER'S STEP APPLIES TO ANY TILE THAT HAS NOT OPTED OUT, including
   // one that declares no cap of its own. The first version only overrode an
@@ -293,8 +316,122 @@ export function Widget({
   // no cap to override and the control looked broken on exactly the tiles a
   // reader is most likely to want shortened. An explicit choice outranks a
   // default; `ownHeight` is for a tile whose height is not a cap at all.
-  const chosen = step !== undefined && !ownHeight
-  const bodyHeight = chosen ? (step === "fill" ? BODY_VIEWPORT_CAP : step) : scroll
+  // A CAPPED TILE STOPS AT THE FOOT OF THE WINDOW, not at a guess about it
+  // (2026-09-29, the owner: "fill should fill till bottom of screen", then
+  // "remove fill in customize, it just cause confusions").
+  //
+  // The cap was `100vh - 190px`, which is a guess about what sits ABOVE a
+  // tile and says nothing about what sits BELOW — the board reserves 120px
+  // under its last row, so a tile grown to that cap overshot by the reserve
+  // and the board scrolled with nothing below it. That overshoot is why a
+  // "fill" step looked like it was doing something the default was not; with
+  // the default measured, the two became the same thing and the step went.
+  //
+  // Measured from this tile's own body, so it is right on every page whatever
+  // heading each carries. Falls back to the old envelope before the first
+  // measurement and for a tile below the fold, where there is no foot to
+  // reach and a full envelope is the right answer anyway.
+  const fillRef = React.useRef<HTMLDivElement | null>(null)
+  const [fillPx, setFillPx] = React.useState<number | null>(null)
+  // AND A TILE THAT DECLARED NO CAP IS CAPPED TOO (2026-09-29, the owner:
+  // "most of the auto fill goes below the screen, needing to scroll"). The
+  // movers tiles ask for fifty rows and grow to all of them — 1,741px on a
+  // 994px window — so the tallest tiles on the board were exactly the ones
+  // the measured cap did not reach, because it only overrode a cap that
+  // already existed.
+  //
+  // THIS REVERSES "no inner scroller, the board scrolls" (2026-09-17): a tile
+  // taller than the window now scrolls inside itself instead of pushing its
+  // own foot off the screen. The trade the old rule bought — one scrollbar
+  // for the page rather than one per tile — is real, and it is what the owner
+  // gave up here. A tile shorter than the room is untouched either way, so
+  // only the tiles that overflowed change.
+  // "fit" IS A MEASURED EXACT HEIGHT (2026-09-29). A page that wants a
+  // viewport-fitting panel used to write its own `calc(100vh - 212px)`, which
+  // carries the same blind spot the shared cap had — it guesses what is above
+  // and says nothing about the board's reserve below, so the News page
+  // overshot by ~144px. `fit` measures instead, and stays a STRING height:
+  // an exact height is what puts the children in an absolutely-positioned
+  // scroller, which is the element the windowed news list listens to (#81).
+  // Switching that tile to a number would take its scroller away.
+  // MEASURED WHETHER OR NOT A STEP IS SET, because a step is now a SHARE of
+  // this same room rather than a pixel count.
+  const wantsFill = fitViewport && !ownHeight
+    && (typeof scroll === "number" || scroll === "fit" || overrideHeight !== null)
+  React.useLayoutEffect(() => {
+    if (!wantsFill) { setFillPx(null); return }
+    const measure = () => {
+      const el = fillRef.current
+      if (!el) return
+      const board = el.closest(".collage")
+      const reserved = board ? parseFloat(getComputedStyle(board).paddingBottom) || 0 : 0
+      // A TILE BELOW THE FOLD HAS NO "ROOM TO THE FOOT" — its top is past the
+      // window, so the distance is negative. Falling back to no cap at all
+      // left the tallest tiles on the board uncapped, which is exactly the
+      // ones that overflow: the movers ask for fifty rows. What such a tile
+      // wants is the budget it WOULD have at the top of the board — one
+      // screen, less the chrome above and the board's reserve below — so that
+      // scrolling to it shows it whole.
+      const room = window.innerHeight - el.getBoundingClientRect().top - reserved
+      const budget = window.innerHeight - TOP_CHROME - reserved
+      const px = room > MIN_ROOM ? room : budget
+      setFillPx(px > MIN_ROOM ? Math.round(px) : null)
+    }
+    // WATCHED, NOT MEASURED ONCE. A tile's body moves down the page after
+    // mount whenever something above it appears — the Filings toolbar is
+    // built from the items the feed returns, so it does not exist on the
+    // first layout, and a height measured before it arrived left that page
+    // 47px past the foot. Observing the SECTION catches the header and
+    // toolbar appearing; observing the body alone would not, because what
+    // changes is the body's TOP, not its size.
+    measure()
+    const section = fillRef.current?.parentElement
+    const ro = new ResizeObserver(measure)
+    if (section) ro.observe(section)
+    if (fillRef.current) ro.observe(fillRef.current)
+    // AND SETTLE AFTERWARDS. The observer catches a box changing size, which
+    // is not the same event as this tile's body moving DOWN the page: the
+    // Filings toolbar is built from the items the feed returns, so it mounts
+    // a beat later and the height measured before it existed was 37px too
+    // tall. Two late passes cost nothing and cover any such shift, whatever
+    // caused it — a font landing, an image, a slow query.
+    const timers = [120, 400, 1200].map(ms => window.setTimeout(measure, ms))
+    window.addEventListener("resize", measure)
+    return () => {
+      ro.disconnect()
+      timers.forEach(window.clearTimeout)
+      window.removeEventListener("resize", measure)
+    }
+  }, [wantsFill])
+
+  // A STEP IS A TILE HEIGHT, NOT A BODY HEIGHT (2026-09-29, the owner: "both
+  // tiles are same height option, but looks different"). It capped the body,
+  // and tiles differ in how much chrome sits OUTSIDE the body — measured at
+  // L: the chart 683px with a header alone, the movers 702px with a header
+  // and a toolbar, and a tile with neither would have been 620. Three
+  // different tiles for one named size.
+  //
+  // What a reader means by L is "make this tile that tall", so the step is
+  // the whole tile now and the body gets what is left after this tile's own
+  // chrome. A tile with less chrome gets a taller body and the same outside
+  // height, which is the point.
+  const chrome = (title || actions ? HEADER_BAND : 0) + (toolbar ? TOOLBAR_H : 0)
+  // The step's share of the room, as a BODY height. The room is the whole
+  // tile's worth, so the chrome comes off after the fraction.
+  const step = overrideHeight && !ownHeight && fillPx !== null
+    ? Math.max(MIN_STEP_PX, Math.round(fillPx + chrome) * TILE_HEIGHT_SHARE[overrideHeight]) - chrome
+    : undefined
+  const chosen = step !== undefined
+  // A TILE THAT ASKED FOR AN EXACT HEIGHT KEEPS ONE, step or no step: the
+  // scroller its children live in depends on the height being a string, and a
+  // reader picking S must not quietly remove it.
+  const exact = typeof scroll === "string"
+  const picked = chosen ? Math.max(80, Math.round(step)) : null
+  const bodyHeight = exact
+    ? (picked !== null ? `${picked}px`
+       : scroll === "fit" ? (fillPx !== null ? `${fillPx}px` : BODY_VIEWPORT_CAP)
+       : scroll)
+    : (picked !== null ? picked : scroll)
   // A CHOSEN HEIGHT IS EXACT. Left on, the viewport floor would quietly
   // overrule every step below it and the two short ones would do nothing.
   const fits = chosen ? false : fitViewport
@@ -430,14 +567,19 @@ export function Widget({
         // reads whole on a normal screen and only a list longer than the
         // screen scrolls inside its tile. The page scrolls instead — one
         // scrollbar rather than one per tile.
+        ref={wantsFill ? fillRef : undefined}
         style={typeof bodyHeight === "string" ? { height: bodyHeight }
              : typeof bodyHeight === "number"
-               ? { maxHeight: fits ? `max(${bodyHeight}px, ${BODY_VIEWPORT_CAP})` : `${bodyHeight}px` }
+               ? { maxHeight: fits
+                     ? `max(${bodyHeight}px, ${fillPx !== null ? `${fillPx}px` : BODY_VIEWPORT_CAP})`
+                     : `${bodyHeight}px` }
+             : fillPx !== null ? { maxHeight: `${fillPx}px` }
              : undefined}
         className={cn(
           "min-h-0 min-w-0",
           typeof bodyHeight === "string" && "relative flex-1",
-          typeof bodyHeight === "number" && "overflow-y-auto",
+          (typeof bodyHeight === "number" || (bodyHeight === undefined && fillPx !== null))
+            && "overflow-y-auto",
           bodyClassName,
         )}
       >

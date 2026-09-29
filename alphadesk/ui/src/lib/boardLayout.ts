@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useLocation, useSearchParams } from "react-router-dom"
 import { widgets } from "@/widgets/registry"
+import { useExternalWidgets } from "@/lib/queries"
 import { whichWins } from "@/lib/boardSync"
 import { parseLayout, resolveLayout, serializeLayout, type LayoutEntry, type TileAlign, type TileHeight } from "@/lib/layoutEntries"
 
@@ -155,6 +156,8 @@ export type LayoutApi<T extends PanelDef> = {
   items: { def: T; span: number | null; align: TileAlign | null; height: TileHeight | null }[]
   isCustom: boolean
   move: (id: string, dir: -1 | 1) => void
+  /** Put a tile at a position — the whole way in one move. */
+  moveTo: (id: string, index: number) => void
   setSpan: (id: string, span: number | null) => void
   /** Place a tile narrower than its row: left (null), centre or right. */
   setAlign: (id: string, align: TileAlign | null) => void
@@ -170,8 +173,30 @@ export type LayoutApi<T extends PanelDef> = {
 }
 
 /** The Markets board's layout — the registry is its panel list. */
+/** A TILE THAT CANNOT RENDER IS NOT OFFERED (2026-09-29, the owner: "what is
+ * this external tiles?").
+ *
+ * External tiles are the fourth plugin seam: a widget backend contributes a
+ * shape and its data, and with none configured the component returns null. It
+ * was still a registered widget, so the board editor gave it a row with a
+ * width, a height and a place — three controls over nothing, on a deployment
+ * that has no backends, which is every deployment until someone sets
+ * ALPHADESK_WIDGET_BACKENDS.
+ *
+ * Filtered here rather than at registration, because whether a backend exists
+ * is an ANSWER FROM THE SERVER and registration happens at import time. The
+ * row comes back on its own the day a backend is configured — nothing to
+ * re-enable, and no saved layout to repair, since a layout naming a tile
+ * nothing registers is already dropped rather than rendered.
+ */
 export function useBoardLayout() {
-  return usePageLayout("markets", widgets())
+  const external = useExternalWidgets()
+  const hasExternal = (external.data?.widgets?.length ?? 0) > 0
+  const all = useMemo(
+    () => widgets().filter(w => w.id !== "external" || hasExternal),
+    [hasExternal],
+  )
+  return usePageLayout("markets", all)
 }
 
 /** Any page's composition, keyed by page. Same contract everywhere: ?tiles=
@@ -321,6 +346,21 @@ export function usePageLayout<T extends PanelDef>(
     commit(next)
   }, [entries, commit])
 
+  /** Put a tile AT a position, rather than one step at a time (2026-09-29,
+   * the owner: "I had a trouble of moving of a tile lowest to top"). Ten
+   * tiles meant nine presses and a list that scrolls under the cursor while
+   * you make them. Drag was tried and rejected for this editor; naming the
+   * destination reaches it in one move and needs no new interaction. */
+  const moveTo = useCallback((id: string, index: number) => {
+    const i = entries.findIndex(e => e.id === id)
+    const to = Math.max(0, Math.min(entries.length - 1, index))
+    if (i < 0 || i === to) return
+    const next = [...entries]
+    const [row] = next.splice(i, 1)
+    next.splice(to, 0, row)
+    commit(next)
+  }, [entries, commit])
+
   /** Give a tile a width (3–12 grid columns), or null to hand it back to
    * the component's own default. */
   const setSpan = useCallback((id: string, span: number | null) => {
@@ -347,5 +387,6 @@ export function usePageLayout<T extends PanelDef>(
 
   const reset = useCallback(() => commit(null), [commit])
 
-  return { all, items, isCustom, move, setSpan, setAlign, setHeight, applyIds, reset }
+
+  return { all, items, isCustom, move, moveTo, setSpan, setAlign, setHeight, applyIds, reset }
 }
