@@ -152,3 +152,19 @@ def test_no_verdict_field_is_ever_returned(monkeypatch):
     # And direction is a comparison of two filed figures, not an opinion:
     # the only values it may take are the three arithmetic ones.
     assert {m["direction"] for m in out["metrics"]} <= {"up", "down", "flat", None}
+
+
+def test_free_cash_flow_is_marked_derived_like_the_margins(monkeypatch):
+    """NO COMPANY TAGS FREE CASH FLOW (2026-09-29). It is operating cash flow
+    less capital expenditure, computed upstream — and it rode in the filed list
+    marked as filed, which said the company reported a figure it never did."""
+    fake = {"metrics": [{"id": m, "label": m, "unit": "currency"}
+                        for m in ("revenue", "ocf", "fcf")],
+            "series": {m: [{"t": "2025-06-30", "v": 10.0}, {"t": "2026-06-30", "v": 20.0}]
+                       for m in ("revenue", "ocf", "fcf")}}
+    monkeypatch.setattr("alphadesk.ingest.edgar_financials.fundamentals_series",
+                        lambda *a, **k: fake)
+    out = ff.filed_quarter("X", "2026-09-29")
+    by = {m["id"]: m for m in out["metrics"]}
+    assert by["fcf"]["filed"] is False
+    assert by["revenue"]["filed"] is True and by["ocf"]["filed"] is True

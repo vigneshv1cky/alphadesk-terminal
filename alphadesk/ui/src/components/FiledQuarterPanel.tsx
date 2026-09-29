@@ -48,6 +48,29 @@ function change(m: { change_pct?: number | null; change_pp?: number | null; dire
   return "—"
 }
 
+/** WHAT EACH FIGURE IS, on the row rather than beside it (2026-09-29, the
+ * owner: "remove the calc, and include explanations in tooltip"). A "·calc"
+ * mark beside two rows was too cryptic to read without hovering it anyway —
+ * and hovering is where the explanation belongs, for every row rather than
+ * the two that carried a marker.
+ *
+ * DERIVED FIGURES SAY SO IN WORDS. Margins and free cash flow are arithmetic
+ * on figures the company filed, not figures it filed, and the panel claims
+ * "as filed with the SEC" over the whole table — so the distinction has to
+ * survive losing its marker. */
+const WHAT: Record<string, string> = {
+  revenue: "What the company took in over the period, as tagged in its own filing.",
+  gross_profit: "Revenue less what it cost to produce, as filed.",
+  operating_income: "Profit from running the business, before interest and tax, as filed.",
+  net_income: "Profit or loss after everything — interest, tax and the rest. As filed.",
+  diluted_eps: "Profit per share, counting every share that would exist if options and convertibles were exercised. As filed.",
+  ocf: "Cash the business itself generated, as filed — which can differ sharply from profit.",
+  capex: "Cash spent on property, plant and equipment, as filed. Shown negative because it leaves the business.",
+  fcf: "DERIVED, not filed: operating cash flow less capital expenditure. No company tags this figure; it is computed here from the two above it.",
+  operating_income_margin: "DERIVED, not filed: operating income as a percentage of revenue. Computed here from two filed figures, and shown only where revenue is positive in both periods.",
+  net_income_margin: "DERIVED, not filed: net income as a percentage of revenue. Computed here from two filed figures.",
+}
+
 function day(d?: string | null): string {
   if (!d) return "—"
   return new Date(`${d}T12:00:00`).toLocaleDateString("en-US",
@@ -111,12 +134,11 @@ export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; repo
         <tbody>
           {data.metrics.map(m => (
             <tr key={m.id} className="hover:bg-foreground/5">
-              <td className="overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-3 py-1.5">
+              <td className="overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-3 py-1.5"
+                  title={WHAT[m.id] ?? (m.filed === false
+                    ? "Derived here from figures the company filed, not a figure it filed."
+                    : "As filed with the SEC.")}>
                 {m.label}
-                {m.filed === false && (
-                  <span className="ml-1 text-label text-muted-foreground"
-                        title="Derived: arithmetic on two filed figures, not a figure the company filed">·calc</span>
-                )}
               </td>
               <td className="tnum border-b border-row-rule px-2 py-1.5 text-right font-semibold">{shown(m.value, m.unit, data.currency)}</td>
               <td className="tnum border-b border-row-rule px-2 py-1.5 text-right text-muted-foreground">{shown(m.prior, m.unit, data.currency)}</td>

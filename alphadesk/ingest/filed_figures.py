@@ -208,7 +208,13 @@ def filed_quarter(symbol: str, on: str | None = None) -> dict:
         out["metrics"].append({
             "id": mid, "label": labels.get(mid, mid), "unit": units.get(mid, "currency"),
             "value": now, "prior": was, "change_pct": _change(now, was),
-            "direction": _direction(now, was), "filed": True,
+            "direction": _direction(now, was),
+            # FREE CASH FLOW IS COMPUTED TOO (2026-09-29). It rode in this list
+            # marked as filed, but no company tags it: it is operating cash
+            # flow less capital expenditure, arithmetic on two filed figures
+            # exactly like the margins below. Marking it filed said the company
+            # reported a number it never did.
+            "filed": mid != "fcf",
         })
 
     # Margins, marked derived: arithmetic on two filed figures, not a filed
