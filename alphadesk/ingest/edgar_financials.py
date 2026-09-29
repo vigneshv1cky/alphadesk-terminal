@@ -81,11 +81,25 @@ _TTL_S = 6 * 3600
 # and 40-F the Canadian equivalent; both carry US-GAAP XBRL when the filer
 # reports in it.
 #
-# 6-K IS DELIBERATELY NOT HERE. It is the foreign interim filing and carries
-# no fixed shape -- a 6-K may hold half-year figures, a press release, or
-# neither. The half-year periods it does carry (180 days, measured on WEBUY)
-# fall in no window here anyway, being neither a quarter nor a year.
-_FORMS = ("10-Q", "10-K", "10-Q/A", "10-K/A", "20-F", "20-F/A", "40-F", "40-F/A")
+# 6-K IS HERE TOO, AND THE REASON IT WAS NOT IS WORTH CORRECTING (2026-09-29).
+# It was excluded on the claim that a 6-K carries only half-years, which fall
+# in no window here, being neither a quarter nor a year. That is true of three
+# of the four filers measured -- Inventiva, TSMC and WEBUY file 180- and
+# 181-day periods on it -- and simply false of the fourth: NOVO NORDISK FILES
+# FULL YEARS ON A 6-K, twelve of them at 364 and 365 days, because it announces
+# annual results there before the 20-F lands. Excluding the form discarded
+# every one.
+#
+# THE OVERLAP WAS CHECKED BEFORE ADDING IT, because a preliminary announcement
+# overwriting an audited figure is the obvious risk: on both years where Novo
+# files the same period on a 6-K and a 20-F, the values agree EXACTLY. Nothing
+# to choose between, so nothing to get wrong.
+#
+# A 6-K still has no fixed shape -- it may hold figures, a press release, or
+# neither -- so this adds whatever it happens to tag and the period windows do
+# the rest, exactly as they do for every other form.
+_FORMS = ("10-Q", "10-K", "10-Q/A", "10-K/A", "20-F", "20-F/A",
+          "40-F", "40-F/A", "6-K", "6-K/A")
 
 
 def _days(v: dict) -> int | None:
