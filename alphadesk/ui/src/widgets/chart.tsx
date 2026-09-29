@@ -6,7 +6,7 @@ import { ChartSurface } from "@/components/chart/ChartSurface"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { resetChartPrefs } from "@/lib/chartPrefs"
 import { ChartRanges, ChartToolbar } from "@/components/ChartToolbar"
-import { Empty, HEADER_BAND, HeightOverride, TILE_HEIGHT_SHARE, Widget } from "@/components/terminal"
+import { Empty, HEADER_BAND, HeightOverride, TILE_HEIGHT_SHARE, TOP_CHROME, Widget } from "@/components/terminal"
 import { useChartEngine } from "@/lib/chartEngine"
 import { useChartCapabilities } from "@/lib/queries"
 import { registerWidget } from "@/widgets/registry"
@@ -83,7 +83,38 @@ const MIN_PLOT = 260
  * row included, and a cap put the toolbar behind an inner scrollbar (below).
  */
 
-function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
+/** THE PLOT IS SIZED BEFORE THE FIRST PAINT, AND NOT RE-SIZED AGAINST AN
+ * EMPTY TILE (2026-09-29, the owner, of a screen recording: "look at chart
+ * changing sizes").
+ *
+ * Two faults, and they compounded into the jump the recording shows — the
+ * chart arriving as tall as the window and shrinking by a third a second
+ * later, on every tab change.
+ *
+ * THE FIRST IS THAT THE CORRECTION RAN WHILE THERE WAS NO CHART. The plot's
+ * height is corrected by how far the tile's body misses the room, which is
+ * the right rule once a chart is in it and a nonsense one before: a body
+ * holding the word "loading" misses the room by almost all of it, so the
+ * correction handed the canvas the entire overshoot and the tile arrived at
+ * full window height. The toolbar, the price readout and the range row then
+ * mounted underneath — about 135px that had already been given away — and the
+ * next correction took it back. Nothing was wrong with the arithmetic; it was
+ * being asked a question about a tile whose contents did not exist yet. It
+ * now waits for the chart, and a tile mid-load simply keeps the height it
+ * already had.
+ *
+ * THE SECOND IS THAT IT STARTED FROM THE WRONG NUMBER. The plot opened at the
+ * standard tile's worth whatever the window, so even a correction that ran at
+ * exactly the right moment had a visible distance to travel. It is seeded
+ * from the same arithmetic every other tile was seeded with earlier today —
+ * one window, less what sits above a board and the board's own reserve — so
+ * the first paint is already about right and the correction is a few pixels
+ * rather than a few hundred.
+ *
+ * The seed is a constant's worth of chrome and a constant cannot be right at
+ * every width, which is why the measured correction stays. The point of the
+ * seed is only that the reader never watches it converge. */
+function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>, ready: boolean): number {
   // THE CANVAS IS WHAT IS LEFT OF THE TILE AFTER ITS OWN CHROME, and the
   // chrome is MEASURED rather than declared (2026-09-29, the owner: "both
   // tiles are same height option, but looks different").
@@ -104,11 +135,34 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
   // chart works the same way as every other tile, and the target is computed
   // inside the measurement below, where the room is known.
   const step = React.useContext(HeightOverride)
-  const [h, setH] = useState(COLLAPSED)
-  const now = useRef(COLLAPSED)
+  // The room a tile at the top of a board gets, before anything is on screen
+  // to measure — the same seed the shared tile height uses. A step takes its
+  // share of it, exactly as the measurement below does.
+  const seed = () => {
+    if (typeof window === "undefined") return COLLAPSED
+    const room = Math.round((window.innerHeight - TOP_CHROME - 16) / 8) * 8
+    const box = step
+      ? Math.max(MIN_PLOT + CHART_CHROME, Math.round((room + HEADER_BAND) * TILE_HEIGHT_SHARE[step]) - HEADER_BAND)
+      : room
+    return Math.max(MIN_PLOT, box - CHART_CHROME)
+  }
+  const [h, setH] = useState(seed)
+  const now = useRef(h)
   now.current = h
+  // A step changed by the board editor is a new seed, not a correction to
+  // creep towards: the reader asked for a different size and should get it at
+  // once, whether or not a chart happens to be loaded.
+  const lastStep = useRef(step)
+  if (lastStep.current !== step) {
+    lastStep.current = step
+    const next = seed()
+    if (next !== h) { now.current = next; setH(next) }
+  }
   useLayoutEffect(() => {
     const measure = () => {
+      // NOT AGAINST A TILE WITH NO CHART IN IT. The body's miss against the
+      // room is the plot's error only once the bands around the plot exist.
+      if (!ready) return
       const el = ref.current
       if (!el) return
       const body = el.parentElement
@@ -146,7 +200,7 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
     if (body && ro) ro.observe(body)
     window.addEventListener("resize", measure)
     return () => { ro?.disconnect(); window.removeEventListener("resize", measure) }
-  }, [ref, step])
+  }, [ref, step, ready])
   return h
 }
 
@@ -169,10 +223,17 @@ export function MarketChart({ span = 6, symbol: symbolProp }: {
   // gave it 620px is gone, so there is no second size to hold. A chart that
   // wants more room is widened in the board editor, which persists.
   const bodyRef = useRef<HTMLDivElement>(null)
-  const priceHeight = useCanvasHeight(bodyRef)
+  // The engine is asked for a height before it has anything to draw, so the
+  // hook is told whether a chart is on screen yet — see its note.
+  const [drawn, setDrawn] = useState(false)
+  const priceHeight = useCanvasHeight(bodyRef, drawn)
   const e = useChartEngine(symbol, { priceHeight })
   const { data: caps } = useChartCapabilities()
   const { data, bars, err, isFetching, live, hovered, hoverAt } = e
+  // Once a chart has been drawn it stays drawn: a refetch must not put the
+  // tile back into the state where its height is up for renegotiation.
+  const hasChart = !!data && bars.length > 0
+  useLayoutEffect(() => { if (hasChart) setDrawn(true) }, [hasChart])
 
   if (!symbol) {
     return (

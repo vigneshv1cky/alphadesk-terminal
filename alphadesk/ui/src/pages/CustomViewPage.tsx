@@ -5,12 +5,12 @@ import "@/widgets/external"
 import "@/widgets/more"
 import "@/widgets/desk"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { BoardEditor } from "@/components/BoardEditor"
 import { Empty, OverflowMenu, TileSlot, Widget, btnCls } from "@/components/terminal"
 import { usePageLayout } from "@/lib/boardLayout"
 import { serializeLayout } from "@/lib/layoutEntries"
-import { useMyViews, viewLayoutKey, type MyViewsApi } from "@/lib/customViews"
+import { useMyViews, type MyViewsApi } from "@/lib/customViews"
 import { WidgetLibraryDialog } from "@/components/WidgetLibrary"
 import { widgets } from "@/widgets/registry"
 
@@ -186,7 +186,6 @@ function Board({ viewId, viewName, mine, editorOpen, onEditorOpenChange, library
 
 export default function CustomViewPage() {
   const { viewId } = useParams()
-  const [params] = useSearchParams()
   // Arriving from the create flow (the widget library), the spacing step
   // follows immediately: the editor starts open. The Widgets button reopens
   // it any time after.
@@ -197,21 +196,40 @@ export default function CustomViewPage() {
   const mine = useMyViews()
   const view = mine.views.find(v => v.id === viewId) ?? null
 
-  // Signed in, the server row is the durable copy: seed the browser's
-  // working store from it BEFORE the board mounts, unless the URL already
-  // names a layout (a shared link wins — and will be saved back).
-  const [seeded, setSeeded] = useState(false)
-  useEffect(() => {
-    if (!mine.ready || !viewId) return
-    if (mine.serverBacked && !params.get("tiles")) {
-      const server = mine.layoutOf(viewId)
-      if (server) {
-        try { localStorage.setItem(viewLayoutKey(viewId), server) } catch { /* private mode */ }
-      }
-    }
-    setSeeded(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine.ready, viewId])
+  /** ONE DURABLE COPY OF A VIEW'S BOARD, AND ONE READER OF IT (2026-09-29,
+   * the owner: "changing tabs reverts the changes made in customize board").
+   *
+   * A view's arrangement was held on the account TWICE — in the view's own
+   * row and in the per-page board store every other tab uses — written by two
+   * separate debounces, and READ in a fixed order on arrival with no
+   * comparison between them: this effect copied the view's row over the
+   * browser's working store on every bare arrival, before the board mounted.
+   * Whenever the two server copies disagreed by even one edit, arriving at
+   * the view threw the newer arrangement away; and because the browser's
+   * stamp still said the reader had just arranged something, the board sync
+   * then decided the browser was ahead and PUSHED the stale layout up over
+   * the good row. Two copies of one fact, read newest-last instead of
+   * newest-first, is the whole fault.
+   *
+   * There is one reader now. The board's own store keeps the working copy and
+   * the per-page account row is its durable copy, reconciled by the rule
+   * every other tab already uses — the LATER ARRANGEMENT WINS, by stamp
+   * (lib/boardSync), which also covers the case this seeding existed for: a
+   * device that has never opened the view holds nothing, so the account's row
+   * is adopted. The view's own row is still WRITTEN, because a clone copies
+   * it and a view created elsewhere needs a starting board; it is no longer
+   * consulted while the reader is on the view.
+   *
+   * It could not be reproduced on an open instance, which is the reason it
+   * survived: with sign-in off there is no account, so the view's row does
+   * not exist and the seeding this replaces never did anything. Reproduce it
+   * signed in.
+   *
+   * The board no longer waits for a seeding pass either: it mounts as soon as
+   * the view list is known, which the guard below already requires. A view
+   * just created has its board written to the working store before the
+   * navigation, so there is nothing to wait for.
+   */
 
   if (!mine.ready) return null
 
@@ -233,12 +251,10 @@ export default function CustomViewPage() {
       <NameBar id={view.id} name={view.name} mine={mine}
                onEditWidgets={() => setLibraryOpen(true)}
                saveState={saveState || (mine.serverBacked ? "my view · synced to your account" : "my view · this browser")} />
-      {seeded && (
-        <Board viewId={view.id} viewName={view.name} mine={mine} editorOpen={editorOpen}
-               onEditorOpenChange={setEditorOpen}
-               libraryOpen={libraryOpen} onLibraryClose={() => setLibraryOpen(false)}
-               onSaveState={setSaveState} />
-      )}
+      <Board viewId={view.id} viewName={view.name} mine={mine} editorOpen={editorOpen}
+             onEditorOpenChange={setEditorOpen}
+             libraryOpen={libraryOpen} onLibraryClose={() => setLibraryOpen(false)}
+             onSaveState={setSaveState} />
     </>
   )
 }

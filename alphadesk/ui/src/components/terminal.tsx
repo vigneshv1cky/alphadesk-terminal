@@ -215,7 +215,7 @@ export const BODY_VIEWPORT_CAP = "calc(100vh - 190px)"
  * above has always used — kept as a number so a tile below the fold, which
  * cannot measure its distance to the foot, can still be given the budget it
  * would have had at the top. */
-const TOP_CHROME = 190
+export const TOP_CHROME = 190
 /** Below this there is no usable room, so the measurement is not trusted. */
 const MIN_ROOM = 200
 /** Heights settle on a multiple of this, so a pixel of layout disagreement
