@@ -61,3 +61,34 @@ test("a tile's place in its row round-trips, and left is not written", () => {
   // A place on an auto-width tile is kept too; an unknown place is dropped.
   assert.deepEqual(parseLayout("news@c,chart@x", all).visible, [{ id: "news", span: null, align: "center" }, { id: "chart", span: null }])
 })
+
+test("a tile's height rides beside its span and place", () => {
+  const all = [{ id: "chart" }, { id: "news" }]
+  // Every form parses: bare, with a span, and with a span and a place.
+  assert.deepEqual(parseLayout("chart~3", all).visible, [{ id: "chart", span: null, height: 3 }])
+  assert.deepEqual(parseLayout("chart:6~4", all).visible, [{ id: "chart", span: 6, height: 4 }])
+  assert.deepEqual(parseLayout("chart:6@c~2", all).visible,
+                   [{ id: "chart", span: 6, align: "center", height: 2 }])
+  // NO HEIGHT IS NOT HEIGHT ZERO: a tile without a step keeps its own
+  // default, which is what every board saved before this feature holds.
+  assert.deepEqual(parseLayout("chart:6@c", all).visible,
+                   [{ id: "chart", span: 6, align: "center" }])
+})
+
+test("a step this build does not know is dropped, not clamped", () => {
+  // A link from a deployment with more steps than this one. The tile's own
+  // default is a better answer than the nearest step we happen to have —
+  // clamping would silently render a height the writer never chose.
+  const all = [{ id: "chart" }]
+  assert.deepEqual(parseLayout("chart~9", all).visible, [{ id: "chart", span: null }])
+  assert.deepEqual(parseLayout("chart~0", all).visible, [{ id: "chart", span: null }])
+  assert.deepEqual(parseLayout("chart~x", all).visible, [{ id: "chart", span: null }])
+})
+
+test("a height survives a round trip and is omitted when unset", () => {
+  const all = [{ id: "chart" }, { id: "news" }]
+  const raw = "chart:6@c~3,news:6"
+  const back = serializeLayout(parseLayout(raw, all).visible, all, false)
+  assert.equal(back, raw)
+  assert.equal(serializeLayout([{ id: "chart", span: 6, height: null }], all, false), "chart:6")
+})

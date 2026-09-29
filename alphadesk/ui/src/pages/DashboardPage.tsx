@@ -29,12 +29,12 @@ export default function DashboardPage() {
         <BoardEditor layout={layout} title="Markets" />
       </div>
       <div className="collage !pt-0">
-        {layout.items.map(({ def, span, align }) => {
+        {layout.items.map(({ def, span, align, height }) => {
           const W = def.component
           return (
             // The reader's width, where they set one, over the component's
             // own — the override mechanism the registry note reserved.
-            <TileSlot key={def.id} span={span} align={align}>
+            <TileSlot key={def.id} span={span} align={align} height={height}>
               <W />
             </TileSlot>
           )

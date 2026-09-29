@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useLocation, useSearchParams } from "react-router-dom"
 import { widgets } from "@/widgets/registry"
 import { whichWins } from "@/lib/boardSync"
-import { parseLayout, resolveLayout, serializeLayout, type LayoutEntry, type TileAlign } from "@/lib/layoutEntries"
+import { parseLayout, resolveLayout, serializeLayout, type LayoutEntry, type TileAlign, type TileHeight } from "@/lib/layoutEntries"
 
 /** The Markets board's composition — which tiles render, in what order.
  *
@@ -152,12 +152,15 @@ export type PanelDef = {
  * shape, whichever page it is composing. */
 export type LayoutApi<T extends PanelDef> = {
   all: T[]
-  items: { def: T; span: number | null; align: TileAlign | null }[]
+  items: { def: T; span: number | null; align: TileAlign | null; height: TileHeight | null }[]
   isCustom: boolean
   move: (id: string, dir: -1 | 1) => void
   setSpan: (id: string, span: number | null) => void
   /** Place a tile narrower than its row: left (null), centre or right. */
   setAlign: (id: string, align: TileAlign | null) => void
+  /** How tall a tile may grow, or null to hand it back to the component's
+   * own default — which is what an unedited board holds. */
+  setHeight: (id: string, height: TileHeight | null) => void
   /** Set the board's MEMBERSHIP in one move (the widget-library dialog):
    * kept tiles keep their order and width, newly picked ones append at
    * their default span. An empty pick is ignored — the board is never
@@ -207,7 +210,7 @@ export function usePageLayout<T extends PanelDef>(
 
   /** What the page renders, in order: the tile and the reader's width for
    * it (null = the component's own). */
-  const items: { def: T; span: number | null; align: TileAlign | null }[] = useMemo(
+  const items: { def: T; span: number | null; align: TileAlign | null; height: TileHeight | null }[] = useMemo(
     () => (isCustom
       // A TILE A SAVED LAYOUT NAMES BUT NOTHING REGISTERS is dropped, not
       // rendered (2026-09-23). It resolved to undefined and the page read
@@ -216,9 +219,9 @@ export function usePageLayout<T extends PanelDef>(
       // whole page rather than losing one panel.
       ? custom.flatMap(e => {
         const def = all.find(w => w.id === e.id)
-        return def ? [{ def, span: e.span, align: e.align ?? null }] : []
+        return def ? [{ def, span: e.span, align: e.align ?? null, height: e.height ?? null }] : []
       })
-      : all.filter(w => !w.optIn).map(w => ({ def: w, span: null, align: null }))),
+      : all.filter(w => !w.optIn).map(w => ({ def: w, span: null, align: null, height: null }))),
     [isCustom, custom, all],
   )
 
@@ -330,6 +333,10 @@ export function usePageLayout<T extends PanelDef>(
     commit(entries.map(e => (e.id === id ? { ...e, align } : e)))
   }, [entries, commit])
 
+  const setHeight = useCallback((id: string, height: TileHeight | null) => {
+    commit(entries.map(e => (e.id === id ? { ...e, height } : e)))
+  }, [entries, commit])
+
   const applyIds = useCallback((ids: string[]) => {
     const keep = entries.filter(e => ids.includes(e.id))
     const added = ids.filter(id => !entries.some(e => e.id === id))
@@ -340,5 +347,5 @@ export function usePageLayout<T extends PanelDef>(
 
   const reset = useCallback(() => commit(null), [commit])
 
-  return { all, items, isCustom, move, setSpan, setAlign, applyIds, reset }
+  return { all, items, isCustom, move, setSpan, setAlign, setHeight, applyIds, reset }
 }

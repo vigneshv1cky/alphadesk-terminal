@@ -1,3 +1,4 @@
+import * as React from "react"
 import { useLayoutEffect, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { OhlcvStrip } from "@/components/chart/OhlcvStrip"
@@ -5,7 +6,7 @@ import { ChartSurface } from "@/components/chart/ChartSurface"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { resetChartPrefs } from "@/lib/chartPrefs"
 import { ChartRanges, ChartToolbar } from "@/components/ChartToolbar"
-import { Empty, Widget } from "@/components/terminal"
+import { Empty, HeightOverride, TILE_HEIGHT_PX, Widget } from "@/components/terminal"
 import { useChartEngine } from "@/lib/chartEngine"
 import { useChartCapabilities } from "@/lib/queries"
 import { registerWidget } from "@/widgets/registry"
@@ -69,6 +70,18 @@ const COLLAPSED = TILE_BODY_HEIGHT - CHART_CHROME
  * row included, and a cap put the toolbar behind an inner scrollbar (below).
  */
 function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
+  // THE READER'S STEP WINS OVER THE MEASUREMENT (2026-09-29). The board
+  // editor offers a height for every tile, and a chart that ignored it would
+  // show the step as active while rendering something else — a control
+  // displaying a setting it does not obey, which is the fault this codebase
+  // keeps finding. The tile still takes no body CAP: a cap put its toolbar
+  // behind an inner scrollbar, so the step sizes the CANVAS instead, which is
+  // what makes the tile as tall as the step asked for.
+  //
+  // "fill" and no step both measure, because filling the room available IS
+  // the chart's own default.
+  const step = React.useContext(HeightOverride)
+  const fixed = step && step !== 4 ? TILE_HEIGHT_PX[step] : null
   const [h, setH] = useState(COLLAPSED)
   useLayoutEffect(() => {
     const measure = () => {
@@ -85,7 +98,7 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
     window.addEventListener("resize", measure)
     return () => window.removeEventListener("resize", measure)
   }, [ref])
-  return h
+  return typeof fixed === "number" ? Math.max(80, fixed - CHART_CHROME) : h
 }
 
 /** THE chart tile — one implementation for every board surface. The Markets
@@ -128,6 +141,7 @@ export function MarketChart({ span = 12, symbol: symbolProp }: {
       // The canvas already draws at the standard tile height, so on desktop
       // the tile lands where it always did.
       scroll={undefined}
+      ownHeight
     >
       {/* The measuring point: the top of the body, below the tile header. */}
       <div ref={bodyRef} />

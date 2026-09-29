@@ -42,8 +42,8 @@ export function ComposedBoard({ page, panels, before, title }: {
       </div>
       <div className="collage !pt-0">
         {before}
-        {layout.items.map(({ def, span, align }) => (
-          <TileSlot key={def.id} span={span} align={align}>
+        {layout.items.map(({ def, span, align, height }) => (
+          <TileSlot key={def.id} span={span} align={align} height={height}>
             {def.node}
           </TileSlot>
         ))}

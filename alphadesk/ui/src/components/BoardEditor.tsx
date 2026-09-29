@@ -1,5 +1,5 @@
 import { AlignCenter, AlignLeft, AlignRight } from "lucide-react"
-import type { TileAlign } from "@/lib/layoutEntries"
+import type { TileAlign, TileHeight } from "@/lib/layoutEntries"
 import { useState } from "react"
 import { Btn } from "@/components/terminal"
 import { WidgetLibraryDialog } from "@/components/WidgetLibrary"
@@ -29,6 +29,23 @@ const WIDTHS: { label: string; span: number | null }[] = [
   { label: "full", span: 12 },
 ]
 
+/** HOW TALL A TILE MAY GROW (2026-09-29). "Auto" is the tile's own default
+ * and is what every board saved before this holds, so an unedited board does
+ * not move. "Fill" is the viewport envelope the tall tiles already use.
+ *
+ * Steps, not pixels: a free number invites a board of 41 different heights,
+ * and the point is a composed board. This reverses "heights stay uniform on
+ * purpose" (lib/boardLayout) — taken by the owner, because a chart and a news
+ * list side by side want different heights and a straight bottom edge was
+ * buying tidiness at the cost of the arrangement actually wanted. */
+const HEIGHTS: { label: string; height: TileHeight | null; why: string }[] = [
+  { label: "auto", height: null, why: "the tile's own height" },
+  { label: "S", height: 1, why: "short — 260px of content" },
+  { label: "M", height: 2, why: "the standard tile, 402px" },
+  { label: "L", height: 3, why: "tall — 620px" },
+  { label: "fill", height: 4, why: "as tall as the window allows" },
+]
+
 /** A tile's place in its row when it is narrower than the row. */
 const PLACES: { label: string; align: TileAlign | null; Icon: typeof AlignLeft }[] = [
   { label: "Left", align: null, Icon: AlignLeft },
@@ -56,7 +73,7 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
   const [libraryOpen, setLibraryOpen] = useState(false)
   const open = openProp ?? openState
   const setOpen = (v: boolean) => (onOpenChange ? onOpenChange(v) : setOpenState(v))
-  const { items, isCustom, move, setSpan, setAlign, applyIds, reset } = layout
+  const { items, isCustom, move, setSpan, setAlign, setHeight, applyIds, reset } = layout
 
   if (!open) {
     return (
@@ -104,7 +121,7 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
           and the width presets carry a floor so "⅓" is not a sliver beside
           "full". The look is untouched. */}
       <ul className="px-2.5 py-2">
-        {items.map(({ def: w, span, align }, i) => (
+        {items.map(({ def: w, span, align, height }, i) => (
           <li key={w.id} className="row-rule flex min-h-[44px] flex-wrap items-center gap-x-2 gap-y-2 py-2.5">
             {/* The label takes the slack and the controls sit flush right —
                 a fixed label column left the row's right half empty once
@@ -121,6 +138,20 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
                      className="min-w-[40px]"
                      onClick={() => setSpan(w.id, o.span)}
                      title={o.span ? `${o.span} of 12 columns` : "the tile's own width"}>
+                  {o.label}
+                </Btn>
+              ))}
+            </span>
+            {/* HOW TALL IT MAY GROW (2026-09-29). Beside the width, because
+                the two are one question — how much room does this tile get —
+                and a reader setting one usually wants the other. */}
+            <span className="ml-2 flex items-center gap-1.5" role="group"
+                  aria-label={`Height of ${w.label}`}>
+              {HEIGHTS.map(o => (
+                <Btn key={o.label} variant="ghost" size="lg" active={(height ?? null) === o.height}
+                     className="min-w-[40px]"
+                     onClick={() => setHeight(w.id, o.height)}
+                     title={o.why}>
                   {o.label}
                 </Btn>
               ))}

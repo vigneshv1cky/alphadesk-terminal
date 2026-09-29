@@ -2,6 +2,7 @@ import * as React from "react"
 import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { useModalFocus, usePopoverFocus } from "@/lib/focus"
+import { TILE_BODY_HEIGHT } from "@/widgets/tile"
 
 /** The terminal primitives — hand-rolled, dependency-free replacements for
  * the shadcn/ui set that used to live in components/ui/.
@@ -157,14 +158,35 @@ const TOOLBAR_H = 40
 export const SpanOverride = React.createContext<number | null>(null)
 /** Where the reader placed a tile narrower than its row (2026-09-18). */
 export const AlignOverride = React.createContext<"center" | "right" | null>(null)
+/** How tall the reader asked this tile to be (2026-09-29). Null is the
+ * tile's own default, which is what every board saved before this holds. */
+export const HeightOverride = React.createContext<number | null>(null)
 
-/** A board slot: the reader's width and place for the tile inside it. */
-export function TileSlot({ span, align, children }: {
-  span: number | null; align?: "center" | "right" | null; children: React.ReactNode
+/** The reader's height steps, in pixels of BODY. Step 4 is the viewport
+ * envelope rather than a number, so a filled tile tracks the window.
+ *
+ * The middle step is the standard tile body, so "medium" is what an unedited
+ * board already shows and choosing it changes nothing — a reader who opens
+ * the control and picks the value it is already at should see no movement. */
+export const TILE_HEIGHT_PX: Record<number, number | "fill"> = {
+  1: 260,
+  2: TILE_BODY_HEIGHT,
+  3: 620,
+  4: "fill",
+}
+
+/** A board slot: the reader's width, place and height for the tile inside. */
+export function TileSlot({ span, align, height, children }: {
+  span: number | null
+  align?: "center" | "right" | null
+  height?: number | null
+  children: React.ReactNode
 }) {
   return (
     <SpanOverride.Provider value={span}>
-      <AlignOverride.Provider value={align ?? null}>{children}</AlignOverride.Provider>
+      <AlignOverride.Provider value={align ?? null}>
+        <HeightOverride.Provider value={height ?? null}>{children}</HeightOverride.Provider>
+      </AlignOverride.Provider>
     </SpanOverride.Provider>
   )
 }
@@ -175,7 +197,7 @@ export const BODY_VIEWPORT_CAP = "calc(100vh - 190px)"
 
 export function Widget({
   title, symbol, subtitle, actions, toolbar, toolbarWraps, span = 12, className, bodyClassName,
-  scroll, scrollRef, minBody, fitViewport = true, children,
+  scroll, scrollRef, minBody, fitViewport = true, ownHeight = false, children,
 }: {
   title?: React.ReactNode
   /** Rendered in accent blue before the title, the way AlphaSpace prefixes a
@@ -217,6 +239,11 @@ export function Widget({
    * a long list the reader scans rather than reads whole, like the week's
    * 500 ex-dividends, which otherwise filled the screen (2026-09-14). */
   fitViewport?: boolean
+  /** A tile whose height is its own business, not a cap the reader may set.
+   * The chart: it must show WHOLE — toolbar, readout, canvas and range row —
+   * and a cap there put the toolbar behind an inner scrollbar, so it measures
+   * the room available instead. A step would fight that measurement. */
+  ownHeight?: boolean
   /** Expansion state, when the OWNER needs it. A widget whose body changes
    * shape on expand has to know — the chart grows its price pane and only
    * offers RSI/MACD once there is height to read them — and it must be the
@@ -251,8 +278,26 @@ export function Widget({
 
   const overrideSpan = React.useContext(SpanOverride)
   const align = React.useContext(AlignOverride)
+  // THE READER'S HEIGHT WINS OVER THE TILE'S OWN, exactly as their width
+  // does: the component keeps declaring a sensible default and the board's
+  // choice overrides it, so nothing declares a height twice. A tile that
+  // takes no cap at all (the chart, which must show whole) is left alone —
+  // capping it is what put its toolbar behind an inner scrollbar.
+  const overrideHeight = React.useContext(HeightOverride)
+  const step = overrideHeight ? TILE_HEIGHT_PX[overrideHeight] : undefined
   const cols = overrideSpan ?? span
-  const bodyHeight = scroll
+  // THE READER'S STEP APPLIES TO ANY TILE THAT HAS NOT OPTED OUT, including
+  // one that declares no cap of its own. The first version only overrode an
+  // EXISTING cap, which silently did nothing on every movers tile — those
+  // deliberately have no inner scroller and grow to their rows, so there was
+  // no cap to override and the control looked broken on exactly the tiles a
+  // reader is most likely to want shortened. An explicit choice outranks a
+  // default; `ownHeight` is for a tile whose height is not a cap at all.
+  const chosen = step !== undefined && !ownHeight
+  const bodyHeight = chosen ? (step === "fill" ? BODY_VIEWPORT_CAP : step) : scroll
+  // A CHOSEN HEIGHT IS EXACT. Left on, the viewport floor would quietly
+  // overrule every step below it and the two short ones would do nothing.
+  const fits = chosen ? false : fitViewport
   return (
     <section
       data-slot="widget"
@@ -387,7 +432,7 @@ export function Widget({
         // scrollbar rather than one per tile.
         style={typeof bodyHeight === "string" ? { height: bodyHeight }
              : typeof bodyHeight === "number"
-               ? { maxHeight: fitViewport ? `max(${bodyHeight}px, ${BODY_VIEWPORT_CAP})` : `${bodyHeight}px` }
+               ? { maxHeight: fits ? `max(${bodyHeight}px, ${BODY_VIEWPORT_CAP})` : `${bodyHeight}px` }
              : undefined}
         className={cn(
           "min-h-0 min-w-0",
