@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { OhlcvStrip } from "@/components/chart/OhlcvStrip"
 import { ChartSurface } from "@/components/chart/ChartSurface"
@@ -42,6 +43,47 @@ import { TILE_BODY_HEIGHT } from "@/widgets/tile"
 const CHART_CHROME = 42 + 42 + 25 + 4 + 1
 const COLLAPSED = TILE_BODY_HEIGHT - CHART_CHROME
 
+/** THE CANVAS GROWS WITH THE WINDOW, like every other tile (2026-09-29, the
+ * owner, on a news+chart board: "like increasing the height of the chart
+ * here").
+ *
+ * A tile's body may grow to `max(402px, 100vh - 190px)` and most do, because
+ * their content is a list — the news tile beside this one filled the window
+ * while the chart stopped at 402px, so a half-and-half board had one tall
+ * panel and one short one. The chart was not opting out of that rule; it
+ * simply had nothing to grow WITH, since its canvas is a number handed to the
+ * engine rather than content that reflows.
+ *
+ * So the number is computed from the same envelope instead of being a
+ * constant. MEASURED at 1440x900: the chart went 402 -> 754px beside a news
+ * tile of 752, and on the Markets board it sits among neighbours of 839-1741
+ * rather than being the one short tile.
+ *
+ * THE FLOOR IS NOT THE PHONE CASE, which is what this comment first claimed.
+ * A 375x812 phone has 622px of envelope, so its chart grows too — to 685px,
+ * which is the same rule every other tile on that screen already follows. The
+ * floor binds only below a 592px-tall window: a landscape phone, or a browser
+ * window someone has squashed. Checked at 375x812 with no sideways overflow.
+ *
+ * `scroll` stays undefined: a chart must still show WHOLE, toolbar and range
+ * row included, and a cap put the toolbar behind an inner scrollbar (below).
+ */
+function canvasHeight(viewport: number): number {
+  return Math.max(TILE_BODY_HEIGHT, viewport - 190) - CHART_CHROME
+}
+
+function useCanvasHeight(): number {
+  const [h, setH] = useState(() =>
+    typeof window === "undefined" ? COLLAPSED : canvasHeight(window.innerHeight))
+  useEffect(() => {
+    const measure = () => setH(canvasHeight(window.innerHeight))
+    measure()
+    window.addEventListener("resize", measure)
+    return () => window.removeEventListener("resize", measure)
+  }, [])
+  return h
+}
+
 /** THE chart tile — one implementation for every board surface. The Markets
  * board registers it; Analysis and Portfolio render it directly.
  *
@@ -56,7 +98,8 @@ export function MarketChart({ span = 12, symbol: symbolProp }: {
   // The chart tile draws at its board height (2026-09-25): the popup that
   // gave it 620px is gone, so there is no second size to hold. A chart that
   // wants more room is widened in the board editor, which persists.
-  const e = useChartEngine(symbol, { priceHeight: COLLAPSED })
+  const priceHeight = useCanvasHeight()
+  const e = useChartEngine(symbol, { priceHeight })
   const { data: caps } = useChartCapabilities()
   const { data, bars, err, isFetching, live, hovered, hoverAt } = e
 
@@ -108,7 +151,7 @@ export function MarketChart({ span = 12, symbol: symbolProp }: {
           visible on a reload. The placeholder now stands as tall as the
           canvas it is about to be replaced by. */}
       {!err && !data && (
-        <div className="flex items-center justify-center" style={{ height: COLLAPSED }}>
+        <div className="flex items-center justify-center" style={{ height: priceHeight }}>
           <Empty>loading…</Empty>
         </div>
       )}
