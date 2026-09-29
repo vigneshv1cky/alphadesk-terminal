@@ -565,6 +565,46 @@ def test_a_6k_exhibit_is_a_results_release_only_with_a_period_named():
     assert not edgar_releases.is_results_release("")
 
 
+def test_a_notice_of_a_report_still_to_come_is_not_a_report():
+    """VinFast furnished a 6-K on 2026-09-28 headed "sets date for the release
+    of second quarter 2026 results", saying it would report on October 19 —
+    and it read as a results release, so the calendar carried an earlier-
+    release marker pointing at a day nothing was reported on.
+
+    TWO THINGS HAD TO BE TRUE FOR THAT, and both are pinned below. The SEC's
+    own cover page opens "REPORT OF FOREIGN PRIVATE ISSUER", which the
+    headline test read as the announcing verb, so the match ran from the
+    boilerplate to the word results in the notice's own headline. With the
+    cover blanked the verb is the notice's "announced … its 2Q26 financial
+    results", which still announces results and still names a period — what
+    rejects it is that the SCHEDULING comes first."""
+    notice = (
+        "REPORT OF FOREIGN PRIVATE ISSUER PURSUANT TO RULE 13a-16 OR 15d-16 "
+        "OF THE SECURITIES EXCHANGE ACT OF 1934 For the month of September 2026 "
+        "VinFast Auto Ltd. INFORMATION CONTAINED IN THIS REPORT ON FORM 6-K "
+        "VINFAST SETS DATE FOR THE RELEASE OF SECOND QUARTER 2026 RESULTS "
+        "September 28, 2026 - VinFast announced that it will release its 2Q26 "
+        "financial results before market opens on October 19, 2026.")
+    assert not edgar_releases.is_results_release(notice)
+    # The cover page alone is not what saves it: blanked, the notice still
+    # carries an announcing verb and a period.
+    assert edgar_releases._RESULTS_HEADLINE.search(
+        edgar_releases._COVER.sub(" ", notice))
+
+
+def test_a_release_that_schedules_its_NEXT_quarter_is_still_a_release():
+    """Ordering, not presence, is the rule — a real release routinely closes
+    by naming the date of the next one, and dropping every filing that
+    mentions a future report would lose the release it is attached to."""
+    real = (
+        "REPORT OF FOREIGN PRIVATE ISSUER Exhibit 99.1 VALENCIA, Spain - "
+        "September 29, 2026 - Turbo Energy, S.A. today reported its unaudited "
+        "consolidated financial results for the six months ended June 30, 2026. "
+        "Total revenue increased 172.7%. The Company will report its full-year "
+        "results in April 2027.")
+    assert edgar_releases.is_results_release(real)
+
+
 def test_the_release_day_of_a_6k_comes_from_the_dateline():
     assert edgar_releases.dateline_day(
         "ZTO Reports Second Quarter 2026 Unaudited Financial Results SHANGHAI, August 19, 2026 "

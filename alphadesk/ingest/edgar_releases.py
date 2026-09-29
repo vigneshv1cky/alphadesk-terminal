@@ -152,13 +152,49 @@ _RESULTS_PERIOD = re.compile(
     r"|\bfiscal year\b|\byear ended\b", re.I)
 # "SHANGHAI, August 19, 2026 /PRNewswire/ - ZTO Express (Cayman) Inc. …"
 _DATELINE = re.compile(r"\b([A-Z][A-Za-z.\-' ]{2,28}),\s*([A-Z][a-z]{2,8}\.?\s+\d{1,2},\s*\d{4})\s*[/(—–-]")
+# A NOTICE OF A REPORT STILL TO COME CONTAINS EVERY WORD A REPORT CONTAINS
+# (2026-09-29). VinFast furnished a 6-K headed "VinFast sets date for the
+# release of second quarter 2026 results", saying it would report on October
+# 19 — and the two tests above both passed on it: "announced … its 2Q26
+# financial results" is a results headline and "second quarter" is a period.
+# A scheduling notice is the one document guaranteed to name the period and
+# the word results while reporting neither.
+_SCHEDULING = re.compile(
+    r"\b(will|to|intends to|plans to|expects to)\s+(be\s+)?"
+    r"(release|report|announce|publish|issue|post)\b[^.\n]{0,80}\bresults\b"
+    r"|\b(sets?|announces?|announced)\s+(the\s+)?date\b"
+    r"|\bdate\s+for\s+the\s+(release|announcement|publication)\b"
+    r"|\b(schedule[sd]?|slated)\s+to\s+(release|report|announce|publish)\b", re.I)
+# AND THE SEC'S OWN COVER PAGE SUPPLIES A REPORTING VERB. Every 6-K opens
+# "REPORT OF FOREIGN PRIVATE ISSUER PURSUANT TO RULE 13a-16…", and the
+# headline test reads that "REPORT" as the announcement, so any occurrence of
+# the word results within the next ninety characters completes the pattern on
+# a filing that announces nothing. It is what actually passed VinFast: the
+# match ran from the cover's "REPORT ON FORM 6-K" through the notice's own
+# headline. The boilerplate is blanked — to spaces, so every offset below
+# still refers to the document as fetched.
+_COVER = re.compile(r"report\s+(of|on)\s+(foreign private issuer|form\s+6-?k)\b", re.I)
 
 
 def is_results_release(text: str) -> bool:
     """Whether a 6-K exhibit is the company announcing results for a period,
     rather than any other thing a foreign issuer files abroad. Pure."""
     head = re.sub(r"\s+", " ", text or "")[:3_000]
-    return bool(_RESULTS_HEADLINE.search(head) and _RESULTS_PERIOD.search(head))
+    head = _COVER.sub(lambda m: " " * len(m.group()), head)
+    announced = _RESULTS_HEADLINE.search(head)
+    if not (announced and _RESULTS_PERIOD.search(head)):
+        return False
+    # WHICH COMES FIRST DECIDES IT, rather than the mere presence of either.
+    # A real release leads with "today reported its unaudited results for the
+    # six months ended …" and may mention a future report far below; a notice
+    # leads with the scheduling. Measured over the 41 6-K exhibits EDGAR's own
+    # search returned for 2026-09-28 and 29: no genuine release carried a
+    # scheduling phrase at all, and the only other filing that did was
+    # Micromem's notice of a move to semi-annual reporting, which this already
+    # rejected. Ordering rather than presence keeps a release that schedules
+    # its NEXT quarter in a closing paragraph.
+    scheduled = _SCHEDULING.search(head)
+    return not (scheduled and scheduled.start() < announced.start())
 
 
 def dateline_day(text: str) -> str | None:

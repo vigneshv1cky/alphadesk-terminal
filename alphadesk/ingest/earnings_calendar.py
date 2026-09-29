@@ -237,6 +237,11 @@ def join_releases(rows: list[dict], releases: dict[str, list[dict]], today: str 
         early = (date.fromisoformat(released) - day).days < -EARLY_RELEASE_DAYS
         if upcoming and early and r.get("eps_actual") is None:
             r["earlier_release_on"] = released
+            # THE MARKER NAMED THE WRONG DOCUMENT (2026-09-29). It read "8-K"
+            # whatever had been found, and a foreign private issuer never
+            # files one — so on the rows where this fires most, it named a
+            # form that cannot exist for that company.
+            r["earlier_release_form"] = (hit.get("form") or "").upper() or None
             continue
         # A FOREIGN ISSUER'S DATELINE IS ITS OWN CALENDAR (2026-09-16). ZTO
         # announced its second quarter on the evening of August 18 in New
