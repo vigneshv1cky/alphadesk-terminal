@@ -25,6 +25,7 @@ const PAGE_IMPORTS = {
   DashboardPage: () => import("@/pages/DashboardPage"),
   NewsPage: () => import("@/pages/NewsPage"),
   FilingsPage: () => import("@/pages/FilingsPage"),
+  PostsPage: () => import("@/pages/PostsPage"),
   AnalysisPage: () => import("@/pages/AnalysisPage"),
   SectorsPage: () => import("@/pages/SectorsPage"),
   PortfolioPage: () => import("@/pages/PortfolioPage"),
@@ -44,11 +45,12 @@ const PAGE_IMPORTS = {
 }
 
 /** Fetched ahead in this order: the pages a reader moves between first. */
-const WARM_ORDER: (keyof typeof PAGE_IMPORTS)[] = ["DashboardPage", "NewsPage", "FilingsPage", "AnalysisPage", "SectorsPage", "ChartPage", "CompanyPage", "OptionsPage", "EarningsPage", "CalendarsPage", "PortfolioPage", "CustomViewPage", "AccountPage", "AdminPage", "ThemePage", "TermsPage", "PrivacyPage", "DisclaimerPage", "AboutPage"]
+const WARM_ORDER: (keyof typeof PAGE_IMPORTS)[] = ["DashboardPage", "NewsPage", "FilingsPage", "PostsPage", "AnalysisPage", "SectorsPage", "ChartPage", "CompanyPage", "OptionsPage", "EarningsPage", "CalendarsPage", "PortfolioPage", "CustomViewPage", "AccountPage", "AdminPage", "ThemePage", "TermsPage", "PrivacyPage", "DisclaimerPage", "AboutPage"]
 
 const DashboardPage = lazy(PAGE_IMPORTS.DashboardPage)
 const NewsPage = lazy(PAGE_IMPORTS.NewsPage)
 const FilingsPage = lazy(PAGE_IMPORTS.FilingsPage)
+const PostsPage = lazy(PAGE_IMPORTS.PostsPage)
 const AnalysisPage = lazy(PAGE_IMPORTS.AnalysisPage)
 const SectorsPage = lazy(PAGE_IMPORTS.SectorsPage)
 const PortfolioPage = lazy(PAGE_IMPORTS.PortfolioPage)
@@ -104,6 +106,7 @@ const TITLES: Record<string, string> = {
   "/analysis": "Analysis · AlphaDesk",
   "/news": "News · AlphaDesk",
   "/filings": "Filings · AlphaDesk",
+  "/posts": "Posts · AlphaDesk",
   "/portfolio": "Portfolio · AlphaDesk",
   "/earnings": "Earnings · AlphaDesk",
   "/calendars": "Calendars · AlphaDesk",
@@ -279,6 +282,7 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
               <Route path="/company" element={<RedirectKeepingQuery to="/profile" />} />
               <Route path="/news" element={<NewsPage />} />
               <Route path="/filings" element={<FilingsPage />} />
+              <Route path="/posts" element={<PostsPage />} />
               <Route path="/portfolio" element={<PortfolioPage />} />
               <Route path="/earnings" element={<EarningsPage />} />
               <Route path="/calendars" element={<CalendarsPage />} />

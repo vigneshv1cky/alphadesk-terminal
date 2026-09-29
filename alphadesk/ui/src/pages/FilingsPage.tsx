@@ -56,9 +56,13 @@ export default function FilingsPage() {
       title="Market filings"
       subtitle="what companies just filed with the SEC — most of it never reaches a newswire"
       scroll="calc(100vh - 212px)"
-    >
-      {items.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-row-rule px-2.5 py-2.5">
+      // OUTSIDE THE SCROLLER, like the News toolbar beside it: a control that
+      // names what the list shows must not scroll away with the rows it
+      // labels. It wraps rather than scrolling sideways, which is the rule for
+      // any toolbar that can hold a drop-down (#77).
+      toolbarWraps
+      toolbar={items.length > 0 ? (
+        <>
           <select
             value={item}
             onChange={e => setItem(e.target.value)}
@@ -76,8 +80,9 @@ export default function FilingsPage() {
               ? `${items.find(([n]) => n === item)?.[1].count ?? 0} / ${filings.length}`
               : `${filings.length} filings`}
           </span>
-        </div>
-      )}
+        </>
+      ) : undefined}
+    >
       <MarketFilings onlyItem={item || undefined} />
     </Widget>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
-import { Activity, Building2, CalendarDays, CalendarRange, ChartCandlestick, ChevronDown, ChevronLeft, FileText, Layers3, LayoutGrid, LineChart, Newspaper, Plus,
+import { Activity, Building2, CalendarDays, CalendarRange, ChartCandlestick, ChevronDown, ChevronLeft, FileText, Layers3, LayoutGrid, LineChart, MessageSquare, Newspaper, Plus,
   ShieldCheck, LayoutDashboard, Star, UserRound,
 } from "lucide-react"
 import { useAuthMe, useRail, useThemes } from "@/lib/queries"
@@ -38,6 +38,9 @@ const VIEWS = [
   // answer the same question and a filing is often the ONLY source
   // (2026-09-29, #121).
   { to: "/filings", label: "Filings", Icon: FileText },
+  // Last of the three reading surfaces, and deliberately last: a post is
+  // the only one of them anybody can write into (2026-09-29, #121).
+  { to: "/posts", label: "Posts", Icon: MessageSquare },
   { to: "/earnings", label: "Earnings", Icon: CalendarDays },
   { to: "/calendars", label: "Calendars", Icon: CalendarRange },
   { to: "/options", label: "Options", Icon: Layers3 },
