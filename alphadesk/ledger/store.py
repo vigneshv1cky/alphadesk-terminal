@@ -114,11 +114,18 @@ CREATE TABLE IF NOT EXISTS press_release_checks (
 -- exhibits of the same 6-K (99.1 is ZJK's financial statements, 99.3 its
 -- press release), and sharing one key let one path's verdict silence the
 -- other's read for ever.
+-- AND STAMPED WITH THE READER THAT DECIDED IT (2026-09-29). A verdict is
+-- only as good as the rule that produced it: when the rule changes, every
+-- row written by the old one is an answer nobody would give today, and
+-- without a version they are never revisited — the sweep skips what it has
+-- already seen. Same device as company.py's SECTION_READER_VERSION. A row
+-- from before this column reads as reader 0 and is re-decided once.
 CREATE TABLE IF NOT EXISTS exhibit_checks (
     accession  TEXT NOT NULL,
     document   TEXT NOT NULL DEFAULT '',
     checked_at TEXT NOT NULL,
     is_results INTEGER,
+    reader     INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (accession, document)
 );
 
@@ -597,6 +604,7 @@ def init() -> None:
         "ALTER TABLE news_articles ADD COLUMN author TEXT",
         "ALTER TABLE news_articles ADD COLUMN body TEXT",
         "ALTER TABLE news_articles ADD COLUMN feeds TEXT",
+        "ALTER TABLE exhibit_checks ADD COLUMN reader INTEGER NOT NULL DEFAULT 0",  # which rule decided it
         "ALTER TABLE earnings_releases ADD COLUMN event_date TEXT",  # the release day an 8-K reports
         "ALTER TABLE earnings_releases ADD COLUMN accepted_source TEXT",  # 'index' once read from the filing index          # which reader feeds delivered it
         "ALTER TABLE earnings_releases ADD COLUMN form TEXT",
@@ -1612,27 +1620,42 @@ def delete_chart_state(user_id: str, key: str) -> bool:
     return cur.rowcount > 0
 
 
-def exhibit_checked(accessions: list[str], document: str = "") -> set[str]:
-    """Of these filings, the ones whose `document` has already been read."""
+def exhibit_checked(accessions: list[str], document: str = "", reader: int = 0) -> set[str]:
+    """Of these filings, the ones whose `document` was read BY THIS READER.
+
+    A filing decided by an older rule is deliberately absent, so the sweep
+    reads it again and replaces the stale verdict."""
     if not accessions:
         return set()
     with _lock, _connect() as conn:
         rows = conn.execute(
-            "SELECT accession FROM exhibit_checks WHERE document = ? AND accession IN (%s)"
-            % ",".join("?" * len(accessions)), (document, *accessions)).fetchall()
+            "SELECT accession FROM exhibit_checks WHERE document = ? AND reader >= ?"
+            " AND accession IN (%s)" % ",".join("?" * len(accessions)),
+            (document, reader, *accessions)).fetchall()
     return {r[0] for r in rows}
 
 
-def mark_exhibit_checked(accession: str, is_results: bool, document: str = "") -> None:
-    """Record that this filing was opened, and what it turned out to be, so
-    it is never fetched again."""
+def mark_exhibit_checked(accession: str, is_results: bool, document: str = "",
+                         reader: int = 0) -> None:
+    """Record that this filing was opened, what it turned out to be, and which
+    rule decided that — so it is never fetched again until the rule changes."""
     with _lock, _connect() as conn:
         conn.execute(
-            "INSERT INTO exhibit_checks (accession, document, checked_at, is_results) VALUES (?,?,?,?)"
+            "INSERT INTO exhibit_checks (accession, document, checked_at, is_results, reader)"
+            " VALUES (?,?,?,?,?)"
             " ON CONFLICT (accession, document) DO UPDATE SET checked_at=excluded.checked_at,"
-            " is_results=excluded.is_results",
+            " is_results=excluded.is_results, reader=excluded.reader",
             (accession, document, datetime.now(timezone.utc).isoformat(timespec="seconds"),
-             1 if is_results else 0))
+             1 if is_results else 0, reader))
+
+
+def delete_release(accession: str) -> int:
+    """Drop a results row, for a filing a NEWER rule says was never a results
+    release at all. Without this a corrected verdict leaves the row it
+    wrongly created standing, and the calendar keeps citing it."""
+    with _lock, _connect() as conn:
+        cur = conn.execute("DELETE FROM earnings_releases WHERE accession=?", (accession,))
+    return cur.rowcount or 0
 
 
 def upsert_release(symbol: str, accession: str, cik: str | None, file_date: str,
