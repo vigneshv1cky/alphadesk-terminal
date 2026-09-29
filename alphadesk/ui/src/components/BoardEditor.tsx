@@ -43,11 +43,10 @@ const WIDTHS: { label: string; span: number | null }[] = [
 const pickerCls = "h-[28px] w-[92px] border border-border bg-panel px-1.5 text-caption text-foreground"
 
 const HEIGHTS: { label: string; height: TileHeight | null; why: string }[] = [
-  { label: "auto", height: null, why: "the tile's own height" },
+  { label: "auto", height: null, why: "grows with its content, to the foot of the window" },
   { label: "S", height: 1, why: "short — 260px of content" },
   { label: "M", height: 2, why: "the standard tile, 402px" },
   { label: "L", height: 3, why: "tall — 620px" },
-  { label: "fill", height: 4, why: "as tall as the window allows" },
 ]
 
 /** A tile's place in its row when it is narrower than the row. */
