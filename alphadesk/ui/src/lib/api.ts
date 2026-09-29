@@ -47,6 +47,11 @@ export interface Plan {
 
 export interface EarningsRow {
   symbol: string
+  /** THE FILING THIS ROW WAS BUILT FROM. Every row in the results feed comes
+   * from one SEC filing — its accession and form — and the payload has carried
+   * both all along while the table offered no way to open it. */
+  accession?: string | null
+  form?: string | null
   company_name?: string | null
   report_date: string
   session: string | null
