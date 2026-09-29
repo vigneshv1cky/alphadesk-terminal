@@ -194,6 +194,15 @@ export function TileSlot({ span, align, height, children }: {
  * the symbol strip, the page heading and the tile's own header. */
 export const BODY_VIEWPORT_CAP = "calc(100vh - 190px)"
 
+/** What sits ABOVE the first tile on a board: the app header, the symbol
+ * strip, the page heading and the tile's own header. The same 190px the cap
+ * above has always used — kept as a number so a tile below the fold, which
+ * cannot measure its distance to the foot, can still be given the budget it
+ * would have had at the top. */
+const TOP_CHROME = 190
+/** Below this there is no usable room, so the measurement is not trusted. */
+const MIN_ROOM = 200
+
 export function Widget({
   title, symbol, subtitle, actions, toolbar, toolbarWraps, span = 12, className, bodyClassName,
   scroll, scrollRef, minBody, fitViewport = true, ownHeight = false, children,
@@ -309,7 +318,20 @@ export function Widget({
   // reach and a full envelope is the right answer anyway.
   const fillRef = React.useRef<HTMLDivElement | null>(null)
   const [fillPx, setFillPx] = React.useState<number | null>(null)
-  const wantsFill = fitViewport && !ownHeight && step === undefined && typeof scroll === "number"
+  // AND A TILE THAT DECLARED NO CAP IS CAPPED TOO (2026-09-29, the owner:
+  // "most of the auto fill goes below the screen, needing to scroll"). The
+  // movers tiles ask for fifty rows and grow to all of them — 1,741px on a
+  // 994px window — so the tallest tiles on the board were exactly the ones
+  // the measured cap did not reach, because it only overrode a cap that
+  // already existed.
+  //
+  // THIS REVERSES "no inner scroller, the board scrolls" (2026-09-17): a tile
+  // taller than the window now scrolls inside itself instead of pushing its
+  // own foot off the screen. The trade the old rule bought — one scrollbar
+  // for the page rather than one per tile — is real, and it is what the owner
+  // gave up here. A tile shorter than the room is untouched either way, so
+  // only the tiles that overflowed change.
+  const wantsFill = fitViewport && !ownHeight && step === undefined
   React.useLayoutEffect(() => {
     if (!wantsFill) { setFillPx(null); return }
     const measure = () => {
@@ -317,8 +339,17 @@ export function Widget({
       if (!el) return
       const board = el.closest(".collage")
       const reserved = board ? parseFloat(getComputedStyle(board).paddingBottom) || 0 : 0
+      // A TILE BELOW THE FOLD HAS NO "ROOM TO THE FOOT" — its top is past the
+      // window, so the distance is negative. Falling back to no cap at all
+      // left the tallest tiles on the board uncapped, which is exactly the
+      // ones that overflow: the movers ask for fifty rows. What such a tile
+      // wants is the budget it WOULD have at the top of the board — one
+      // screen, less the chrome above and the board's reserve below — so that
+      // scrolling to it shows it whole.
       const room = window.innerHeight - el.getBoundingClientRect().top - reserved
-      setFillPx(room > 120 ? Math.round(room) : null)
+      const budget = window.innerHeight - TOP_CHROME - reserved
+      const px = room > MIN_ROOM ? room : budget
+      setFillPx(px > MIN_ROOM ? Math.round(px) : null)
     }
     measure()
     window.addEventListener("resize", measure)
@@ -468,11 +499,13 @@ export function Widget({
                ? { maxHeight: fits
                      ? `max(${bodyHeight}px, ${fillPx !== null ? `${fillPx}px` : BODY_VIEWPORT_CAP})`
                      : `${bodyHeight}px` }
+             : fillPx !== null ? { maxHeight: `${fillPx}px` }
              : undefined}
         className={cn(
           "min-h-0 min-w-0",
           typeof bodyHeight === "string" && "relative flex-1",
-          typeof bodyHeight === "number" && "overflow-y-auto",
+          (typeof bodyHeight === "number" || (bodyHeight === undefined && fillPx !== null))
+            && "overflow-y-auto",
           bodyClassName,
         )}
       >
