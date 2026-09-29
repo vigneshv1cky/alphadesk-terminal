@@ -266,16 +266,43 @@ export function usePageLayout<T extends PanelDef>(
     [isCustom, custom, all],
   )
 
-  const commit = useCallback((entries: LayoutEntry[] | null) => {
-    const p = new URLSearchParams(params)
-    if (entries && entries.length) p.set("tiles", serial(entries))
-    else p.delete("tiles")
-    const tiles = entries && entries.length ? serial(entries) : ""
+  /** THE ARRANGEMENT A SECOND CHANGE BUILDS ON (2026-09-29, the owner: "the
+   * customize board doesnt work properly sometimes, had to reload").
+   *
+   * Every setter read `entries`, which comes from the URL, and wrote a whole
+   * new layout back. Two changes made before React had re-rendered — a width
+   * and then a height, or two positions in a row — therefore BOTH started
+   * from the same copy, and the second silently discarded the first. Reloading
+   * "fixed" it because the URL is the truth and a reload re-reads it.
+   *
+   * What a commit wrote is remembered here until the URL catches up, so the
+   * next change starts from it rather than from the stale render. */
+  const pending = useRef<{ raw: string; entries: LayoutEntry[] | null } | null>(null)
+  if (pending.current && pending.current.raw === raw) pending.current = null
+  const liveRef = useRef<LayoutEntry[]>([])
+  const defaultEntries = useCallback(
+    () => all.filter(w => !w.optIn).map(w => ({ id: w.id, span: null })), [all])
+
+  const commit = useCallback((next: LayoutEntry[] | null) => {
+    const tiles = next && next.length ? serial(next) : ""
+    pending.current = { raw: tiles, entries: next }
+    // THE SETTERS READ THIS, not the render's `entries`: a callback created
+    // on the last render still closes over the array from THAT render, so
+    // without it a second change before the re-render starts from the copy
+    // the first one already replaced.
+    liveRef.current = next ?? defaultEntries()
     // A gesture: this IS the arrangement, so it carries the time.
     writeStored(pageKey, tiles || null, new Date().toISOString())
     mirrorLayout(pageKey, tiles)
-    setParams(p, { replace: true })
-  }, [params, setParams, pageKey, serial])
+    // FUNCTIONAL, so the other query keys a concurrent write touched — the
+    // symbol strip shares this URL — are not rolled back by a stale copy.
+    setParams(prev => {
+      const p = new URLSearchParams(prev)
+      if (tiles) p.set("tiles", tiles)
+      else p.delete("tiles")
+      return p
+    }, { replace: true })
+  }, [setParams, pageKey, serial, raw])
 
   /** Mirror and restore, like the strip: a URL that names a layout is written
    * to storage; a bare navigation gets the stored one back. No seeding —
@@ -348,11 +375,18 @@ export function usePageLayout<T extends PanelDef>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageKey, athome])
 
-  const entries: LayoutEntry[] = isCustom
+  const settled: LayoutEntry[] = isCustom
     ? custom
     : all.filter(w => !w.optIn).map(w => ({ id: w.id, span: null }))
+  // The copy every setter builds on: what this hook last wrote if the URL has
+  // not caught up yet, otherwise what the URL says.
+  const entries: LayoutEntry[] = pending.current
+    ? (pending.current.entries ?? settled)
+    : settled
+  liveRef.current = entries
 
   const move = useCallback((id: string, dir: -1 | 1) => {
+    const entries = liveRef.current
     const i = entries.findIndex(e => e.id === id)
     const j = i + dir
     if (i < 0 || j < 0 || j >= entries.length) return
@@ -360,7 +394,7 @@ export function usePageLayout<T extends PanelDef>(
     next[i] = next[j]
     next[j] = entries[i]
     commit(next)
-  }, [entries, commit])
+  }, [commit])
 
   /** Put a tile AT a position, rather than one step at a time (2026-09-29,
    * the owner: "I had a trouble of moving of a tile lowest to top"). Ten
@@ -368,6 +402,7 @@ export function usePageLayout<T extends PanelDef>(
    * you make them. Drag was tried and rejected for this editor; naming the
    * destination reaches it in one move and needs no new interaction. */
   const moveTo = useCallback((id: string, index: number) => {
+    const entries = liveRef.current
     const i = entries.findIndex(e => e.id === id)
     const to = Math.max(0, Math.min(entries.length - 1, index))
     if (i < 0 || i === to) return
@@ -375,31 +410,35 @@ export function usePageLayout<T extends PanelDef>(
     const [row] = next.splice(i, 1)
     next.splice(to, 0, row)
     commit(next)
-  }, [entries, commit])
+  }, [commit])
 
   /** Give a tile a width (3–12 grid columns), or null to hand it back to
    * the component's own default. */
   const setSpan = useCallback((id: string, span: number | null) => {
+    const entries = liveRef.current
     commit(entries.map(e => e.id === id
       ? { ...e, span: span ? Math.max(3, Math.min(12, span)) : null }
       : e))
-  }, [entries, commit])
+  }, [commit])
 
   const setAlign = useCallback((id: string, align: TileAlign | null) => {
+    const entries = liveRef.current
     commit(entries.map(e => (e.id === id ? { ...e, align } : e)))
-  }, [entries, commit])
+  }, [commit])
 
   const setHeight = useCallback((id: string, height: TileHeight | null) => {
+    const entries = liveRef.current
     commit(entries.map(e => (e.id === id ? { ...e, height } : e)))
-  }, [entries, commit])
+  }, [commit])
 
   const applyIds = useCallback((ids: string[]) => {
+    const entries = liveRef.current
     const keep = entries.filter(e => ids.includes(e.id))
     const added = ids.filter(id => !entries.some(e => e.id === id))
       .map(id => ({ id, span: null }))
     const next = [...keep, ...added]
     if (next.length) commit(next)
-  }, [entries, commit])
+  }, [commit])
 
   const reset = useCallback(() => commit(null), [commit])
 
