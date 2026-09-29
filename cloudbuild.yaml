@@ -1,0 +1,40 @@
+# WHY THIS FILE EXISTS (2026-09-29, the reader: "why our deploys are soo
+# delayed?"). `gcloud builds submit --tag` runs a plain `docker build` on a
+# fresh worker with NO LAYER CACHE, so every deploy repeated the three
+# expensive steps in the Dockerfile from scratch:
+#
+#   1. pip install torch (the CPU wheel, hundreds of MB)
+#   2. pip install -r requirements.txt (sentence-transformers, transformers)
+#   3. downloading the Qwen embedding model -- 1.1 GB, measured
+#
+# None of those change when only `alphadesk/` does, and the Dockerfile already
+# puts `COPY alphadesk/` LAST precisely so they need not be repeated. Cloud
+# Build simply had no memory of the previous image to reuse. The source upload
+# was never the problem: it is 7.7 MB, node_modules and the deploy directory
+# being gitignored.
+#
+# So: pull the last image, build with it as a cache source, and push a moving
+# `:cache` tag beside the immutable `:<sha>` one. The sha tag is what Cloud Run
+# is rolled to and stays one image per commit; `:cache` exists only to give the
+# NEXT build something to pull.
+steps:
+  # The first build has no cache image, and a build must not fail for that.
+  - name: gcr.io/cloud-builders/docker
+    id: pull-cache
+    entrypoint: bash
+    args: ["-c", "docker pull ${_CACHE} || echo 'no cache image yet — building cold'"]
+
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args: ["build", "--cache-from", "${_CACHE}", "-t", "${_IMAGE}", "-t", "${_CACHE}", "."]
+
+images:
+  - ${_IMAGE}
+  - ${_CACHE}
+
+# A cold build pulls 1.1 GB of weights, so the ten-minute default is too tight
+# to be safe even though it has been passing.
+timeout: 1800s
+
+options:
+  machineType: E2_HIGHCPU_8
