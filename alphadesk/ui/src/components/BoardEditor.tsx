@@ -83,7 +83,7 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
   const [libraryOpen, setLibraryOpen] = useState(false)
   const open = openProp ?? openState
   const setOpen = (v: boolean) => (onOpenChange ? onOpenChange(v) : setOpenState(v))
-  const { items, isCustom, move, setSpan, setAlign, setHeight, applyIds, reset } = layout
+  const { items, isCustom, moveTo, setSpan, setAlign, setHeight, applyIds, reset } = layout
 
   if (!open) {
     return (
@@ -143,7 +143,7 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
           23px it sat squashed against the bar above it. */}
       <div className="hidden min-h-[32px] items-center gap-2 border-b border-row-rule px-2.5 text-label uppercase tracking-caps text-muted-foreground md:flex">
         <span className="min-w-[120px] flex-1">Tile</span>
-        <span className="w-[64px] text-center">Move</span>
+        <span className="w-[64px]">Order</span>
         <span className="w-[92px]">Width</span>
         <span className="w-[92px]">Height</span>
         <span className="w-[96px] text-center">Place</span>
@@ -155,12 +155,18 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
                 a fixed label column left the row's right half empty once
                 Hide was removed. */}
             <span className="min-w-[120px] flex-1 truncate text-caption font-semibold">{w.label}</span>
-            <span className="flex w-[64px] items-center justify-center gap-2">
-              <Btn variant="ghost" size="lg" icon disabled={i === 0}
-                   onClick={() => move(w.id, -1)} aria-label={`Move ${w.label} up`}>▲</Btn>
-              <Btn variant="ghost" size="lg" icon disabled={i === items.length - 1}
-                   onClick={() => move(w.id, 1)} aria-label={`Move ${w.label} down`}>▼</Btn>
-            </span>
+            {/* THE DESTINATION, NOT A DIRECTION (2026-09-29, the owner: "I had
+                a trouble of moving of a tile lowest to top"). Two arrows meant
+                nine presses to lift the last tile of ten, on a list that
+                scrolls under the cursor while you make them. Picking the
+                position gets there in one, and adjacent moves — what the
+                arrows were good at — are still one pick. */}
+            <select value={i + 1} aria-label={`Position of ${w.label}`}
+                    onChange={e => moveTo(w.id, Number(e.target.value) - 1)}
+                    title="Where this tile sits on the board, first to last"
+                    className={`${pickerCls} !w-[64px]`}>
+              {items.map((_, n) => <option key={n} value={n + 1}>{n + 1}</option>)}
+            </select>
             <select value={span ?? ""} aria-label={`Width of ${w.label}`}
                     onChange={e => setSpan(w.id, e.target.value ? Number(e.target.value) : null)}
                     title="How many of the row's twelve columns this tile takes"
