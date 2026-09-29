@@ -425,7 +425,10 @@ export interface SymbolHit {
   asset_class: string | null
 }
 
-export type MetricPeriod = "quarterly" | "annual"
+/** "half" is for the foreign private issuers that file six-month interim
+ * figures on a 6-K and nothing quarterly at all — a half-year is neither a
+ * quarter nor a year and must not be folded into either. */
+export type MetricPeriod = "quarterly" | "half" | "annual"
 export type MetricStyle = "bars" | "line" | "area"
 
 export interface FundamentalMetric {
@@ -1438,7 +1441,7 @@ export type FiledQuarter = {
    * arrives with the 10-Q/10-K, which can trail the 8-K by weeks. */
   /** "quarterly", or "annual" for a foreign private issuer that files a 20-F
    * and no quarters. A year is not a quarter and the panel must say which. */
-  period?: "quarterly" | "annual"
+  period?: "quarterly" | "half" | "annual"
   /** The currency the company REPORTS in, read off its own filings — DKK for
    * Novo Nordisk, CNY for Alibaba, VND for VinFast. It travels with the
    * figures because without it they are a lie. */

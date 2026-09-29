@@ -81,12 +81,15 @@ def test_a_filer_with_no_quarters_is_answered_with_its_YEARS(monkeypatch):
     Global, whose panels were empty while the SEC held 265 us-gaap tags for
     it). It reports once a year on a 20-F. Asking only for quarters found
     nothing and the panel blamed IFRS for it — which was simply false."""
-    annual = {"metrics": [{"id": "revenue", "label": "Revenue", "unit": "currency"}],
+    annual = {"period": "annual",
+              "metrics": [{"id": "revenue", "label": "Revenue", "unit": "currency"}],
               "series": {"revenue": [{"t": "2024-12-31", "v": 50_869_812.0},
                                      {"t": "2025-12-31", "v": 18_834_099.0}]}}
 
+    # The real series carries its own grain, and a filer with neither quarters
+    # NOR half-years lands on annual — WEBUY files a 20-F and nothing else.
     def series(sym, period="quarterly", **k):
-        return {"metrics": [], "series": {}} if period == "quarterly" else annual
+        return annual if period == "annual" else {"period": period, "metrics": [], "series": {}}
 
     monkeypatch.setattr("alphadesk.ingest.edgar_financials.fundamentals_series", series)
     out = ff.filed_quarter("WBUY", "2026-09-28")
@@ -101,18 +104,19 @@ def test_a_filer_with_no_quarters_is_answered_with_its_YEARS(monkeypatch):
 def test_a_quarterly_filer_is_not_switched_to_annual(monkeypatch):
     """The fallback fires only where there is no quarterly series at all — a
     10-Q filer must keep its quarters."""
-    q = {"metrics": [{"id": "revenue", "label": "Revenue", "unit": "currency"}],
+    q = {"period": "quarterly",
+         "metrics": [{"id": "revenue", "label": "Revenue", "unit": "currency"}],
          "series": {"revenue": [{"t": "2025-06-30", "v": 1.0}, {"t": "2026-06-30", "v": 2.0}]}}
     calls = []
 
     def series(sym, period="quarterly", **k):
         calls.append(period)
-        return q if period == "quarterly" else {"metrics": [], "series": {}}
+        return q if period == "quarterly" else {"period": period, "metrics": [], "series": {}}
 
     monkeypatch.setattr("alphadesk.ingest.edgar_financials.fundamentals_series", series)
     out = ff.filed_quarter("NTWK", "2026-09-28")
     assert out["period"] == "quarterly"
-    assert calls == ["quarterly"]          # annual is never asked for
+    assert calls == ["quarterly"]          # no other grain is asked for
 
 
 def test_margins_move_in_percentage_points_and_only_off_positive_revenue(monkeypatch):

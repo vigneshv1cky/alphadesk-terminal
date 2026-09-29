@@ -56,6 +56,10 @@ COVERS_REPORT_DAYS = 120
 # quarterly window would call every 20-F filer's figures missing.
 ANNUAL_COVERS_REPORT_DAYS = 460
 
+# A half-yearly filer's newest period is up to six months and a reporting lag
+# old before the next lands, so it sits between the two.
+HALF_COVERS_REPORT_DAYS = 280
+
 # The year-ago quarter is matched by date, not by counting back four rows: a
 # company that skipped a filing, or restated one, would shift the count and
 # silently compare the wrong pair. A 52/53-week fiscal calendar moves the end
@@ -117,7 +121,6 @@ def filed_quarter(symbol: str, on: str | None = None) -> dict:
     filed quarter is recent enough to belong to that report. It never selects
     a different quarter: the newest on file is the newest on file.
     """
-    from alphadesk.ingest.edgar_financials import fundamentals_series
 
     sym = (symbol or "").upper()
     out: dict = {"symbol": sym, "source": "sec-edgar", "period_end": None,
@@ -130,30 +133,29 @@ def filed_quarter(symbol: str, on: str | None = None) -> dict:
     if not sym:
         return out
     # A FOREIGN PRIVATE ISSUER FILES NO QUARTERS (2026-09-28, found on WEBUY
-    # Global). It reports annually on a 20-F, and its interim 6-K carries
-    # half-years that are neither a quarter nor a year. Asking only for
-    # quarters left the panel empty for a company whose full annual figures
-    # the SEC holds in US-GAAP. So the annual series answers where there is no
-    # quarterly one, and the period is named in the payload rather than left
-    # for the reader to assume -- "year ended" and "quarter ended" are not
-    # interchangeable and the panel must not print one for the other.
+    # Global). It reports annually on a 20-F and half-yearly on a 6-K, so
+    # asking only for quarters left the panel empty for a company whose full
+    # figures the SEC holds. `best_series` picks the grain that answers --
+    # quarterly where there is one, else the FRESHER of half-yearly and annual,
+    # because which of those is newer differs by company. The grain is named in
+    # the payload rather than left for the reader to assume: "year ended",
+    # "half-year ended" and "quarter ended" are not interchangeable and no
+    # panel may print one for another.
     grain = "quarterly"
     try:
-        data = fundamentals_series(sym, "quarterly", limit=24)
-        if not (data.get("series") or {}):
-            annual = fundamentals_series(sym, "annual", limit=12)
-            if (annual.get("series") or {}):
-                data, grain = annual, "annual"
+        from alphadesk.ingest.edgar_financials import best_series
+        data = best_series(sym, limit=24)
+        grain = str(data.get("period") or "quarterly")
     except Exception as exc:
         log.debug("filed figures: no XBRL for %s (%s)", sym, exc)
         out["note"] = "SEC EDGAR could not be read for this company just now."
         return out
 
+    labels = {m["id"]: m.get("label") or m["id"] for m in (data.get("metrics") or [])}
+    units = {m["id"]: m.get("unit") or "currency" for m in (data.get("metrics") or [])}
     out["period"] = grain
     out["currency"] = data.get("currency") or "USD"
     series: dict[str, list[dict]] = data.get("series") or {}
-    labels = {m["id"]: m.get("label") or m["id"] for m in (data.get("metrics") or [])}
-    units = {m["id"]: m.get("unit") or "currency" for m in (data.get("metrics") or [])}
 
     ends = sorted({p["t"] for pts in series.values() for p in pts if p.get("t")})
     if not ends:
@@ -188,7 +190,8 @@ def filed_quarter(symbol: str, on: str | None = None) -> dict:
             # AN ANNUAL FILER'S NEWEST PERIOD IS A YEAR OLD BY DESIGN, so the
             # quarterly window would mark every 20-F filer stale and say its
             # figures were missing when they are simply annual.
-            window = COVERS_REPORT_DAYS if grain == "quarterly" else ANNUAL_COVERS_REPORT_DAYS
+            window = {"quarterly": COVERS_REPORT_DAYS,
+                      "half": HALF_COVERS_REPORT_DAYS}.get(grain, ANNUAL_COVERS_REPORT_DAYS)
             out["covers_report"] = lag <= window
             if lag > window:
                 out["note"] = (
