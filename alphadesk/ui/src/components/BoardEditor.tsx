@@ -43,7 +43,11 @@ const WIDTHS: { label: string; span: number | null }[] = [
 const pickerCls = "h-[28px] w-[92px] border border-border bg-panel px-1.5 text-caption text-foreground"
 
 const HEIGHTS: { label: string; height: TileHeight | null; why: string }[] = [
-  { label: "auto", height: null, why: "grows with its content, to the foot of the window" },
+  // "FIT", NOT "AUTO" (2026-09-29, the owner). The word read as automatic or
+  // default — the option you leave alone — when it means SIZE TO THE CONTENT.
+  // Named for what it does, the four read as one scale of intent: Fit is "as
+  // big as this needs", the rest are "hold this much space whatever arrives".
+  { label: "Fit", height: null, why: "as tall as its content needs, up to the foot of the window" },
   // THE PIXELS COME FROM THE TABLE, NOT FROM A COPY OF IT (2026-09-29, the
   // owner spotting a stale tooltip). These said 260 / 402 / 620 while the
   // steps were 360 / 540 / 720 — the numbers moved three times in an hour and
@@ -212,7 +216,10 @@ export function BoardEditor({
                     title="How tall this tile may grow"
                     className={pickerCls}>
               {HEIGHTS.map(o => (
-                <option key={o.label} value={o.height ?? ""} title={o.why}>{o.label}</option>
+                <option key={o.label} value={o.height ?? ""} title={o.why}
+                        disabled={!!o.height && !!w.minStep && o.height < w.minStep}>
+                  {o.label}
+                </option>
               ))}
             </select>
             {/* Where a tile narrower than its row sits (2026-09-18): left is

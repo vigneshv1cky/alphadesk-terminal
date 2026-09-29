@@ -147,6 +147,8 @@ export type PanelDef = {
    * DEFAULT board — without this, every newly registered tile would flood
    * every board that never saved a layout. */
   optIn?: boolean
+  /** The smallest height step this panel is worth offering (2026-09-29). */
+  minStep?: 1 | 2 | 3
 }
 
 /** What a page's layout hook hands back — the editor renders against this
@@ -247,7 +249,18 @@ export function usePageLayout<T extends PanelDef>(
       // whole page rather than losing one panel.
       ? custom.flatMap(e => {
         const def = all.find(w => w.id === e.id)
-        return def ? [{ def, span: e.span, align: e.align ?? null, height: e.height ?? null }] : []
+        // A SAVED STEP BELOW THE TILE'S MINIMUM IS LIFTED HERE, so the
+        // editor shows the step that actually renders. A layout written
+        // before the minimum existed, or by hand, must not leave the picker
+        // reading S over a tile drawn at M.
+        return def ? [{
+          def,
+          span: e.span,
+          align: e.align ?? null,
+          height: e.height != null && def.minStep
+            ? (Math.max(e.height, def.minStep) as TileHeight)
+            : e.height ?? null,
+        }] : []
       })
       : all.filter(w => !w.optIn).map(w => ({ def: w, span: null, align: null, height: null }))),
     [isCustom, custom, all],

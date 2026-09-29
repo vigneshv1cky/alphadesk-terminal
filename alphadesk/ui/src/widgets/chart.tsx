@@ -44,6 +44,19 @@ import { TILE_BODY_HEIGHT } from "@/widgets/tile"
 const CHART_CHROME = 42 + 42 + 25 + 4 + 1
 const COLLAPSED = TILE_BODY_HEIGHT - CHART_CHROME
 
+/** A CHART IS NEVER DRAWN SMALL (2026-09-29, the owner: "never set charts
+ * small", "never set charts small as auto").
+ *
+ * It spends ~135px of any tile on toolbar, price readout and range row before
+ * a candle exists, so a share of a short window — or of the room left to a
+ * tile low on a long board — can leave a plot of a few dozen pixels, which is
+ * a sparkline pretending to be a chart. The floor applies to a chosen STEP
+ * and to `auto` alike: a chart that cannot have its minimum takes the
+ * minimum anyway and the board scrolls, which is the honest failure.
+ *
+ * 260px is about what the standard tile always gave it. */
+const MIN_PLOT = 260
+
 /** THE CANVAS FILLS WHAT IS ACTUALLY BELOW IT (2026-09-29, the owner: "like
  * increasing the height of the chart here", then "reduce the height just a
  * bit, or make it non scrollable when nothings below").
@@ -102,10 +115,15 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
       if (!body) return
       const board = el.closest(".collage")
       const reserved = board ? parseFloat(getComputedStyle(board).paddingBottom) || 0 : 0
-      const room = Math.round(window.innerHeight - el.getBoundingClientRect().top - reserved)
+      // AS IF UNSCROLLED, and rounded to a step: `top` is where the tile is
+      // right now, so a restored scroll position or anything still loading
+      // above it gave a different height on every reload.
+      const scroller = el.closest("main") ?? document.querySelector("main")
+      const top = el.getBoundingClientRect().top + (scroller?.scrollTop ?? 0)
+      const room = Math.round((window.innerHeight - top - reserved) / 8) * 8
       // The share is of the whole TILE, so the header comes off after it.
       const box = step
-        ? Math.max(180, Math.round((room + HEADER_BAND) * TILE_HEIGHT_SHARE[step]) - HEADER_BAND)
+        ? Math.max(MIN_PLOT + CHART_CHROME, Math.round((room + HEADER_BAND) * TILE_HEIGHT_SHARE[step]) - HEADER_BAND)
         : room
       // CORRECT BY THE OVERSHOOT, don't compute the chrome. Subtracting the
       // price pane from the body does NOT give the chrome — the plot block
@@ -115,7 +133,7 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
       // the error whatever causes it, so the canvas absorbs exactly that.
       // Settles in one pass and stops when the error is under 2px.
       const delta = Math.round(body.getBoundingClientRect().height) - box
-      if (Math.abs(delta) > 2) setH(Math.max(80, now.current - delta))
+      if (Math.abs(delta) > 2) setH(Math.max(MIN_PLOT, now.current - delta))
     }
     // WATCHED, NOT SAMPLED. One correction is not enough: the canvas changes,
     // the bands around it reflow, and the new error is only visible on the
@@ -234,4 +252,4 @@ export function MarketChart({ span = 6, symbol: symbolProp }: {
 // with the window instead of being pinned (2026-09-29, the owner: "auto
 // should be L right?"). A registry default would also have shown as a
 // reader's own choice in the board editor, which it is not.
-registerWidget({ id: "market-chart", label: "Chart", order: 12, component: MarketChart })
+registerWidget({ id: "market-chart", label: "Chart", order: 12, minStep: 2, component: MarketChart })
