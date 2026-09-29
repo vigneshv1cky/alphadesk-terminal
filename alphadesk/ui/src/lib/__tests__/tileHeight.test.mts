@@ -2,7 +2,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import {
   bandFor, tilePx, stepFor, DEFAULT_STEP, TILE_PX, TILE_STEPS,
-  BAND_MIN_HEIGHT, SHORT_MAX_HEIGHT, STANDARD_MAX_HEIGHT, STEP_LABEL, type ScreenBand,
+  BAND_MIN_HEIGHT, SHORT_MAX_HEIGHT, STANDARD_MAX_HEIGHT, STEP_LABEL, LARGEST_STEP,
+  type ScreenBand,
 } from "../tileHeight.ts"
 
 test("a phone is a kind of screen, not a short one", () => {
@@ -135,4 +136,18 @@ test("a panel's floor lifts a saved step but never lowers one", () => {
   assert.equal(stepFor(3, 2), 3)
   assert.equal(stepFor(2, 2), 2)
   assert.equal(stepFor(null, 3), 3)
+})
+
+test("the largest step is named, not a literal somebody has to remember", () => {
+  // `scroll="fit"` means "the largest size this screen offers" and asked for
+  // step 3, which was the top of the ladder when it was written and silently
+  // became Large the day Extra large was added — the panel it sizes lost 100px
+  // and nothing said so. Anything that wants the top of the ladder asks for it
+  // by name.
+  assert.equal(LARGEST_STEP, TILE_STEPS[TILE_STEPS.length - 1])
+  for (const band of Object.keys(TILE_PX) as ScreenBand[]) {
+    for (const s of TILE_STEPS) {
+      assert.ok(TILE_PX[band][LARGEST_STEP] >= TILE_PX[band][s], `${band}: ${s} is above the largest`)
+    }
+  }
 })

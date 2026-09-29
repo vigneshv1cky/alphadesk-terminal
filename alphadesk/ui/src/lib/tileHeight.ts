@@ -116,6 +116,12 @@ export function bandFor(width: number, height: number): ScreenBand {
   return "tall"
 }
 
+/** The largest step there is — named, never written as a literal. `fit` asked
+ * for step 3 because 3 was the top of the ladder when it was written, and
+ * quietly became Large rather than the largest the day Extra large was added
+ * (2026-09-29). A ladder that can grow must not be indexed by hand. */
+export const LARGEST_STEP: TileStep = TILE_STEPS[TILE_STEPS.length - 1]
+
 /** The tile height a step means on this window, in pixels. */
 export function tilePx(step: TileStep, width: number, height: number): number {
   return TILE_PX[bandFor(width, height)][step]
