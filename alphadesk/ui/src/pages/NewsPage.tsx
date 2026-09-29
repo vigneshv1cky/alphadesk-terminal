@@ -9,7 +9,7 @@ import { on, api, isNeedsKey, type NewsArticle } from "@/lib/api"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { boardStories, markSeen, readSeen } from "@/lib/newsSeen"
 import { useFilingFeed, useNews } from "@/lib/queries"
-import { isWireRelease } from "@/lib/newsKind"
+import { isWireRelease, storyKind, KIND_LABEL, type StoryKind } from "@/lib/newsKind"
 import { Btn, Empty, fieldCls, Widget, btnCls, menuItemCls } from "@/components/terminal"
 import { MarketFilings } from "@/widgets/desk"
 import { Menu } from "@/components/ChartToolbar"
@@ -179,6 +179,10 @@ export default function NewsPage() {
   // half hours in every case measured that day, so this is the early copy of
   // the same events the SEC scopes below carry late.
   const [wireOnly, setWireOnly] = useState(false)
+  // WHAT A STORY IS ABOUT, from the publisher's own channel (2026-09-29).
+  // A refinement like the wire filter, not a view: it narrows the list
+  // rather than replacing it, and composes with everything beside it.
+  const [kind, setKind] = useState<StoryKind | "">("")
   // POSTS ARE NOT STORIES, AND THIS PAGE COULD NOT SHOW THEM (2026-09-23,
   // the reader: "not able to filter and see only this in news"). They ride
   // the news TILE mixed into the stream, but every filter lives here — and a
@@ -238,6 +242,7 @@ export default function NewsPage() {
       && (!source || a.source === source)
       && (!feed || (a.feeds ?? []).includes(feed))
       && (!wireOnly || isWireRelease(a))
+      && (!kind || storyKind(a) === kind)
     // Whole words, their forms, and the companies the words name.
     const words = articles.filter(a => keep(a) && (!needle || matchesStory(needle, a, companies)))
     if (!needle || meant !== needle || !related?.length) return words
@@ -251,7 +256,7 @@ export default function NewsPage() {
     // beside it worked throughout because `source` was listed — which is what
     // made the fault look like "FMP is broken" rather than "one filter is".
     // Every name `keep` and the body read belongs in this list.
-  }, [articles, needle, companies, onBoard, source, feed, wireOnly, boardSymbols, meant, related])
+  }, [articles, needle, companies, onBoard, source, feed, wireOnly, kind, boardSymbols, meant, related])
   const open = articles.find(a => a.article_id === openId) ?? window_.find(a => a.article_id === openId) ?? null
 
   // The list renders only what is on screen (#81). 104px is what a row
@@ -261,7 +266,7 @@ export default function NewsPage() {
   const win = useWindowedRows({
     count: shown.length,
     estimate: 104,
-    resetKey: `${needle}|${onBoard}|${source}|${feed}|${wireOnly}|${search?.q ?? ""}`,
+    resetKey: `${needle}|${onBoard}|${source}|${feed}|${wireOnly}|${kind}|${search?.q ?? ""}`,
   })
 
   // ARRIVING WITH A STORY IN THE URL scrolls to it once. It is placed by
@@ -287,6 +292,18 @@ export default function NewsPage() {
   // One request serves the counts here, the list when a filings scope is
   // picked, and the "Just filed" panel beside it — they share a query key.
   const wireCount = useMemo(() => articles.filter(isWireRelease).length, [articles])
+  // ONLY THE KINDS THE WINDOW ACTUALLY HOLDS, with their counts — a picker
+  // offering a kind with nothing behind it is the same fault as a key prompt
+  // for a vendor the reader is already holding. Ordered by count, which is a
+  // measured number on each row rather than a ranking of what matters.
+  const kinds = useMemo(() => {
+    const n = new Map<StoryKind, number>()
+    for (const a of articles) {
+      const k = storyKind(a)
+      if (k) n.set(k, (n.get(k) ?? 0) + 1)
+    }
+    return [...n.entries()].sort((a, b) => b[1] - a[1] || KIND_LABEL[a[0]].localeCompare(KIND_LABEL[b[0]]))
+  }, [articles])
   const filingFeed = useFilingFeed()
   const filings = filingFeed.data?.filings ?? []
   const results = useMemo(
@@ -433,6 +450,18 @@ export default function NewsPage() {
               {feeds.map(f => <option key={f} value={f}>{f}</option>)}
             </select>
           )}
+          {/* The publisher's own channel, so the reader can see what a story is
+              before opening it. Unlabelled stories stay in the list under
+              "All kinds" — a story we cannot name is not a story we hide. */}
+          {kinds.length > 1 && (
+            <select value={kind} onChange={e => setKind(e.target.value as StoryKind | "")}
+                    aria-label="Kind" disabled={postsOnly || !!filingItem}
+                    title="What the story is about, as the publisher filed it — its own channel, not our reading of the text"
+                    className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
+              <option value="">All kinds</option>
+              {kinds.map(([k, n]) => <option key={k} value={k}>{`${KIND_LABEL[k]} · ${n}`}</option>)}
+            </select>
+          )}
           {/* A REFINEMENT, NOT A VIEW — so it sits with the publisher and feed
               pickers and not in the menu beside "Posts". Those replace the
               list; this narrows it, and it composes with both of them.
@@ -548,6 +577,17 @@ export default function NewsPage() {
                               title="New since your last visit, about a stock on your board">New</span>
                       )}
                       <HeadlineTickers symbols={a.tickers} />
+                      {/* WHAT IT IS, BEFORE READING IT (2026-09-29). Muted and
+                          after the tickers: it is an aid to skimming, not a
+                          claim about the story, and it must not compete with
+                          the headline it sits above. A story whose kind we
+                          cannot name simply has no chip. */}
+                      {(() => { const k = storyKind(a); return k ? (
+                        <span className="text-muted-foreground"
+                              title={`Filed by ${a.source} under its own “${KIND_LABEL[k]}” channel — the publisher's classification, not ours`}>
+                          {KIND_LABEL[k]}
+                        </span>
+                      ) : null })()}
                       {/* The publisher, with the feed that delivered it on
                           hover — the two are different and the name alone
                           cannot say which it is (2026-09-22). */}
