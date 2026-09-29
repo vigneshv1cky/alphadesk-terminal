@@ -61,6 +61,18 @@ export default function FilingsPage() {
       <div className="px-4 pt-2">
         <h1 className="mb-2 text-emph font-extrabold tracking-tight">Filings</h1>
       </div>
+      {/* THE PANEL SITS IN THE SAME FRAME AS EVERY OTHER PAGE'S TILES
+          (2026-09-29, the owner: "the gap between left sidebar and tiles is
+          not maintained in filings and posts"). These two are single panels
+          on no board, so they never got the board's 16px inset: the HEADING
+          was inset by its own padding and the panel was not, leaving it flush
+          against the rail and the window edge while every board page stood
+          16px clear. Measured: 10px against 26px on both sides.
+          The board's own wrapper, rather than a matching pair of paddings —
+          a second way of expressing the same inset is a second thing to keep
+          in step, and this is the page that proves it does not stay in step
+          on its own. */}
+      <div className="collage !pt-0">
     <Widget
       span={12}
       title="Market filings"
@@ -95,6 +107,7 @@ export default function FilingsPage() {
     >
       <MarketFilings onlyItem={item || undefined} />
     </Widget>
+      </div>
     </>
   )
 }

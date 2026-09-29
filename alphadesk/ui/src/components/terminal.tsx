@@ -1,7 +1,7 @@
 import * as React from "react"
 import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
-import { TILE_PX, bandFor, stepFor, type ScreenBand } from "@/lib/tileHeight"
+import { LARGEST_STEP, TILE_PX, bandFor, stepFor, type ScreenBand } from "@/lib/tileHeight"
 import { useModalFocus, usePopoverFocus } from "@/lib/focus"
 
 /** The terminal primitives — hand-rolled, dependency-free replacements for
@@ -350,7 +350,7 @@ export function Widget({
   // left. One number, one place, no arithmetic to drift.
   const bodyHeight: string | number | undefined =
     stepPx !== null ? undefined
-    : scroll === "fit" ? `${Math.max(80, TILE_PX[band][3] - chrome)}px`
+    : scroll === "fit" ? `${Math.max(80, TILE_PX[band][LARGEST_STEP] - chrome)}px`
     : scroll
   // The body still needs the scroller a string height used to give it: an
   // exact box its children are absolutely positioned inside, which is the
