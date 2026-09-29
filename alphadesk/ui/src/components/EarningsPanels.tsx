@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { MetricPeriod } from "@/lib/api"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { fiscalYearEndMonth, periodLabel as fiscalPeriodLabel } from "@/lib/fiscal"
@@ -67,13 +67,69 @@ function PeriodToggle({ value, onChange }: {
 /* ── Revenue vs. earnings — grouped bars + a margin line on its own axis ── */
 
 const VB_W = 560
-const VB_H = 176
 const PLOT_L = 44
 const PLOT_R = 516
 const PLOT_T = 14
-const PLOT_B = 150
+/** The band under the plot that the period labels sit in. */
+const LABEL_BAND = 26
+/** The drawing when nothing has been measured yet — the fixed box these
+ * charts used to have, so the first paint is a chart rather than a sliver. */
+const VB_H_SEED = 176
+
+/** A PLOT AS TALL AS THE TILE IT IS IN (2026-09-29, the owner: "there is some
+ * waste space, use the space properly").
+ *
+ * These charts drew into a fixed 560x176 box at full width, so their height
+ * followed their WIDTH and nothing else: in an 803px-wide tile the drawing was
+ * about 252px and the tile body is 476, leaving a third of the panel empty.
+ * It went unnoticed while tiles were content-sized, because the tile simply
+ * hugged the drawing — this is the cost of fixed tile heights arriving, and
+ * the honest answer is for the drawing to use what it is given.
+ *
+ * The viewBox keeps its WIDTH of 560 and takes its height from the container's
+ * aspect, so one unit is the same number of pixels in both directions: the
+ * plot grows and NOTHING IS DISTORTED — labels and line weights stay exactly
+ * the size they were, because the scale is set by the width, which has not
+ * changed. Stretching the old box with `preserveAspectRatio: none` would have
+ * filled the same space and squashed every glyph.
+ *
+ * It cannot loop the way the chart tile's measurement used to: the tile's
+ * height is a constant now (lib/tileHeight), so the box this reads is settled
+ * before it is read and nothing the SVG draws can change it. */
+function usePlotBox() {
+  const [vbH, setVbH] = useState(VB_H_SEED)
+  const node = useRef<HTMLDivElement | null>(null)
+  const obs = useRef<ResizeObserver | null>(null)
+  // A CALLBACK REF, NOT A PLAIN ONE WITH AN EMPTY EFFECT. The plot only
+  // renders once the figures arrive, so on the first layout there is no
+  // element to observe — an effect that runs once would find null, return,
+  // and never run again, leaving the drawing at its seed height for good.
+  // That is exactly what happened: the box filled the tile and the viewBox
+  // stayed 560x176, so the drawing was letterboxed inside it. A callback ref
+  // fires when the node appears, however late that is.
+  const ref = (el: HTMLDivElement | null) => {
+    if (node.current === el) return
+    obs.current?.disconnect()
+    node.current = el
+    if (!el) { obs.current = null; return }
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect()
+      if (width < 1 || height < 1) return
+      // A floor, so a panel squeezed into a very short tile still draws a
+      // readable plot rather than collapsing to its labels.
+      const next = Math.max(120, Math.round((VB_W * height) / width))
+      setVbH(prev => (Math.abs(prev - next) < 2 ? prev : next))
+    }
+    measure()
+    obs.current = new ResizeObserver(measure)
+    obs.current.observe(el)
+  }
+  useLayoutEffect(() => () => obs.current?.disconnect(), [])
+  return { ref, vbH, plotB: vbH - LABEL_BAND }
+}
 
 export function RevenueEarningsPanel({ symbol }: { symbol: string }) {
+  const { ref: plotRef, vbH, plotB: PLOT_B } = usePlotBox()
   const [period, setPeriod] = useState<MetricPeriod>("quarterly")
   const { data, isPending } = useFundamentals(symbol, period)
   // The axis and the readout are money, so they follow the filer's own
@@ -116,8 +172,12 @@ export function RevenueEarningsPanel({ symbol }: { symbol: string }) {
     const barW = Math.min(18, step * 0.28)
 
     return (
-      <div className="px-3 pb-2 pt-1">
-        <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="block w-full" role="img"
+      // THE PLOT TAKES THE ROOM, THE READOUT TAKES WHAT IT NEEDS: a column,
+      // with the drawing as the one part that grows. Before this the whole
+      // panel sat at the top of the tile and the rest was air.
+      <div className="flex h-full flex-col px-3 pb-2 pt-1">
+        <div ref={plotRef} className="min-h-0 flex-1">
+        <svg viewBox={`0 0 ${VB_W} ${vbH}`} className="block h-full w-full" role="img"
              aria-label={`Revenue and earnings by ${period === "annual" ? "year" : "quarter"}, with profit margin`}>
           {/* gridlines: dashed, the zero line solid */}
           {[0.25, 0.5, 0.75].map(f => {
@@ -179,6 +239,7 @@ export function RevenueEarningsPanel({ symbol }: { symbol: string }) {
               fill="none" className="stroke-foreground" strokeWidth="1.5" />
           )}
         </svg>
+        </div>
         {/* the readout: the hovered period, else the latest — its label,
             its end date, and the three figures the bars only suggest */}
         {(() => {
@@ -231,6 +292,7 @@ const eps = (v: number | null) => (v == null ? "—" : v.toFixed(2))
  * says so, rather than a vendor's claim dressed as a filing.
  */
 export function EpsPanel({ symbol }: { symbol: string }) {
+  const { ref: plotRef, vbH, plotB: PLOT_B } = usePlotBox()
   const { data, isPending } = useFundamentals(symbol, "quarterly")
   const { data: quote } = useQuote(symbol)
   const fyEnd = fiscalYearEndMonth(quote?.fiscal_year_end)
@@ -269,8 +331,9 @@ export function EpsPanel({ symbol }: { symbol: string }) {
     const path = points.map((p, i) => `${i ? "L" : "M"}${PLOT_L + step * (i + 0.5)},${y(p.v)}`).join(" ")
 
     return (
-      <div className="px-3 pb-2 pt-1">
-        <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="block w-full" role="img"
+      <div className="flex h-full flex-col px-3 pb-2 pt-1">
+        <div ref={plotRef} className="min-h-0 flex-1">
+        <svg viewBox={`0 0 ${VB_W} ${vbH}`} className="block h-full w-full" role="img"
              aria-label="Diluted earnings per share by quarter, as filed with the SEC">
           {[0.25, 0.5, 0.75].map(f => {
             const gy = PLOT_T + (PLOT_B - PLOT_T) * f
@@ -305,6 +368,7 @@ export function EpsPanel({ symbol }: { symbol: string }) {
                   fill="transparent" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
           ))}
         </svg>
+        </div>
         {(() => {
           const at = hover ?? points.length - 1
           const p = points[at]

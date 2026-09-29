@@ -336,10 +336,26 @@ export function Widget({
   // (News, Filings, Posts) are single panels meant to fill the screen, and
   // with no Fill step left that is what the largest size means. Still a
   // constant, still nothing measured.
+  // A STEPPED TILE IS ITS SIZE, MEASURED FROM THE OUTSIDE (2026-09-29, the
+  // owner: "the chart tile seems a bit taller than news even though both are
+  // xl"). The height was assembled from the inside — the body was given the
+  // size less a chrome figure, and the section reserved that plus HEADER_H,
+  // which is 38 while the header actually renders 40, and neither counted the
+  // card's 1px border top and bottom. Every stepped tile therefore came out
+  // 2px UNDER its size with a body 4px shorter than it asked for, and the
+  // chart, which sizes itself from the outside, came out 2px OVER: a 4px
+  // disagreement between two tiles the reader had given the same size.
+  //
+  // The section is simply told to BE the size, and the body takes what is
+  // left. One number, one place, no arithmetic to drift.
   const bodyHeight: string | number | undefined =
-    stepPx !== null ? `${Math.max(80, stepPx - chrome)}px`
+    stepPx !== null ? undefined
     : scroll === "fit" ? `${Math.max(80, TILE_PX[band][3] - chrome)}px`
     : scroll
+  // The body still needs the scroller a string height used to give it: an
+  // exact box its children are absolutely positioned inside, which is the
+  // only thing that stops content sizing the tile.
+  const fillsSection = stepPx !== null && !ownHeight
   return (
     <section
       data-slot="widget"
@@ -384,11 +400,16 @@ export function Widget({
         // `minBody` reserves the height WITHOUT capping the body, which is
         // what keeps "no inner scroller, the board scrolls" intact: the
         // tile is simply born the size it is about to be.
-        ...(typeof bodyHeight === "string"
-          ? { minHeight: `calc(${bodyHeight} + ${HEADER_H + (toolbar ? TOOLBAR_H : 0)}px)` }
-          : minBody
-            ? { minHeight: `${minBody + HEADER_H + (toolbar ? TOOLBAR_H : 0)}px` }
-            : {}),
+        // A stepped tile is exactly its size, border included; everything else
+        // keeps the reserve that stops a tile being born at header height and
+        // shoving the board down as its rows land.
+        ...(stepPx !== null && !ownHeight
+          ? { height: `${stepPx}px` }
+          : typeof bodyHeight === "string"
+            ? { minHeight: `calc(${bodyHeight} + ${HEADER_H + (toolbar ? TOOLBAR_H : 0)}px)` }
+            : minBody
+              ? { minHeight: `${minBody + HEADER_H + (toolbar ? TOOLBAR_H : 0)}px` }
+              : {}),
       }}
       className={cn(
         "flex min-w-0 flex-col overflow-hidden border border-card-border bg-card shadow-card",
@@ -491,12 +512,12 @@ export function Widget({
              : undefined}
         className={cn(
           "min-h-0 min-w-0",
-          typeof bodyHeight === "string" && "relative flex-1",
+          (fillsSection || typeof bodyHeight === "string") && "relative flex-1",
           typeof bodyHeight === "number" && "overflow-y-auto",
           bodyClassName,
         )}
       >
-        {typeof bodyHeight === "string" ? (
+        {fillsSection || typeof bodyHeight === "string" ? (
           // Absolutely positioned, which is the only thing that actually stops
           // the content sizing the tile.
           //

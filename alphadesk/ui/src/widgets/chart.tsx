@@ -167,8 +167,16 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>, ready: boo
       // the whole tile, which is what once handed the canvas the entire
       // overshoot and drew a chart the height of the window.
       if (!ready) return
-      const outside = Math.round(body.getBoundingClientRect().height) + HEADER_BAND
-      const delta = outside - tile
+      // MEASURED ON THE SECTION, NOT REBUILT FROM THE BODY (2026-09-29, the
+      // owner: "the chart tile seems a bit taller than news even though both
+      // are xl"). Adding a header constant to the body's height leaves out
+      // the card's 1px border top and bottom, so the chart settled 2px over
+      // its size while every other tile sat 2px under — 4px apart at the
+      // same named size. The outside height is the thing being matched, so
+      // it is the thing to measure.
+      const section = el.closest("[data-slot=widget]")
+      if (!section) return
+      const delta = Math.round(section.getBoundingClientRect().height) - tile
       if (Math.abs(delta) > 2) setH(Math.max(MIN_PLOT, now.current - delta))
     }
     // WATCHED, because one pass is not enough: the canvas changes, the bands
