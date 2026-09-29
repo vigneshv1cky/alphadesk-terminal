@@ -38,6 +38,10 @@ const WIDTHS: { label: string; span: number | null }[] = [
  * purpose" (lib/boardLayout) — taken by the owner, because a chart and a news
  * list side by side want different heights and a straight bottom edge was
  * buying tidiness at the cost of the arrangement actually wanted. */
+/** The same field the news toolbar's pickers use, so a control that picks
+ * one of a few named values looks the same wherever it appears. */
+const pickerCls = "h-[28px] w-[92px] border border-border bg-panel px-1.5 text-caption text-foreground"
+
 const HEIGHTS: { label: string; height: TileHeight | null; why: string }[] = [
   { label: "auto", height: null, why: "the tile's own height" },
   { label: "S", height: 1, why: "short — 260px of content" },
@@ -120,6 +124,22 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
           a field or a chip, the arrows and the place icons are square at it,
           and the width presets carry a floor so "⅓" is not a sliver beside
           "full". The look is untouched. */}
+      {/* TEN BUTTONS A ROW WAS A WALL (2026-09-29, the owner: "looks a lot
+          messy"). Adding the height group doubled the presets to ten
+          near-identical chips with no cue where one group ended and the next
+          began — fifteen controls a row across eleven rows. Width and height
+          are one choice each, so they are ONE PICKER each, the same control
+          the news toolbar uses. Place stays as icons: three glyphs read
+          faster than a menu naming them, and they are a different kind of
+          choice. Columns are headed, so nothing has to be guessed from
+          position. */}
+      <div className="hidden items-center gap-2 border-b border-row-rule px-2.5 pb-1.5 text-label uppercase tracking-caps text-muted-foreground md:flex">
+        <span className="min-w-[120px] flex-1">Tile</span>
+        <span className="w-[64px] text-center">Move</span>
+        <span className="w-[92px]">Width</span>
+        <span className="w-[92px]">Height</span>
+        <span className="w-[96px] text-center">Place</span>
+      </div>
       <ul className="px-2.5 py-2">
         {items.map(({ def: w, span, align, height }, i) => (
           <li key={w.id} className="row-rule flex min-h-[44px] flex-wrap items-center gap-x-2 gap-y-2 py-2.5">
@@ -127,38 +147,35 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
                 a fixed label column left the row's right half empty once
                 Hide was removed. */}
             <span className="min-w-[120px] flex-1 truncate text-caption font-semibold">{w.label}</span>
-            <Btn variant="ghost" size="lg" icon disabled={i === 0}
-                 onClick={() => move(w.id, -1)} aria-label={`Move ${w.label} up`}>▲</Btn>
-            <Btn variant="ghost" size="lg" icon disabled={i === items.length - 1}
-                 onClick={() => move(w.id, 1)} aria-label={`Move ${w.label} down`}>▼</Btn>
-            <span className="ml-2 flex items-center gap-1.5" role="group"
-                  aria-label={`Width of ${w.label}`}>
-              {WIDTHS.map(o => (
-                <Btn key={o.label} variant="ghost" size="lg" active={span === o.span}
-                     className="min-w-[40px]"
-                     onClick={() => setSpan(w.id, o.span)}
-                     title={o.span ? `${o.span} of 12 columns` : "the tile's own width"}>
-                  {o.label}
-                </Btn>
-              ))}
+            <span className="flex w-[64px] items-center justify-center gap-2">
+              <Btn variant="ghost" size="lg" icon disabled={i === 0}
+                   onClick={() => move(w.id, -1)} aria-label={`Move ${w.label} up`}>▲</Btn>
+              <Btn variant="ghost" size="lg" icon disabled={i === items.length - 1}
+                   onClick={() => move(w.id, 1)} aria-label={`Move ${w.label} down`}>▼</Btn>
             </span>
+            <select value={span ?? ""} aria-label={`Width of ${w.label}`}
+                    onChange={e => setSpan(w.id, e.target.value ? Number(e.target.value) : null)}
+                    title="How many of the row's twelve columns this tile takes"
+                    className={pickerCls}>
+              {WIDTHS.map(o => (
+                <option key={o.label} value={o.span ?? ""}
+                        title={o.span ? `${o.span} of 12 columns` : "the tile's own width"}>{o.label}</option>
+              ))}
+            </select>
             {/* HOW TALL IT MAY GROW (2026-09-29). Beside the width, because
                 the two are one question — how much room does this tile get —
                 and a reader setting one usually wants the other. */}
-            <span className="ml-2 flex items-center gap-1.5" role="group"
-                  aria-label={`Height of ${w.label}`}>
+            <select value={height ?? ""} aria-label={`Height of ${w.label}`}
+                    onChange={e => setHeight(w.id, e.target.value ? Number(e.target.value) as TileHeight : null)}
+                    title="How tall this tile may grow"
+                    className={pickerCls}>
               {HEIGHTS.map(o => (
-                <Btn key={o.label} variant="ghost" size="lg" active={(height ?? null) === o.height}
-                     className="min-w-[40px]"
-                     onClick={() => setHeight(w.id, o.height)}
-                     title={o.why}>
-                  {o.label}
-                </Btn>
+                <option key={o.label} value={o.height ?? ""} title={o.why}>{o.label}</option>
               ))}
-            </span>
+            </select>
             {/* Where a tile narrower than its row sits (2026-09-18): left is
                 the grid's own flow; a full-width tile has nowhere to move. */}
-            <span className="ml-2 flex items-center gap-1.5" role="group"
+            <span className="flex w-[96px] items-center justify-center gap-1.5" role="group"
                   aria-label={`Place of ${w.label} in its row`}>
               {PLACES.map(o => (
                 <Btn key={o.label} variant="ghost" size="lg" icon active={(align ?? null) === o.align}
