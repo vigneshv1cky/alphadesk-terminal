@@ -63,7 +63,10 @@ const PLACES: { label: string; align: TileAlign | null; Icon: typeof AlignLeft }
   { label: "Right", align: "right", Icon: AlignRight },
 ]
 
-export function BoardEditor({ layout, title, defaultOpen = false, open: openProp, onOpenChange, doneLabel = "Done", showReset = true }: {
+export function BoardEditor({
+  layout, title, defaultOpen = false, open: openProp, onOpenChange,
+  doneLabel = "Done", showReset, onSetDefault, onReset, resetLabel = "Reset to default",
+}: {
   layout: LayoutApi<PanelDef>
   /** The tab's name, as a heading at the top of the board — the reader's
    * bearing on a page whose tiles look alike from view to view
@@ -84,6 +87,19 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
    * which the board reads as the page's default — every registered widget.
    * There is no arrangement to restore, so the control is not offered. */
   showReset?: boolean
+  /** Left undefined, the reset shows only once the board has been changed,
+   * which is the board's own rule. A view passes an explicit value: it has a
+   * default only once its reader has named one. */
+  /** What Reset does, when the board's own "clear the layout" is wrong for
+   * it. A view passes its own, returning to the named arrangement. */
+  onReset?: () => void
+  /** Offered where a board can NAME its current arrangement as the one to
+   * return to — a custom view, whose working copy is written continuously and
+   * so can never be a default by itself (2026-09-29). */
+  onSetDefault?: () => void
+  /** What the reset button says, since a view returns to the arrangement its
+   * reader named rather than to the app's default board. */
+  resetLabel?: string
 }) {
   const [openState, setOpenState] = useState(defaultOpen)
   const [libraryOpen, setLibraryOpen] = useState(false)
@@ -115,7 +131,13 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
       <div className="flex min-h-[40px] flex-wrap items-center gap-2 border-b border-row-rule px-2.5 py-2.5">
         <span className="text-label font-medium uppercase tracking-caps">Board layout</span>
         <span className="min-w-0 flex-1" />
-        {isCustom && showReset && <Btn variant="ghost" onClick={reset}>Reset to default</Btn>}
+        {(showReset ?? isCustom) && <Btn variant="ghost" onClick={onReset ?? reset}>{resetLabel}</Btn>}
+        {onSetDefault && (
+          <Btn variant="ghost" onClick={onSetDefault}
+               title="Remember this arrangement as the one Reset returns to">
+            Set as default
+          </Btn>
+        )}
         <Btn onClick={() => setLibraryOpen(true)}>Widgets</Btn>
         <Btn onClick={() => setOpen(false)}>{doneLabel}</Btn>
       </div>

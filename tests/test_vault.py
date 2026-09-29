@@ -153,12 +153,34 @@ class TestUserViews:
         assert r.status_code == 200
         views = client.get("/api/views").json()["views"]
         assert views == [{"view_id": "abcd1234", "name": "Energy Desk",
-                          "layout": "market-chart:8,watchlist:4", "position": 0}]
+                          "layout": "market-chart:8,watchlist:4",
+                          # Empty until the reader names one (2026-09-29).
+                          "baseline": "", "position": 0}]
         client.put("/api/views/abcd1234", json={"name": "Renamed", "layout": "market-chart:12"})
         assert client.get("/api/views").json()["views"][0]["name"] == "Renamed"
         assert client.delete("/api/views/abcd1234").status_code == 200
         assert client.get("/api/views").json()["views"] == []
         assert client.delete("/api/views/abcd1234").status_code == 404
+
+    def test_a_named_default_outlives_every_ordinary_save(self, client, store, monkeypatch):
+        """A view's `layout` is the WORKING copy and is written on every
+        arrangement, which is why the board's reset had to leave views: there
+        was nothing to return to. The baseline is the arrangement the reader
+        NAMED, so it must move only when they say so — a save that omits it
+        must not quietly adopt whatever the board looks like now."""
+        _sign_in(client, store, monkeypatch)
+        client.put("/api/views/abcd1234", json={"name": "Desk", "layout": "a:6,b:6"})
+        assert client.get("/api/views").json()["views"][0]["baseline"] == ""
+
+        client.put("/api/views/abcd1234",
+                   json={"name": "Desk", "layout": "a:6,b:6", "baseline": "a:6,b:6"})
+        assert client.get("/api/views").json()["views"][0]["baseline"] == "a:6,b:6"
+
+        for tiles in ("b:6,a:6", "b:12", "a:4,b:8"):
+            client.put("/api/views/abcd1234", json={"name": "Desk", "layout": tiles})
+        row = client.get("/api/views").json()["views"][0]
+        assert row["layout"] == "a:4,b:8"
+        assert row["baseline"] == "a:6,b:6", "an ordinary save must not move the default"
 
     def test_garbage_is_rejected(self, client, store, monkeypatch):
         _sign_in(client, store, monkeypatch)

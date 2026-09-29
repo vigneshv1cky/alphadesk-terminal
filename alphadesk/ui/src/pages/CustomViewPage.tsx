@@ -96,6 +96,11 @@ function Board({ viewId, viewName, mine, editorOpen, onEditorOpenChange, library
   onSaveState: (s: string) => void
 }) {
   const layout = usePageLayout(`view:${viewId}`, widgets(), { addNew: false })
+  // A VIEW'S DEFAULT IS ONE THE READER NAMED (2026-09-29). Its `layout` is
+  // written on every arrangement, so it can never be returned to; this is set
+  // only by the Set as default gesture, and until there is one the board
+  // offers no reset at all rather than a reset that means "show everything".
+  const baseline = mine.baselineOf(viewId)
 
   // Save the composition back to the account, debounced while editing and
   // FLUSHED on unmount and on the editor's Save — a navigation inside the
@@ -154,10 +159,12 @@ function Board({ viewId, viewName, mine, editorOpen, onEditorOpenChange, library
       <div className="px-4 pt-2">
         <BoardEditor
           layout={layout}
-          // A VIEW HAS NO DEFAULT TO RETURN TO: its tiles are its definition,
-          // and clearing the layout means "no layout", which the board reads
-          // as the page's default — every registered widget.
-          showReset={false}
+          showReset={!!baseline}
+          resetLabel="Reset to my default"
+          // NOT the shared reset, which clears the layout — for a view that
+          // means "no layout", and the board renders every registered widget.
+          onReset={baseline ? () => layout.restore(baseline) : undefined}
+          onSetDefault={() => mine.saveBaseline(viewId, serialized)}
           open={editorOpen}
           onOpenChange={v => { if (!v) flushRef.current(); onEditorOpenChange(v) }}
           doneLabel="Save"
