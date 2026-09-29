@@ -74,3 +74,30 @@ def test_the_larger_taxonomy_wins_and_is_named(monkeypatch):
     got = facts({"facts": {"us-gaap": {"a": 1}, "ifrs-full": {"c": 3, "d": 4, "e": 5}}})
     assert got["taxonomy"] == "ifrs-full" and set(got["tags"]) == {"c", "d", "e"}
     ef._cache.clear()
+
+
+def test_a_full_year_filed_on_a_6_K_is_read():
+    """NOVO NORDISK FILES FULL YEARS ON A 6-K (2026-09-29) — it announces
+    annual results there before the 20-F lands, twelve of them at 364 and 365
+    days. The form was excluded on the claim that a 6-K carries only
+    half-years, which is true of Inventiva, TSMC and WEBUY and false of Novo;
+    excluding it discarded four years of its history.
+
+    Measured with the form in and out, across seven filers: Novo went from 7
+    annual points to 11 and NOT ONE existing value changed anywhere.
+    """
+    assert "6-K" in ef._FORMS and "6-K/A" in ef._FORMS
+    rows = [{"form": "6-K", "start": "2018-01-01", "end": "2018-12-31", "val": 111_780_000_000.0},
+            {"form": "6-K", "start": "2018-07-01", "end": "2018-12-31", "val": 56_000_000_000.0}]
+    _q, y = ef.series_from_rows(rows)
+    # The full year is taken; the half-year is neither a quarter nor a year and
+    # lands in no window, which is what made the original claim look true.
+    assert y == {"2018-12-31": 111_780_000_000.0}
+
+
+def test_a_half_year_is_not_mistaken_for_either_window():
+    """180 days is not a quarter (80-100) and not a year (350-380). A 6-K that
+    carries only half-years adds nothing rather than adding something wrong."""
+    rows = [{"form": "6-K", "start": "2024-01-01", "end": "2024-06-30", "val": 9_198_000.0}]
+    q, y = ef.series_from_rows(rows)
+    assert q == {} and y == {}
