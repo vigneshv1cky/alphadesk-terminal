@@ -152,10 +152,10 @@ function Board({ viewId, viewName, mine, editorOpen, onEditorOpenChange, library
         />
       </div>
       <div className="collage !pt-0">
-        {layout.items.map(({ def, span, align }) => {
+        {layout.items.map(({ def, span, align, height }) => {
           const W = def.component
           return (
-            <TileSlot key={def.id} span={span} align={align}>
+            <TileSlot key={def.id} span={span} align={align} height={height}>
               <W />
             </TileSlot>
           )

@@ -18,19 +18,54 @@
  * grid's own flow and is not written; `@c` centres it, `@r` puts it right. */
 export type TileAlign = "center" | "right"
 
-export type LayoutEntry = { id: string; span: number | null; align?: TileAlign | null }
+/** HOW TALL A TILE MAY GROW (2026-09-29, the owner: "include height
+ * customization too in customize board").
+ *
+ * This REVERSES a stated call — "heights stay uniform on purpose; the board
+ * reads as composed because its bottom edge is straight" — taken by the owner
+ * with the trade in view: a chart and a news list side by side want different
+ * heights, and a straight bottom edge was buying tidiness at the cost of the
+ * arrangement the reader actually wanted. A tile with no step keeps the old
+ * behaviour exactly, so a board nobody has edited does not move.
+ *
+ * Steps rather than pixels, like the span: a free number invites a board of
+ * 41 different heights, and the point is a composed board, not a ransom note.
+ * `fill` is the viewport envelope the tall tiles already use. */
+export const TILE_HEIGHT_STEPS = [1, 2, 3, 4] as const
+export type TileHeight = (typeof TILE_HEIGHT_STEPS)[number]
+
+export type LayoutEntry = {
+  id: string
+  span: number | null
+  align?: TileAlign | null
+  height?: TileHeight | null
+}
 
 export type LayoutPanel = { id: string; optIn?: boolean }
 
-/** `id`, `id:span`, and either with `@c` or `@r` for its place in the row;
- * a span is 3–12 grid columns. */
+/** `id`, `id:span`, either with `@c` or `@r` for its place in the row, and
+ * `~1`–`~4` for its height; a span is 3–12 grid columns.
+ *
+ * The height is read LAST so it may follow either form — `id~3`, `id:6~3`
+ * and `id:6@c~3` all parse — and an unreadable step is dropped rather than
+ * clamped, because a step this build does not know is a link from a
+ * deployment with more of them, and the tile's own default is a better answer
+ * than the nearest one we happen to have. */
 function parseEntry(s: string): LayoutEntry | null {
-  const [body, at] = s.trim().split("@")
+  const [rest, rawHeight] = s.trim().split("~")
+  const [body, at] = rest.split("@")
   const [id, rawSpan] = body.split(":")
   if (!id) return null
   const n = rawSpan ? parseInt(rawSpan, 10) : NaN
+  const h = rawHeight ? parseInt(rawHeight, 10) : NaN
   const align: TileAlign | null = at === "c" ? "center" : at === "r" ? "right" : null
-  return { id, span: Number.isFinite(n) ? Math.max(3, Math.min(12, n)) : null, ...(align ? { align } : {}) }
+  const height = (TILE_HEIGHT_STEPS as readonly number[]).includes(h) ? (h as TileHeight) : null
+  return {
+    id,
+    span: Number.isFinite(n) ? Math.max(3, Math.min(12, n)) : null,
+    ...(align ? { align } : {}),
+    ...(height ? { height } : {}),
+  }
 }
 
 /** The visible entries a layout string names (known panels only, first
@@ -86,7 +121,9 @@ export function serializeLayout(
   visible: LayoutEntry[], all: LayoutPanel[], recordHidden: boolean, keep: Set<string> = new Set(),
 ): string {
   const parts = visible.map(e =>
-    `${e.span ? `${e.id}:${e.span}` : e.id}${e.align === "center" ? "@c" : e.align === "right" ? "@r" : ""}`)
+    `${e.span ? `${e.id}:${e.span}` : e.id}`
+    + `${e.align === "center" ? "@c" : e.align === "right" ? "@r" : ""}`
+    + `${e.height ? `~${e.height}` : ""}`)
   if (recordHidden) {
     const shown = new Set(visible.map(e => e.id))
     const known = new Set(all.map(p => p.id))
