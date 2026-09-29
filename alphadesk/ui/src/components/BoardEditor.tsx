@@ -1,7 +1,7 @@
 import { AlignCenter, AlignLeft, AlignRight } from "lucide-react"
 import type { TileAlign, TileHeight } from "@/lib/layoutEntries"
 import { useState } from "react"
-import { Btn, TILE_HEIGHT_PX } from "@/components/terminal"
+import { Btn, TILE_HEIGHT_SHARE } from "@/components/terminal"
 import { WidgetLibraryDialog } from "@/components/WidgetLibrary"
 import type { LayoutApi, PanelDef } from "@/lib/boardLayout"
 
@@ -52,7 +52,7 @@ const HEIGHTS: { label: string; height: TileHeight | null; why: string }[] = [
   ...([1, 2, 3] as const).map((h, i) => ({
     label: ["S", "M", "L"][i],
     height: h as TileHeight,
-    why: `${["short", "medium", "tall"][i]} — ${TILE_HEIGHT_PX[h]}px tall`,
+    why: `${["short", "medium", "tall"][i]} — about ${Math.round(TILE_HEIGHT_SHARE[h] * 100)}% of the screen`,
   })),
 ]
 

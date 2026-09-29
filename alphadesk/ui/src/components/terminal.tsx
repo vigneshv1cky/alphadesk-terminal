@@ -166,32 +166,29 @@ export const AlignOverride = React.createContext<"center" | "right" | null>(null
  * tile's own default, which is what every board saved before this holds. */
 export const HeightOverride = React.createContext<number | null>(null)
 
-/** The reader's height steps, in pixels of BODY. Step 4 is the viewport
- * envelope rather than a number, so a filled tile tracks the window.
+/** The reader's height steps, as a SHARE OF THE ROOM A TILE HAS — not pixels
+ * (2026-09-29, the owner: "s, m, l are in pixels, not good for different
+ * screens").
  *
- * The middle step is the standard tile body, so "medium" is what an unedited
- * board already shows and choosing it changes nothing — a reader who opens
- * the control and picks the value it is already at should see no movement. */
-export const TILE_HEIGHT_PX: Record<number, number> = {
-  // AN EVEN LADDER, 210px A RUNG (2026-09-29). S was 260 and M the old 402
-  // standard, which left the two small steps bunched at the bottom with one
-  // usable size above them.
-  //
-  // RE-TUNED when the board's bottom reserve went from 120px to the 16px
-  // gutter: L had been set just under the room a tile had on a 994px window,
-  // and that room grew by 104px, so the tallest STEP was suddenly short of
-  // what "auto" gives on the same screen — a named size should not be beaten
-  // by the absence of one.
-  //
-  // THEN RAISED PAST IT (the owner: "increase the height of L a bit then").
-  // L is now LARGER than a 994px window can show, and that is allowed: a
-  // named step is a fixed size, so picking one taller than the window means
-  // scrolling to its foot, and on the bigger monitor this is read on it fits.
-  // "auto" remains the step for "as much as this screen has".
-  1: 420,
-  2: 660,
-  3: 900,
+ * They were absolute: 420 / 660 / 900. On a 900px laptop L was the entire
+ * window and S a third of it; on a 1440px monitor L was well under half. The
+ * same named size meant a different thing on every screen, which is the one
+ * thing a named size must not do — and it drifted, because each time the
+ * chrome around a tile changed the numbers had to be re-tuned by hand.
+ *
+ * A step is a fraction of what "auto" would give, so the ladder is the same
+ * shape everywhere: about half the screen, two thirds, most of it. `auto`
+ * remains all of it. Nothing to re-tune when the chrome moves — the room is
+ * measured, and the fractions ride on top.
+ */
+export const TILE_HEIGHT_SHARE: Record<number, number> = {
+  1: 0.45,
+  2: 0.68,
+  3: 0.9,
 }
+/** No screen is so short that a tile becomes unreadable: below this a step
+ * gives what it can rather than a sliver. */
+const MIN_STEP_PX = 220
 
 /** A board slot: the reader's width, place and height for the tile inside. */
 export function TileSlot({ span, align, height, children }: {
@@ -311,7 +308,6 @@ export function Widget({
   // takes no cap at all (the chart, which must show whole) is left alone —
   // capping it is what put its toolbar behind an inner scrollbar.
   const overrideHeight = React.useContext(HeightOverride)
-  const step = overrideHeight ? TILE_HEIGHT_PX[overrideHeight] : undefined
   const cols = overrideSpan ?? span
   // THE READER'S STEP APPLIES TO ANY TILE THAT HAS NOT OPTED OUT, including
   // one that declares no cap of its own. The first version only overrode an
@@ -358,9 +354,10 @@ export function Widget({
   // an exact height is what puts the children in an absolutely-positioned
   // scroller, which is the element the windowed news list listens to (#81).
   // Switching that tile to a number would take its scroller away.
+  // MEASURED WHETHER OR NOT A STEP IS SET, because a step is now a SHARE of
+  // this same room rather than a pixel count.
   const wantsFill = fitViewport && !ownHeight
-    && (step === undefined || typeof scroll === "string")
-    && (typeof scroll === "number" || scroll === "fit")
+    && (typeof scroll === "number" || scroll === "fit" || overrideHeight !== null)
   React.useLayoutEffect(() => {
     if (!wantsFill) { setFillPx(null); return }
     const measure = () => {
@@ -419,12 +416,17 @@ export function Widget({
   // chrome. A tile with less chrome gets a taller body and the same outside
   // height, which is the point.
   const chrome = (title || actions ? HEADER_BAND : 0) + (toolbar ? TOOLBAR_H : 0)
-  const chosen = step !== undefined && !ownHeight
+  // The step's share of the room, as a BODY height. The room is the whole
+  // tile's worth, so the chrome comes off after the fraction.
+  const step = overrideHeight && !ownHeight && fillPx !== null
+    ? Math.max(MIN_STEP_PX, Math.round(fillPx + chrome) * TILE_HEIGHT_SHARE[overrideHeight]) - chrome
+    : undefined
+  const chosen = step !== undefined
   // A TILE THAT ASKED FOR AN EXACT HEIGHT KEEPS ONE, step or no step: the
   // scroller its children live in depends on the height being a string, and a
   // reader picking S must not quietly remove it.
   const exact = typeof scroll === "string"
-  const picked = chosen ? Math.max(80, step - chrome) : null
+  const picked = chosen ? Math.max(80, Math.round(step)) : null
   const bodyHeight = exact
     ? (picked !== null ? `${picked}px`
        : scroll === "fit" ? (fillPx !== null ? `${fillPx}px` : BODY_VIEWPORT_CAP)

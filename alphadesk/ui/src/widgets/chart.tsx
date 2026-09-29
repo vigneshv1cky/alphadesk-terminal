@@ -6,7 +6,7 @@ import { ChartSurface } from "@/components/chart/ChartSurface"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { resetChartPrefs } from "@/lib/chartPrefs"
 import { ChartRanges, ChartToolbar } from "@/components/ChartToolbar"
-import { Empty, HEADER_BAND, HeightOverride, TILE_HEIGHT_PX, Widget } from "@/components/terminal"
+import { Empty, HEADER_BAND, HeightOverride, TILE_HEIGHT_SHARE, Widget } from "@/components/terminal"
 import { useChartEngine } from "@/lib/chartEngine"
 import { useChartCapabilities } from "@/lib/queries"
 import { registerWidget } from "@/widgets/registry"
@@ -87,10 +87,10 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
   // inside it. That settles in one pass — once the canvas is the right size
   // the chrome stops changing — and the 2px guard keeps a sub-pixel
   // disagreement from oscillating.
+  // A STEP IS A SHARE OF THE ROOM, not a pixel count (2026-09-29) — so the
+  // chart works the same way as every other tile, and the target is computed
+  // inside the measurement below, where the room is known.
   const step = React.useContext(HeightOverride)
-  // The step is the whole TILE, and the only chrome outside this body is the
-  // tile header.
-  const target = step ? TILE_HEIGHT_PX[step] - HEADER_BAND : null
   const [h, setH] = useState(COLLAPSED)
   const now = useRef(COLLAPSED)
   now.current = h
@@ -100,12 +100,13 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
       if (!el) return
       const body = el.parentElement
       if (!body) return
-      let box = target
-      if (box === null) {
-        const board = el.closest(".collage")
-        const reserved = board ? parseFloat(getComputedStyle(board).paddingBottom) || 0 : 0
-        box = Math.round(window.innerHeight - el.getBoundingClientRect().top - reserved)
-      }
+      const board = el.closest(".collage")
+      const reserved = board ? parseFloat(getComputedStyle(board).paddingBottom) || 0 : 0
+      const room = Math.round(window.innerHeight - el.getBoundingClientRect().top - reserved)
+      // The share is of the whole TILE, so the header comes off after it.
+      const box = step
+        ? Math.max(180, Math.round((room + HEADER_BAND) * TILE_HEIGHT_SHARE[step]) - HEADER_BAND)
+        : room
       // CORRECT BY THE OVERSHOOT, don't compute the chrome. Subtracting the
       // price pane from the body does NOT give the chrome — the plot block
       // also holds the price readout and the volume pane, so the sum came out
@@ -127,7 +128,7 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
     if (body && ro) ro.observe(body)
     window.addEventListener("resize", measure)
     return () => { ro?.disconnect(); window.removeEventListener("resize", measure) }
-  }, [ref, target])
+  }, [ref, step])
   return h
 }
 
