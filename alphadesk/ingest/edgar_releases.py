@@ -175,6 +175,18 @@ _SCHEDULING = re.compile(
 # still refers to the document as fetched.
 _COVER = re.compile(r"report\s+(of|on)\s+(foreign private issuer|form\s+6-?k)\b", re.I)
 
+# WHICH RULE DECIDED A FILING, so changing the rule re-decides what it got
+# wrong (2026-09-29). Every verdict is stored to keep the sweep from opening
+# the same exhibit twice, which also means a verdict OUTLIVES the rule that
+# produced it: the cover-page fault above was fixed and VinFast's row stayed
+# exactly where it was, because the filing had already been "checked". Bump
+# this whenever is_results_release changes and the stored verdicts from older
+# rules are read again — the first sweep after a bump costs one fetch per
+# candidate, once. Same device as company.py's SECTION_READER_VERSION.
+# 1: the SEC cover page no longer supplies the announcing verb, and a
+#    scheduling notice ahead of that verb is not a report.
+RESULTS_READER_VERSION = 1
+
 
 def is_results_release(text: str) -> bool:
     """Whether a 6-K exhibit is the company announcing results for a period,
@@ -282,19 +294,22 @@ def refresh_foreign_day(day: str) -> int:
     # The day's sweep runs every quarter of an hour; a filing already read is
     # not read again, so the cost is one search plus the exhibits that are
     # new since the last pass.
-    known = {(r["symbol"], r["accession"]) for r in store.releases_between(day, day)}
     # SKIP FIRST, CAP SECOND (2026-09-28). The cap used to slice the candidate
-    # list BEFORE the known filter, so every pass examined the same head and a
-    # filing past the cap was not delayed but PERMANENTLY invisible — ZJK
+    # list BEFORE the already-decided filter, so every pass examined the same
+    # head and a filing past the cap was not delayed but PERMANENTLY
+    # invisible — ZJK
     # Industrial's results 6-K sat in the search results all along, kept by
     # foreign_candidates, and was never once read. Same shape as the movers
     # fault in #91, where a cap on a sorted list meant nothing past the letter
     # T was ever asked about. Skipping what is already done first means each
     # pass makes progress through the backlog instead of re-doing its head.
-    todo = [r for r in found.values()
-            if r.get("document") and r.get("file_date")
-            and (r["symbol"], r["accession"]) not in known]
-    seen = store.exhibit_checked(sorted({r["accession"] for r in todo}), "6-K")
+    todo = [r for r in found.values() if r.get("document") and r.get("file_date")]
+    # THE ONLY SKIP IS A VERDICT THIS READER GAVE. It used to be two — a
+    # results row already stored for the day, and an exhibit already opened —
+    # and the first of those made a wrong verdict permanent: the row it had
+    # wrongly written was itself the reason never to look again.
+    seen = store.exhibit_checked(sorted({r["accession"] for r in todo}), "6-K",
+                                 reader=RESULTS_READER_VERSION)
     todo = [r for r in todo if r["accession"] not in seen]
     stamped = 0
     for row in todo[:_SIX_K_MAX_READS]:
@@ -317,9 +332,19 @@ def refresh_foreign_day(day: str) -> int:
         if not hit:
             hit = _results_in_other_exhibits(row["cik"], row["accession"], row["document"])
         # Remember the verdict either way, so a 6-K that is not a results
-        # release is never fetched a second time.
-        store.mark_exhibit_checked(row["accession"], hit, "6-K")
+        # release is never fetched a second time — under THIS reader, so a
+        # later rule may overturn it.
+        store.mark_exhibit_checked(row["accession"], hit, "6-K",
+                                   reader=RESULTS_READER_VERSION)
         if not hit:
+            # A RE-READ THAT SAYS NO MUST TAKE BACK WHAT THE OLD RULE WROTE.
+            # Re-deciding a filing is worth nothing while the results row it
+            # created stands: the calendar joins to that row, not to this
+            # verdict, so the corrected judgment would never reach a reader.
+            if store.delete_release(row["accession"]):
+                log.info("retracted results row for %s %s: not a results release "
+                         "under reader %d", row["symbol"], row["accession"],
+                         RESULTS_READER_VERSION)
             continue
         released = dateline_day(text) or row["file_date"][:10]
         store.upsert_release(row["symbol"], row["accession"], row["cik"], row["file_date"],
