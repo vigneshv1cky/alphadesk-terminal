@@ -214,7 +214,7 @@ export function usePageLayout<T extends PanelDef>(
   { addNew = true }: { addNew?: boolean } = {},
 ): LayoutApi<T> {
   const [params, setParams] = useSearchParams()
-  const raw = params.get("tiles") || ""
+  const named = params.get("tiles") || ""
 
   // The route pages are LAZY, so during a navigation the OLD page stays
   // mounted while the new chunk loads — and its restore effect would see the
@@ -225,6 +225,36 @@ export function usePageLayout<T extends PanelDef>(
   const { pathname } = useLocation()
   const home = useRef(pathname)
   const athome = pathname === home.current
+
+  /** THE SAVED BOARD IS READ BEFORE THE FIRST PAINT, NOT RESTORED AFTER IT
+   * (2026-09-29, the owner: "fix the default board flash on tab change").
+   *
+   * A bare navigation carries no `?tiles=`, and the stored layout reached the
+   * page only through the effect below — which runs AFTER the first render.
+   * So every tab change painted the page's DEFAULT board first, then replaced
+   * it with the reader's: measured at ~230ms of the Markets default, ten
+   * tiles including three movers at 1,670px each, before the two-tile board
+   * the reader actually arranged appeared. It was not a slow board loading;
+   * it was the wrong board, rendered in full and thrown away.
+   *
+   * Reading it here makes the first render correct and leaves the effect with
+   * its real job, which is putting the layout in the URL so a link carries
+   * it. The URL still WINS wherever it names one: a shared link must not be
+   * overruled by whatever this browser last arranged.
+   *
+   * NOT gated on `athome`, deliberately, and that gate is about WRITING. An
+   * outgoing page is still on screen while the next chunk loads, and during
+   * that window the URL already belongs to the page being opened — so a page
+   * reading the URL alone had no layout either and flashed its own default on
+   * the way out. What it should render is what it was rendering, which is
+   * exactly what its own store holds.
+   *
+   * Re-read whenever the URL changes rather than on every render: a board
+   * polls, and a storage read per render is a needless one. Every write to
+   * the store goes through `commit`, which changes the URL in the same call,
+   * so there is no window where the two disagree. */
+  const stored = useMemo(() => readStored(pageKey) || "", [pageKey, named])
+  const raw = named || stored
 
   /** The custom layout the URL names, filtered to tiles that exist here,
    * with any panel added since it was saved. Empty array = no custom layout
@@ -306,15 +336,22 @@ export function usePageLayout<T extends PanelDef>(
 
   /** Mirror and restore, like the strip: a URL that names a layout is written
    * to storage; a bare navigation gets the stored one back. No seeding —
-   * absence IS the default board. */
+   * absence IS the default board.
+   *
+   * IT TURNS ON WHAT THE URL NAMES, never on the layout in hand. Since the
+   * first render reads the store directly (above), the layout in hand is
+   * almost never empty — so a test written against it would take the mirror
+   * branch every time and the URL would never be given the layout at all,
+   * quietly ending shareable links. The two are different questions: what to
+   * RENDER is the URL or the store, what to WRITE BACK depends on which of
+   * them spoke. */
   useEffect(() => {
     if (!athome) return
-    if (raw) {
+    if (named) {
       writeStored(pageKey, custom.length ? serial(custom) : null)
       return
     }
-    const stored = readStored(pageKey)
-    if (!stored?.length) return
+    if (!stored.length) return
     // FUNCTIONAL update, not a snapshot: the strip's seed effect writes the
     // URL on the same mount, and two writers each building from their own
     // stale copy lose whichever landed first — this restore once erased the
