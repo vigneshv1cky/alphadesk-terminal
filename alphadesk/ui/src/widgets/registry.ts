@@ -21,6 +21,12 @@ export type WidgetDef = {
   /** Library-only tile: offered in the widget library, absent from default
    * boards (see lib/boardLayout's PanelDef). */
   optIn?: boolean
+  /** The height step this tile takes on a board nobody has edited
+   * (2026-09-29). Unlike the width, which the component declares by rendering
+   * its own `<Widget span={n}>`, a height cannot be declared there: the step
+   * is the reader's and arrives by context, so a tile that wants a different
+   * DEFAULT has to say so here. A reader's own choice always wins. */
+  height?: 1 | 2 | 3
   /** Grid width is NOT declared here: the component renders its own
    * `<Widget span={n}>`, so duplicating it in the registry would be a second
    * source of truth that drifts. The layout editor composes and orders tiles;

@@ -244,7 +244,8 @@ export function usePageLayout<T extends PanelDef>(
         const def = all.find(w => w.id === e.id)
         return def ? [{ def, span: e.span, align: e.align ?? null, height: e.height ?? null }] : []
       })
-      : all.filter(w => !w.optIn).map(w => ({ def: w, span: null, align: null, height: null }))),
+      : all.filter(w => !w.optIn).map(w => ({ def: w, span: null, align: null,
+                                              height: (w as { height?: TileHeight }).height ?? null }))),
     [isCustom, custom, all],
   )
 

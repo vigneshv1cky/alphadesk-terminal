@@ -2,7 +2,6 @@ import * as React from "react"
 import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { useModalFocus, usePopoverFocus } from "@/lib/focus"
-import { TILE_BODY_HEIGHT } from "@/widgets/tile"
 
 /** The terminal primitives — hand-rolled, dependency-free replacements for
  * the shadcn/ui set that used to live in components/ui/.
@@ -151,6 +150,11 @@ const HEADER_H = 38
 // Must match the widget-toolbar band below — this is the height the tile's
 // minimum reserves for it.
 const TOOLBAR_H = 40
+/** What the header BAND actually measures — the `h-[40px]` on widget-header.
+ * Deliberately not HEADER_H above, which is 38 and is the reserve the
+ * section's MINIMUM accounts for; two numbers for two jobs, and using the
+ * reserve here would leave every stepped tile 2px tall. */
+export const HEADER_BAND = 40
 
 /** The reader's width for a tile, provided by the board's layout around a
  * tile component (lib/boardLayout). Null everywhere else, so a Widget off
@@ -169,9 +173,20 @@ export const HeightOverride = React.createContext<number | null>(null)
  * board already shows and choosing it changes nothing — a reader who opens
  * the control and picks the value it is already at should see no movement. */
 export const TILE_HEIGHT_PX: Record<number, number> = {
-  1: 260,
-  2: TILE_BODY_HEIGHT,
-  3: 620,
+  // AN EVEN LADDER, 180px A RUNG (2026-09-29, the owner: "make the small and
+  // medium a bit more larger too"). S was 260 and M the old 402 standard,
+  // which left a 318px jump to L once that grew — the two small steps sat
+  // bunched at the bottom and the reader had one usable size. 360 / 540 / 720
+  // climbs evenly and L is exactly twice S, so the names mean something
+  // relative to each other.
+  1: 360,
+  2: 540,
+  // L IS THE STEP FOR A TILE YOU MEAN TO READ, so it sits just under the room
+  // a tile has on a common window: at 994px of viewport a board gives its top
+  // row about 730px before the foot, and 720 clears that without scrolling.
+  // It was 620 and read as barely taller than M (2026-09-29, the owner: "I
+  // think large should be a bit more large").
+  3: 720,
 }
 
 /** A board slot: the reader's width, place and height for the tile inside. */
@@ -356,8 +371,20 @@ export function Widget({
     return () => window.removeEventListener("resize", measure)
   }, [wantsFill])
 
+  // A STEP IS A TILE HEIGHT, NOT A BODY HEIGHT (2026-09-29, the owner: "both
+  // tiles are same height option, but looks different"). It capped the body,
+  // and tiles differ in how much chrome sits OUTSIDE the body — measured at
+  // L: the chart 683px with a header alone, the movers 702px with a header
+  // and a toolbar, and a tile with neither would have been 620. Three
+  // different tiles for one named size.
+  //
+  // What a reader means by L is "make this tile that tall", so the step is
+  // the whole tile now and the body gets what is left after this tile's own
+  // chrome. A tile with less chrome gets a taller body and the same outside
+  // height, which is the point.
+  const chrome = (title || actions ? HEADER_BAND : 0) + (toolbar ? TOOLBAR_H : 0)
   const chosen = step !== undefined && !ownHeight
-  const bodyHeight = chosen ? step : scroll
+  const bodyHeight = chosen ? Math.max(80, step - chrome) : scroll
   // A CHOSEN HEIGHT IS EXACT. Left on, the viewport floor would quietly
   // overrule every step below it and the two short ones would do nothing.
   const fits = chosen ? false : fitViewport

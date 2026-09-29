@@ -6,7 +6,7 @@ import { ChartSurface } from "@/components/chart/ChartSurface"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { resetChartPrefs } from "@/lib/chartPrefs"
 import { ChartRanges, ChartToolbar } from "@/components/ChartToolbar"
-import { Empty, HeightOverride, TILE_HEIGHT_PX, Widget } from "@/components/terminal"
+import { Empty, HEADER_BAND, HeightOverride, TILE_HEIGHT_PX, Widget } from "@/components/terminal"
 import { useChartEngine } from "@/lib/chartEngine"
 import { useChartCapabilities } from "@/lib/queries"
 import { registerWidget } from "@/widgets/registry"
@@ -71,52 +71,76 @@ const COLLAPSED = TILE_BODY_HEIGHT - CHART_CHROME
  */
 
 function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>): number {
-  // THE READER'S STEP WINS OVER THE MEASUREMENT (2026-09-29). The board
-  // editor offers a height for every tile, and a chart that ignored it would
-  // show the step as active while rendering something else — a control
-  // displaying a setting it does not obey, which is the fault this codebase
-  // keeps finding. The tile still takes no body CAP: a cap put its toolbar
-  // behind an inner scrollbar, so the step sizes the CANVAS instead, which is
-  // what makes the tile as tall as the step asked for.
+  // THE CANVAS IS WHAT IS LEFT OF THE TILE AFTER ITS OWN CHROME, and the
+  // chrome is MEASURED rather than declared (2026-09-29, the owner: "both
+  // tiles are same height option, but looks different").
   //
-  // "fill" and no step both measure, because filling the room available IS
-  // the chart's own default.
-  // ONE HEIGHT STANDARD (2026-09-29, the owner: "lets have one height
-  // standard", after seeing a chart ladder and a tile ladder side by side).
-  // A chart had its own numbers for a real reason — it spends 114px of any
-  // body on toolbar, readout and range row before a candle is drawn, so the
-  // same step buys it less — but two ladders meant S was not S, and a step
-  // that means different things on different tiles is worse than a step that
-  // is honestly small. The cost is stated rather than hidden: at S a chart
-  // has 146px of plot, which is a sparkline. M is the smallest step worth
-  // giving a chart.
+  // CHART_CHROME said 42 + 42 + 25. The browser says 45 + 45 + 45: the
+  // toolbar and the range row both wrap at half width, and the price readout
+  // is taller than the constant claims. That 21px of error was the whole
+  // difference between a chart and a movers tile set to the same step — the
+  // file's own note says to re-measure after touching any band, and nobody
+  // had. A constant cannot be right at every width anyway, because two of
+  // those bands wrap.
+  //
+  // So the chrome is read from the DOM: the body's height less the canvas
+  // inside it. That settles in one pass — once the canvas is the right size
+  // the chrome stops changing — and the 2px guard keeps a sub-pixel
+  // disagreement from oscillating.
   const step = React.useContext(HeightOverride)
-  const fixed = step ? TILE_HEIGHT_PX[step] : null
+  // The step is the whole TILE, and the only chrome outside this body is the
+  // tile header.
+  const target = step ? TILE_HEIGHT_PX[step] - HEADER_BAND : null
   const [h, setH] = useState(COLLAPSED)
+  const now = useRef(COLLAPSED)
+  now.current = h
   useLayoutEffect(() => {
     const measure = () => {
       const el = ref.current
       if (!el) return
-      const board = el.closest(".collage")
-      const reserved = board
-        ? parseFloat(getComputedStyle(board).paddingBottom) || 0
-        : 0
-      const room = window.innerHeight - el.getBoundingClientRect().top - CHART_CHROME - reserved
-      setH(Math.max(COLLAPSED, Math.round(room)))
+      const body = el.parentElement
+      if (!body) return
+      let box = target
+      if (box === null) {
+        const board = el.closest(".collage")
+        const reserved = board ? parseFloat(getComputedStyle(board).paddingBottom) || 0 : 0
+        box = Math.round(window.innerHeight - el.getBoundingClientRect().top - reserved)
+      }
+      // CORRECT BY THE OVERSHOOT, don't compute the chrome. Subtracting the
+      // price pane from the body does NOT give the chrome — the plot block
+      // also holds the price readout and the volume pane, so the sum came out
+      // 45px light at every step and every tile was one wrapped band too
+      // tall. The difference between the body and the height it should be is
+      // the error whatever causes it, so the canvas absorbs exactly that.
+      // Settles in one pass and stops when the error is under 2px.
+      const delta = Math.round(body.getBoundingClientRect().height) - box
+      if (Math.abs(delta) > 2) setH(Math.max(80, now.current - delta))
     }
+    // WATCHED, NOT SAMPLED. One correction is not enough: the canvas changes,
+    // the bands around it reflow, and the new error is only visible on the
+    // layout after that. Two timed passes left every step but L exactly one
+    // band out. A ResizeObserver keeps correcting until the error is under
+    // 2px and then stops on its own.
     measure()
+    const body = ref.current?.parentElement
+    const ro = body ? new ResizeObserver(measure) : null
+    if (body && ro) ro.observe(body)
     window.addEventListener("resize", measure)
-    return () => window.removeEventListener("resize", measure)
-  }, [ref])
-  return typeof fixed === "number" ? Math.max(80, fixed - CHART_CHROME) : h
+    return () => { ro?.disconnect(); window.removeEventListener("resize", measure) }
+  }, [ref, target])
+  return h
 }
+
 
 /** THE chart tile — one implementation for every board surface. The Markets
  * board registers it; Analysis and Portfolio render it directly.
  *
  * The symbol comes from ?symbol= (the strip) unless a page passes its own —
  * Portfolio scopes it to the picked row. */
-export function MarketChart({ span = 12, symbol: symbolProp }: {
+// HALF THE ROW BY DEFAULT, beside the news tile on the Markets board
+// (2026-09-29). Analysis, Portfolio, Earnings and the theme page all pass
+// their own span, so this default is the registry's render alone.
+export function MarketChart({ span = 6, symbol: symbolProp }: {
   span?: number
   symbol?: string
 } = {}) {
@@ -204,4 +228,8 @@ export function MarketChart({ span = 12, symbol: symbolProp }: {
   )
 }
 
-registerWidget({ id: "market-chart", label: "Chart", order: 12, component: MarketChart })
+// TALL BY DEFAULT ON A BOARD NOBODY HAS EDITED (2026-09-29, the owner's own
+// arrangement): half the row beside the news list, at the L step. A chart
+// spends ~135px of any tile on toolbar, readout and range row, so the
+// smaller steps leave it little plot.
+registerWidget({ id: "market-chart", label: "Chart", order: 12, height: 3, component: MarketChart })
