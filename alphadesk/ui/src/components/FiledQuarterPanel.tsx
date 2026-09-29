@@ -14,20 +14,26 @@ import { Empty } from "@/components/terminal"
 import { useEarningsFiled } from "@/lib/queries"
 import { QueryFailure } from "@/components/KeyPrompt"
 
-function money(v?: number | null): string {
+/** A DOLLAR SIGN ONLY WHERE THE COMPANY FILED DOLLARS. Novo Nordisk reports
+ * in kroner, Alibaba in renminbi, VinFast in dong — and TSMC's revenue is
+ * NT$2.89 trillion, which behind a "$" would be off by a factor of thirty.
+ * Non-USD figures carry no symbol here; the column headings name the currency
+ * once, which is where a reader looks for units and keeps the table clean. */
+function money(v?: number | null, currency = "USD"): string {
   if (v == null) return "—"
   const a = Math.abs(v)
   const s = v < 0 ? "-" : ""
-  if (a >= 1e12) return `${s}$${(a / 1e12).toFixed(2)}T`
-  if (a >= 1e9) return `${s}$${(a / 1e9).toFixed(2)}B`
-  if (a >= 1e6) return `${s}$${(a / 1e6).toFixed(2)}M`
-  if (a >= 1e3) return `${s}$${(a / 1e3).toFixed(1)}K`
-  return `${s}$${a.toFixed(2)}`
+  const c = currency === "USD" ? "$" : ""
+  if (a >= 1e12) return `${s}${c}${(a / 1e12).toFixed(2)}T`
+  if (a >= 1e9) return `${s}${c}${(a / 1e9).toFixed(2)}B`
+  if (a >= 1e6) return `${s}${c}${(a / 1e6).toFixed(2)}M`
+  if (a >= 1e3) return `${s}${c}${(a / 1e3).toFixed(1)}K`
+  return `${s}${c}${a.toFixed(2)}`
 }
 
-function shown(v: number | null | undefined, unit: string): string {
+function shown(v: number | null | undefined, unit: string, currency = "USD"): string {
   if (v == null) return "—"
-  return unit === "percent" ? `${v.toFixed(2)}%` : money(v)
+  return unit === "percent" ? `${v.toFixed(2)}%` : money(v, currency)
 }
 
 /** The change, said the way the figure allows: a percent where the base is
@@ -94,8 +100,11 @@ export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; repo
                 misstatement one level down. */}
             <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">
               This {data.period === "annual" ? "year" : "quarter"}
+              {data.currency && data.currency !== "USD" ? ` (${data.currency})` : ""}
             </th>
-            <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">Year ago</th>
+            <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">
+              Year ago{data.currency && data.currency !== "USD" ? ` (${data.currency})` : ""}
+            </th>
             <th className="w-[86px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">Change</th>
           </tr>
         </thead>
@@ -109,8 +118,8 @@ export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; repo
                         title="Derived: arithmetic on two filed figures, not a figure the company filed">·calc</span>
                 )}
               </td>
-              <td className="tnum border-b border-row-rule px-2 py-1.5 text-right font-semibold">{shown(m.value, m.unit)}</td>
-              <td className="tnum border-b border-row-rule px-2 py-1.5 text-right text-muted-foreground">{shown(m.prior, m.unit)}</td>
+              <td className="tnum border-b border-row-rule px-2 py-1.5 text-right font-semibold">{shown(m.value, m.unit, data.currency)}</td>
+              <td className="tnum border-b border-row-rule px-2 py-1.5 text-right text-muted-foreground">{shown(m.prior, m.unit, data.currency)}</td>
               <td className={`tnum border-b border-row-rule px-2 py-1.5 text-right font-semibold ${
                 m.direction === "up" ? "text-gain" : m.direction === "down" ? "text-loss" : "text-muted-foreground"}`}
                   title={m.change_pct == null && m.change_pp == null && m.direction

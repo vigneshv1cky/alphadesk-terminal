@@ -122,7 +122,11 @@ def filed_quarter(symbol: str, on: str | None = None) -> dict:
     sym = (symbol or "").upper()
     out: dict = {"symbol": sym, "source": "sec-edgar", "period_end": None,
                  "prior_end": None, "metrics": [], "covers_report": None,
-                 "lag_days": None, "note": None, "period": "quarterly"}
+                 "lag_days": None, "note": None, "period": "quarterly",
+                 # THE CURRENCY TRAVELS WITH THE FIGURES OR THEY ARE A LIE.
+                 # Novo Nordisk files kroner, Alibaba renminbi, VinFast dong;
+                 # a panel that assumes dollars misstates every one of them.
+                 "currency": "USD"}
     if not sym:
         return out
     # A FOREIGN PRIVATE ISSUER FILES NO QUARTERS (2026-09-28, found on WEBUY
@@ -146,6 +150,7 @@ def filed_quarter(symbol: str, on: str | None = None) -> dict:
         return out
 
     out["period"] = grain
+    out["currency"] = data.get("currency") or "USD"
     series: dict[str, list[dict]] = data.get("series") or {}
     labels = {m["id"]: m.get("label") or m["id"] for m in (data.get("metrics") or [])}
     units = {m["id"]: m.get("unit") or "currency" for m in (data.get("metrics") or [])}
