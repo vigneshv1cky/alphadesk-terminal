@@ -229,18 +229,33 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
       {/* Sticky so the date stays readable while its rows pass under it —
           and opaque, because a transparent heading would let rows show
           through as they scroll beneath. */}
-      <h3 className="sticky top-0 z-10 border-b border-card-rule bg-card px-3 pb-2 pt-4 text-body font-extrabold uppercase tracking-caps">
-        {longDay(day.date)}
-        <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
-          {day.count} {day.count === 1 ? "call" : "calls"}
+      {/* THE BAND STAYS PUT AND THE TEXT TRAVELS. `top` alone pinned the date
+          vertically and left it free to slide away sideways: the list's one
+          scroller handles both axes, so scrolling right to reach Max down
+          carried the heading to -369px and left a blank band over the rows
+          (2026-09-29, measured at 375px).
+          Making the h3 itself `left-0` does NOT fix it, and the reason is
+          worth keeping: a sticky box can only slide WITHIN its containing
+          block, and this one already spans it — there is nowhere to go. The
+          band is full width by design, so the text inside it is what sticks.
+          AND THE BAND NEEDS THE TABLE'S WIDTH TO BE FULL WIDTH: a block child
+          takes the SCROLLPORT's width, not the scroll content's, so at 375px
+          the heading was a 375px strip sitting at x=0 — it left the screen
+          entirely when scrolled, and the text inside it had only 80px of room
+          to slide before hitting its own edge. Same floor as the table. */}
+      <h3 className="sticky top-0 z-10 min-w-[724px] border-b border-card-rule bg-card px-3 pb-2 pt-4 text-body font-extrabold uppercase tracking-caps">
+        <span className="sticky left-3 inline-block">
+          {longDay(day.date)}
+          <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
+            {day.count} {day.count === 1 ? "call" : "calls"}
+          </span>
         </span>
       </h3>
       {/* The one table. Most small reporters carry no consensus estimate, so
           Surprise is an em dash for most rows — they stay: they reported. */}
-      {/* A narrower tile scrolls sideways rather than squeezing Mkt cap,
-          Volatility and Liquidity out of view. The wider floor applies from lg,
-          where Max up and Max down join and the fixed columns total 684px —
-          below lg those two are hidden and the old floor still fits. */}
+      {/* ONE FLOOR, because every column is present at every width now: the
+          fixed columns total 684px and the table scrolls sideways inside the
+          panel below that rather than squeezing them into illegibility. */}
       {/* NO SCROLL CONTAINER OF ITS OWN. A per-day `overflow-x-auto` wrapper
           computes `overflow-y: auto` as well — CSS promotes the other axis
           the moment one is not `visible` — which made it the nearest scroll
@@ -248,7 +263,7 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
           never scrolls vertically. The list's single scroller handles both
           axes now, so sideways scrolling moves the whole week together
           instead of one day's table inside it. */}
-      <div><div className="min-w-[560px] lg:min-w-[724px]">
+      <div><div className="min-w-[724px]">
       <table className="w-full table-fixed border-separate border-spacing-0 text-body">
           <thead>
             <tr>
@@ -270,12 +285,16 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                     data-tip="How far the price has moved since the report. Measured from the last close before the results could be read — the prior session for a morning report, the report day\u2019s own close for one after the bell. Live while that session is still trading, and fixed at its close once it ends.">Move</th>
               )}
               {/* The range of the SAME window Move measures, off the same
-                  baseline. They hide below lg: nine columns crush the company
-                  name at a narrow viewport, and these are secondary to Move. */}
+                  baseline. THEY USED TO HIDE BELOW lg (2026-09-29, the reader:
+                  "in mobile i dont see Max up Max down columns") — which was
+                  over-cautious. A wide table scrolls sideways inside its own
+                  panel on a phone, by deliberate convention, so a narrow
+                  screen reaches these by scrolling rather than losing them.
+                  Hiding a column is for one that cannot be reached at all. */}
               {!estimates && <>
-              <th className="hidden w-[76px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell"
+              <th className="w-[76px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                   data-tip="The highest the price reached in the same window Move measures, against the same baseline. Not floored at zero: a stock that gapped down and never traded back above the baseline shows a negative best, which says the reaction only ran one way.">Max up</th>
-              <th className="hidden w-[84px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell"
+              <th className="w-[84px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
                   data-tip="The lowest the price reached in the same window Move measures, against the same baseline. Regular-session figures, so an after-hours reaction to a release after the bell is not in them until the next session opens.">Max down</th>
               </>}
               <th className="w-[80px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
@@ -453,7 +472,7 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                       -5% is a stock that never recovered, and painting it green
                       because it is the "up" column would say the opposite. */}
                   {!estimates && <>
-                  <td className={`tnum hidden border-b border-row-rule px-2 py-1.5 text-right lg:table-cell ${
+                  <td className={`tnum border-b border-row-rule px-2 py-1.5 text-right ${
                     r.move_high_pct == null ? "text-muted-foreground"
                       : r.move_high_pct >= 0 ? "text-gain" : "text-loss"}`}
                       title={r.move_high_pct == null
@@ -461,7 +480,7 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                         : "The highest the price traded in the same window as Move, from the same baseline"}>
                     {r.move_high_pct == null ? "—" : `${r.move_high_pct >= 0 ? "+" : ""}${r.move_high_pct.toFixed(2)}%`}
                   </td>
-                  <td className={`tnum hidden border-b border-row-rule px-2 py-1.5 text-right lg:table-cell ${
+                  <td className={`tnum border-b border-row-rule px-2 py-1.5 text-right ${
                     r.move_low_pct == null ? "text-muted-foreground"
                       : r.move_low_pct >= 0 ? "text-gain" : "text-loss"}`}
                       title={r.move_low_pct == null
