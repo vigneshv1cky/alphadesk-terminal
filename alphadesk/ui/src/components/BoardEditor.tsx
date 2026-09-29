@@ -1,7 +1,8 @@
 import { AlignCenter, AlignLeft, AlignRight } from "lucide-react"
 import type { TileAlign, TileHeight } from "@/lib/layoutEntries"
 import { useState } from "react"
-import { Btn, TILE_HEIGHT_SHARE } from "@/components/terminal"
+import { Btn, useScreenBand } from "@/components/terminal"
+import { STEP_LABEL, STEP_NAME, TILE_PX, TILE_STEPS, stepFor, type ScreenBand } from "@/lib/tileHeight"
 import { WidgetLibraryDialog } from "@/components/WidgetLibrary"
 import type { LayoutApi, PanelDef } from "@/lib/boardLayout"
 
@@ -42,23 +43,27 @@ const WIDTHS: { label: string; span: number | null }[] = [
  * one of a few named values looks the same wherever it appears. */
 const pickerCls = "h-[28px] w-[92px] border border-border bg-panel px-1.5 text-caption text-foreground"
 
-const HEIGHTS: { label: string; height: TileHeight | null; why: string }[] = [
-  // "FIT", NOT "AUTO" (2026-09-29, the owner). The word read as automatic or
-  // default — the option you leave alone — when it means SIZE TO THE CONTENT.
-  // Named for what it does, the four read as one scale of intent: Fit is "as
-  // big as this needs", the rest are "hold this much space whatever arrives".
-  { label: "Fit", height: null, why: "as tall as its content needs, up to the foot of the window" },
-  // THE PIXELS COME FROM THE TABLE, NOT FROM A COPY OF IT (2026-09-29, the
-  // owner spotting a stale tooltip). These said 260 / 402 / 620 while the
-  // steps were 360 / 540 / 720 — the numbers moved three times in an hour and
-  // a hand-written label cannot be expected to follow. Read from the same
-  // constant the layout uses, so the two cannot disagree again.
-  ...([1, 2, 3] as const).map((h, i) => ({
-    label: ["S", "M", "L"][i],
+/** THREE SIZES, IN PIXELS, AND NO FIT (2026-09-29, the owner's call).
+ *
+ * Fit went with Fill. The cost was stated before it was taken and is real: a
+ * two-line record or a three-row statistics grid now holds the Small height
+ * whatever it contains, and every board nobody had edited changed when this
+ * landed. What is bought is that a named size is a NUMBER — the same number
+ * on every load of the same screen, with nothing measured from the page and
+ * so nothing that can settle on a different answer a second later.
+ *
+ * The pixels are read from the same table the tiles use, never copied here:
+ * an earlier copy of these labels said 260 / 402 / 620 while the sizes were
+ * 360 / 540 / 720, because the numbers moved three times in one hour and a
+ * hand-written label cannot follow. The label names the size the READER'S
+ * screen will give, which is the only one they can check. */
+function heightOptions(band: ScreenBand): { label: string; height: TileHeight; why: string }[] {
+  return TILE_STEPS.map(h => ({
+    label: STEP_LABEL[h],
     height: h as TileHeight,
-    why: `${["short", "medium", "tall"][i]} — about ${Math.round(TILE_HEIGHT_SHARE[h] * 100)}% of the screen`,
-  })),
-]
+    why: `${STEP_NAME[h]} — ${TILE_PX[band][h]}px on this screen`,
+  }))
+}
 
 /** A tile's place in its row when it is narrower than the row. */
 const PLACES: { label: string; align: TileAlign | null; Icon: typeof AlignLeft }[] = [
@@ -110,6 +115,10 @@ export function BoardEditor({
   const open = openProp ?? openState
   const setOpen = (v: boolean) => (onOpenChange ? onOpenChange(v) : setOpenState(v))
   const { items, isCustom, moveTo, setSpan, setAlign, setHeight, applyIds, reset } = layout
+  // The sizes are named for THIS screen, so the reader reads the number they
+  // are about to get rather than one from a screen they are not on.
+  const band = useScreenBand()
+  const heights = heightOptions(band)
 
   if (!open) {
     return (
@@ -211,13 +220,13 @@ export function BoardEditor({
             {/* HOW TALL IT MAY GROW (2026-09-29). Beside the width, because
                 the two are one question — how much room does this tile get —
                 and a reader setting one usually wants the other. */}
-            <select value={height ?? ""} aria-label={`Height of ${w.label}`}
-                    onChange={e => setHeight(w.id, e.target.value ? Number(e.target.value) as TileHeight : null)}
-                    title="How tall this tile may grow"
+            <select value={String(stepFor(height, w.minStep))} aria-label={`Height of ${w.label}`}
+                    onChange={e => setHeight(w.id, Number(e.target.value) as TileHeight)}
+                    title="How tall this tile is"
                     className={pickerCls}>
-              {HEIGHTS.map(o => (
-                <option key={o.label} value={o.height ?? ""} title={o.why}
-                        disabled={!!o.height && !!w.minStep && o.height < w.minStep}>
+              {heights.map(o => (
+                <option key={o.label} value={o.height} title={o.why}
+                        disabled={w.minStep != null && o.height < w.minStep}>
                   {o.label}
                 </option>
               ))}

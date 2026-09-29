@@ -92,7 +92,7 @@ export function DividendCalendarPanel({ span = 12 }: { span?: number }) {
   const rows = q.data?.rows ?? []
   const groups = useMemo(() => groupBy<DividendEvent>(rows, r => r.ex_date), [rows])
   return (
-    <Widget span={span} title="Dividend calendar" scroll={380} fitViewport={false} actions={nav}
+    <Widget span={span} title="Dividend calendar" scroll={380} actions={nav}
             subtitle={subtitle(start, end, q.data?.rows.length, "ex-dividends, largest companies first", q.data?.source)}>
       {q.isPending ? <Empty>loading…</Empty>
         : q.isError ? <QueryFailure error={q.error}>the dividend calendar is unavailable right now</QueryFailure>

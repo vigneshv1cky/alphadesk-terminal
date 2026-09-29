@@ -188,6 +188,7 @@ export default function PortfolioPage() {
       panels={[
         { id: "watchlist", label: "My Portfolio", node: watchlistPanel },
         { id: "chart", label: "Chart",
+          minStep: 2 as const,
           node: picked ? <MarketChart symbol={picked} span={8} /> : needPick("Chart", 8) },
         // The NUMBERS before the picture (2026-09-16, the owner's own board).
         // Price performance is a table of returns over the trailing periods,

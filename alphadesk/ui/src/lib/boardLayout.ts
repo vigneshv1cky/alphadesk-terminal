@@ -3,6 +3,7 @@ import { useLocation, useSearchParams } from "react-router-dom"
 import { widgets } from "@/widgets/registry"
 import { useExternalWidgets } from "@/lib/queries"
 import { whichWins } from "@/lib/boardSync"
+import { stepFor } from "@/lib/tileHeight"
 import { parseLayout, resolveLayout, serializeLayout, type LayoutEntry, type TileAlign, type TileHeight } from "@/lib/layoutEntries"
 
 /** The Markets board's composition — which tiles render, in what order.
@@ -148,14 +149,14 @@ export type PanelDef = {
    * every board that never saved a layout. */
   optIn?: boolean
   /** The smallest height step this panel is worth offering (2026-09-29). */
-  minStep?: 1 | 2 | 3
+  minStep?: 0 | 1 | 2 | 3 | 4
 }
 
 /** What a page's layout hook hands back — the editor renders against this
  * shape, whichever page it is composing. */
 export type LayoutApi<T extends PanelDef> = {
   all: T[]
-  items: { def: T; span: number | null; align: TileAlign | null; height: TileHeight | null }[]
+  items: { def: T; span: number | null; align: TileAlign | null; height: TileHeight }[]
   isCustom: boolean
   move: (id: string, dir: -1 | 1) => void
   /** Put a tile at a position — the whole way in one move. */
@@ -270,7 +271,7 @@ export function usePageLayout<T extends PanelDef>(
 
   /** What the page renders, in order: the tile and the reader's width for
    * it (null = the component's own). */
-  const items: { def: T; span: number | null; align: TileAlign | null; height: TileHeight | null }[] = useMemo(
+  const items: { def: T; span: number | null; align: TileAlign | null; height: TileHeight }[] = useMemo(
     () => (isCustom
       // A TILE A SAVED LAYOUT NAMES BUT NOTHING REGISTERS is dropped, not
       // rendered (2026-09-23). It resolved to undefined and the page read
@@ -287,12 +288,18 @@ export function usePageLayout<T extends PanelDef>(
           def,
           span: e.span,
           align: e.align ?? null,
-          height: e.height != null && def.minStep
-            ? (Math.max(e.height, def.minStep) as TileHeight)
-            : e.height ?? null,
+          // EVERY TILE HAS A SIZE (2026-09-29). With Fit gone there is no
+          // "no height", so a layout that names none — every board saved
+          // before this — resolves to the default rather than to nothing,
+          // and a panel's own floor lifts a step it refuses (the chart).
+          // Resolved HERE and not in the store, so what is WRITTEN back
+          // still records only what the reader actually chose.
+          height: stepFor(e.height, def.minStep),
         }] : []
       })
-      : all.filter(w => !w.optIn).map(w => ({ def: w, span: null, align: null, height: null }))),
+      : all.filter(w => !w.optIn).map(w => ({
+        def: w, span: null, align: null, height: stepFor(null, w.minStep),
+      }))),
     [isCustom, custom, all],
   )
 

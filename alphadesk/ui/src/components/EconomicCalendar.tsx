@@ -142,7 +142,7 @@ export function EconomicCalendarPanel({ span = 12 }: { span?: number }) {
   }, [rows])
   const label = `${start} → ${end}`
   return (
-    <Widget span={span} title="Economic calendar" scroll={380} fitViewport={false}
+    <Widget span={span} title="Economic calendar" scroll={380}
             subtitle={q.data?.source
               ? `${label} · ${rows.length === all.length ? `${all.length} releases` : `${rows.length} of ${all.length} releases`} · ${q.data.source}`
               : label}

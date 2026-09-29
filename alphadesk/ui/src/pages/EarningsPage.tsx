@@ -103,6 +103,7 @@ export default function EarningsPage() {
         // board with no stored arrangement opens as.
         {
           id: "chart", label: "Chart",
+          minStep: 2 as const,
           node: <MarketChart span={6} symbol={symbol} />,
         },
         // WHAT THE REPORT SAID, straight after the chart: the company's own

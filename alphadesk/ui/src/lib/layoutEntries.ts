@@ -18,27 +18,31 @@
  * grid's own flow and is not written; `@c` centres it, `@r` puts it right. */
 export type TileAlign = "center" | "right"
 
-/** HOW TALL A TILE MAY GROW (2026-09-29, the owner: "include height
- * customization too in customize board").
+/** HOW TALL A TILE IS (2026-09-29, the owner: "include height customization
+ * too in customize board").
  *
  * This REVERSES a stated call — "heights stay uniform on purpose; the board
- * reads as composed because its bottom edge is straight" — taken by the owner
- * with the trade in view: a chart and a news list side by side want different
- * heights, and a straight bottom edge was buying tidiness at the cost of the
- * arrangement the reader actually wanted. A tile with no step keeps the old
- * behaviour exactly, so a board nobody has edited does not move.
+ * reads as composed because its bottom edge is straight" — taken with the
+ * trade in view: a chart and a news list side by side want different heights,
+ * and a straight bottom edge was buying tidiness at the cost of the
+ * arrangement actually wanted.
  *
- * Steps rather than pixels, like the span: a free number invites a board of
- * 41 different heights, and the point is a composed board, not a ransom note.
+ * Steps rather than free pixels, because a free number invites a board of 41
+ * different heights and the point is a composed board, not a ransom note.
+ * WHAT a step is worth in pixels is lib/tileHeight, per screen band; this file
+ * only carries how it is written down.
  *
- * THERE IS NO "FILL" STEP (2026-09-29, the owner: "remove fill in customize,
- * it just cause confusions"). It was a near-duplicate of no step at all: a
- * tile with no step ALREADY grows to what the window can show, so the two
- * differed by almost nothing and the reader had to guess which was which.
- * What fill was reaching for — the foot of the window, exactly — is now what
- * the default does, so removing the option lost nothing. A board saved with
- * the old step falls back to no step, which is that same behaviour. */
-export const TILE_HEIGHT_STEPS = [1, 2, 3] as const
+ * THERE IS NO FILL AND NO FIT (2026-09-29, the owner: first "remove fill in
+ * customize, it just cause confusions", then "I am also thinking of removing
+ * fill since its also a percentage"). Both were window-relative, which is the
+ * property that made a tile's height depend on measuring the page — the cause
+ * of every height that moved under a reader that day. Three fixed sizes have
+ * no such input. A layout that still names an old step, or none at all, gets
+ * the default (lib/tileHeight): an unreadable step is DROPPED rather than
+ * clamped, because a step this build does not know came from a deployment
+ * with more of them, and the tile's own default is a better answer than the
+ * nearest one we happen to have. */
+export const TILE_HEIGHT_STEPS = [0, 1, 2, 3, 4] as const
 export type TileHeight = (typeof TILE_HEIGHT_STEPS)[number]
 
 export type LayoutEntry = {
@@ -51,7 +55,7 @@ export type LayoutEntry = {
 export type LayoutPanel = { id: string; optIn?: boolean }
 
 /** `id`, `id:span`, either with `@c` or `@r` for its place in the row, and
- * `~1`–`~4` for its height; a span is 3–12 grid columns.
+ * `~0`–`~4` for its height (XS to XL); a span is 3–12 grid columns.
  *
  * The height is read LAST so it may follow either form — `id~3`, `id:6~3`
  * and `id:6@c~3` all parse — and an unreadable step is dropped rather than
@@ -71,7 +75,7 @@ function parseEntry(s: string): LayoutEntry | null {
     id,
     span: Number.isFinite(n) ? Math.max(3, Math.min(12, n)) : null,
     ...(align ? { align } : {}),
-    ...(height ? { height } : {}),
+    ...(height != null ? { height } : {}),
   }
 }
 
@@ -130,7 +134,8 @@ export function serializeLayout(
   const parts = visible.map(e =>
     `${e.span ? `${e.id}:${e.span}` : e.id}`
     + `${e.align === "center" ? "@c" : e.align === "right" ? "@r" : ""}`
-    + `${e.height ? `~${e.height}` : ""}`)
+    // `!= null`: Extra small is step 0, and truthiness dropped it silently.
+    + `${e.height != null ? `~${e.height}` : ""}`)
   if (recordHidden) {
     const shown = new Set(visible.map(e => e.id))
     const known = new Set(all.map(p => p.id))

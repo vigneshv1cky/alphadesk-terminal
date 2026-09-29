@@ -45,7 +45,7 @@ export default function AnalysisPage() {
         // The full chart — the same component the Markets board registers,
         // so intervals, indicators, drawings and the live edge all work here
         // and every fix lands once.
-        { id: "chart", label: "Chart", node: <MarketChart symbol={symbol} span={8} /> },
+        { id: "chart", label: "Chart", minStep: 2 as const, node: <MarketChart symbol={symbol} span={8} /> },
         { id: "filings", label: "Filings", node: <SymbolFilings symbol={symbol} /> },
         // The same returns table the Compare page draws, for this one stock
         // (2026-09-14, the owner's call).
