@@ -6,7 +6,8 @@ import { ChartSurface } from "@/components/chart/ChartSurface"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { resetChartPrefs } from "@/lib/chartPrefs"
 import { ChartRanges, ChartToolbar } from "@/components/ChartToolbar"
-import { Empty, HEADER_BAND, HeightOverride, TILE_HEIGHT_SHARE, TOP_CHROME, Widget } from "@/components/terminal"
+import { Empty, HEADER_BAND, HeightOverride, useScreenBand, Widget } from "@/components/terminal"
+import { TILE_PX, stepFor } from "@/lib/tileHeight"
 import { useChartEngine } from "@/lib/chartEngine"
 import { useChartCapabilities } from "@/lib/queries"
 import { registerWidget } from "@/widgets/registry"
@@ -42,7 +43,6 @@ import { TILE_BODY_HEIGHT } from "@/widgets/tile"
  * reality the slack pools under the range strip (too big) or a scrollbar
  * appears on the chart (too small). Re-measure after touching any band. */
 const CHART_CHROME = 42 + 42 + 25 + 4 + 1
-const COLLAPSED = TILE_BODY_HEIGHT - CHART_CHROME
 
 /** A CHART IS NEVER DRAWN SMALL (2026-09-29, the owner: "never set charts
  * small", "never set charts small as auto").
@@ -115,92 +115,71 @@ const MIN_PLOT = 260
  * every width, which is why the measured correction stays. The point of the
  * seed is only that the reader never watches it converge. */
 function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>, ready: boolean): number {
-  // THE CANVAS IS WHAT IS LEFT OF THE TILE AFTER ITS OWN CHROME, and the
-  // chrome is MEASURED rather than declared (2026-09-29, the owner: "both
-  // tiles are same height option, but looks different").
+  // THE TILE'S HEIGHT IS A NUMBER, AND THE CANVAS IS WHAT IS LEFT OF IT
+  // (2026-09-29, the owner's call to drop measured sizes entirely).
   //
-  // CHART_CHROME said 42 + 42 + 25. The browser says 45 + 45 + 45: the
-  // toolbar and the range row both wrap at half width, and the price readout
-  // is taller than the constant claims. That 21px of error was the whole
-  // difference between a chart and a movers tile set to the same step — the
-  // file's own note says to re-measure after touching any band, and nobody
-  // had. A constant cannot be right at every width anyway, because two of
-  // those bands wrap.
+  // What stood here measured the distance from this tile's body to the foot
+  // of the window and took a share of it. That is why the chart kept resizing:
+  // the distance depends on where the tile sits, so the chart under the
+  // Earnings calendar got a different answer from the chart at the top of
+  // Markets, and it could not be known until the page had laid out. The tile
+  // height now comes from the screen band — a constant, known before anything
+  // renders and identical on every load of the same screen.
   //
-  // So the chrome is read from the DOM: the body's height less the canvas
-  // inside it. That settles in one pass — once the canvas is the right size
-  // the chrome stops changing — and the 2px guard keeps a sub-pixel
-  // disagreement from oscillating.
-  // A STEP IS A SHARE OF THE ROOM, not a pixel count (2026-09-29) — so the
-  // chart works the same way as every other tile, and the target is computed
-  // inside the measurement below, where the room is known.
+  // ONE THING IS STILL MEASURED, and it is not the tile: how much of the tile
+  // is NOT plot. The toolbar and the range row WRAP at narrow widths, so the
+  // chrome is 114px at full width and about 135 at half, and no constant is
+  // right at both. It is corrected from the DOM once there is a chart to
+  // measure against — and because the target no longer depends on the page,
+  // the correction moves the canvas within a known tile instead of
+  // renegotiating the tile itself.
   const step = React.useContext(HeightOverride)
-  // The room a tile at the top of a board gets, before anything is on screen
-  // to measure — the same seed the shared tile height uses. A step takes its
-  // share of it, exactly as the measurement below does.
-  const seed = () => {
-    if (typeof window === "undefined") return COLLAPSED
-    const room = Math.round((window.innerHeight - TOP_CHROME - 16) / 8) * 8
-    const box = step
-      ? Math.max(MIN_PLOT + CHART_CHROME, Math.round((room + HEADER_BAND) * TILE_HEIGHT_SHARE[step]) - HEADER_BAND)
-      : room
-    return Math.max(MIN_PLOT, box - CHART_CHROME)
-  }
-  const [h, setH] = useState(seed)
+  const band = useScreenBand()
+  // The whole tile the reader asked for, less its header, less what the plot
+  // has to share the body with.
+  const tile = TILE_PX[band][stepFor(step, 2)]
+  const target = Math.max(MIN_PLOT, tile - HEADER_BAND - CHART_CHROME)
+
+  const [h, setH] = useState(target)
   const now = useRef(h)
   now.current = h
-  // A step changed by the board editor is a new seed, not a correction to
-  // creep towards: the reader asked for a different size and should get it at
-  // once, whether or not a chart happens to be loaded.
-  const lastStep = useRef(step)
-  if (lastStep.current !== step) {
-    lastStep.current = step
-    const next = seed()
-    if (next !== h) { now.current = next; setH(next) }
+  // A NEW SIZE IS NOT SOMETHING TO CREEP TOWARDS. Changing the step in the
+  // board editor, or moving the window across a band, asks for a different
+  // tile — the reader should get it at once rather than watching a correction
+  // walk there, and a correction from the old size would be measuring the
+  // wrong thing anyway.
+  const lastTarget = useRef(target)
+  if (lastTarget.current !== target) {
+    lastTarget.current = target
+    now.current = target
+    setH(target)
   }
+
   useLayoutEffect(() => {
     const measure = () => {
-      // NOT AGAINST A TILE WITH NO CHART IN IT. The body's miss against the
-      // room is the plot's error only once the bands around the plot exist.
-      if (!ready) return
       const el = ref.current
       if (!el) return
       const body = el.parentElement
       if (!body) return
-      const board = el.closest(".collage")
-      const reserved = board ? parseFloat(getComputedStyle(board).paddingBottom) || 0 : 0
-      // AS IF UNSCROLLED, and rounded to a step: `top` is where the tile is
-      // right now, so a restored scroll position or anything still loading
-      // above it gave a different height on every reload.
-      const scroller = el.closest("main") ?? document.querySelector("main")
-      const top = el.getBoundingClientRect().top + (scroller?.scrollTop ?? 0)
-      const room = Math.round((window.innerHeight - top - reserved) / 8) * 8
-      // The share is of the whole TILE, so the header comes off after it.
-      const box = step
-        ? Math.max(MIN_PLOT + CHART_CHROME, Math.round((room + HEADER_BAND) * TILE_HEIGHT_SHARE[step]) - HEADER_BAND)
-        : room
-      // CORRECT BY THE OVERSHOOT, don't compute the chrome. Subtracting the
-      // price pane from the body does NOT give the chrome — the plot block
-      // also holds the price readout and the volume pane, so the sum came out
-      // 45px light at every step and every tile was one wrapped band too
-      // tall. The difference between the body and the height it should be is
-      // the error whatever causes it, so the canvas absorbs exactly that.
-      // Settles in one pass and stops when the error is under 2px.
-      const delta = Math.round(body.getBoundingClientRect().height) - box
+      // NOT AGAINST A TILE WITH NO CHART IN IT. The body's miss against the
+      // tile is the plot's error only once the bands around the plot exist;
+      // before that the body holds the word "loading" and misses by nearly
+      // the whole tile, which is what once handed the canvas the entire
+      // overshoot and drew a chart the height of the window.
+      if (!ready) return
+      const outside = Math.round(body.getBoundingClientRect().height) + HEADER_BAND
+      const delta = outside - tile
       if (Math.abs(delta) > 2) setH(Math.max(MIN_PLOT, now.current - delta))
     }
-    // WATCHED, NOT SAMPLED. One correction is not enough: the canvas changes,
-    // the bands around it reflow, and the new error is only visible on the
-    // layout after that. Two timed passes left every step but L exactly one
-    // band out. A ResizeObserver keeps correcting until the error is under
-    // 2px and then stops on its own.
+    // WATCHED, because one pass is not enough: the canvas changes, the bands
+    // around it reflow, and the new error is only visible on the layout after
+    // that. It stops on its own once the error is under 2px.
     measure()
     const body = ref.current?.parentElement
     const ro = body ? new ResizeObserver(measure) : null
     if (body && ro) ro.observe(body)
-    window.addEventListener("resize", measure)
-    return () => { ro?.disconnect(); window.removeEventListener("resize", measure) }
-  }, [ref, step, ready])
+    return () => { ro?.disconnect() }
+  }, [ref, tile, ready])
   return h
 }
 

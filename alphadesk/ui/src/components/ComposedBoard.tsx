@@ -19,6 +19,12 @@ export type ComposedPanel = {
   id: string
   label: string
   node: React.ReactNode
+  /** The smallest size this panel is worth offering — the chart's floor, so
+   * the editor does not offer a size the tile would then refuse. A panel that
+   * declares one here matches what the registry declares for the same
+   * component on the Markets board; without it the picker would say Small
+   * over a tile drawn at Medium (2026-09-29). */
+  minStep?: 1 | 2 | 3
 }
 
 /** The heading each board carries, by its layout key. */
