@@ -134,7 +134,13 @@ export default function PortfolioPage() {
 
   const watchlistPanel = (
       <Widget
-        span={12}
+        // HALF THE ROW, BESIDE THE CHART (2026-09-29, the owner's own board
+        // made the default: "also make this the default for portfolio"). The
+        // holdings table and the picked row's chart are read together — the
+        // table says which name, the chart says what it just did — and a
+        // full-width table above a full-width chart put a screen between
+        // them. Same call as the Markets board's news-beside-chart.
+        span={6}
         title="My Portfolio"
         subtitle={`${symbols.length} on the board · no positions, no cost basis`}
         scroll={340}
@@ -186,10 +192,13 @@ export default function PortfolioPage() {
     <ComposedBoard
       page="portfolio"
       panels={[
-        { id: "watchlist", label: "My Portfolio", node: watchlistPanel },
+        // THE CHART FIRST, THEN THE TABLE — the owner's own arrangement,
+        // adopted as the page's default. Both at half width, so the pair sits
+        // on one row.
         { id: "chart", label: "Chart",
           minStep: 2 as const,
-          node: picked ? <MarketChart symbol={picked} span={8} /> : needPick("Chart", 8) },
+          node: picked ? <MarketChart symbol={picked} span={6} /> : needPick("Chart", 6) },
+        { id: "watchlist", label: "My Portfolio", node: watchlistPanel },
         // The NUMBERS before the picture (2026-09-16, the owner's own board).
         // Price performance is a table of returns over the trailing periods,
         // read at a glance; the rebased lines are the same story drawn, and
