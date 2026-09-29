@@ -95,16 +95,7 @@ function Board({ viewId, viewName, mine, editorOpen, onEditorOpenChange, library
   onLibraryClose: () => void
   onSaveState: (s: string) => void
 }) {
-  const base = usePageLayout(`view:${viewId}`, widgets(), { addNew: false })
-  // A VIEW RESETS TO ITS OWN TILES. The shared reset clears the layout, and
-  // "no layout" means the page's default board — every registered widget —
-  // which for a hand-picked set is not a reset but an explosion. Falls back
-  // to the shared behaviour only when the view has nothing stored yet.
-  const saved = mine.layoutOf(viewId)
-  const layout = useMemo(
-    () => (saved ? { ...base, reset: () => base.restore(saved) } : base),
-    [base, saved],
-  )
+  const layout = usePageLayout(`view:${viewId}`, widgets(), { addNew: false })
 
   // Save the composition back to the account, debounced while editing and
   // FLUSHED on unmount and on the editor's Save — a navigation inside the
@@ -163,6 +154,10 @@ function Board({ viewId, viewName, mine, editorOpen, onEditorOpenChange, library
       <div className="px-4 pt-2">
         <BoardEditor
           layout={layout}
+          // A VIEW HAS NO DEFAULT TO RETURN TO: its tiles are its definition,
+          // and clearing the layout means "no layout", which the board reads
+          // as the page's default — every registered widget.
+          showReset={false}
           open={editorOpen}
           onOpenChange={v => { if (!v) flushRef.current(); onEditorOpenChange(v) }}
           doneLabel="Save"

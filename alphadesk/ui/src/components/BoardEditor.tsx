@@ -63,7 +63,7 @@ const PLACES: { label: string; align: TileAlign | null; Icon: typeof AlignLeft }
   { label: "Right", align: "right", Icon: AlignRight },
 ]
 
-export function BoardEditor({ layout, title, defaultOpen = false, open: openProp, onOpenChange, doneLabel = "Done" }: {
+export function BoardEditor({ layout, title, defaultOpen = false, open: openProp, onOpenChange, doneLabel = "Done", showReset = true }: {
   layout: LayoutApi<PanelDef>
   /** The tab's name, as a heading at the top of the board — the reader's
    * bearing on a page whose tiles look alike from view to view
@@ -78,6 +78,12 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
   /** The close button's word. The board tabs say Done (the URL already IS
    * the save); a custom view says Save, and its page flushes on close. */
   doneLabel?: string
+  /** A CUSTOM VIEW HAS NO DEFAULT TO RESET TO (2026-09-29, the owner:
+   * "reseting the customboard board in views shouldnt reset widgets"). Its
+   * tiles ARE its definition, and clearing the layout means "no layout",
+   * which the board reads as the page's default — every registered widget.
+   * There is no arrangement to restore, so the control is not offered. */
+  showReset?: boolean
 }) {
   const [openState, setOpenState] = useState(defaultOpen)
   const [libraryOpen, setLibraryOpen] = useState(false)
@@ -109,7 +115,7 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
       <div className="flex min-h-[40px] flex-wrap items-center gap-2 border-b border-row-rule px-2.5 py-2.5">
         <span className="text-label font-medium uppercase tracking-caps">Board layout</span>
         <span className="min-w-0 flex-1" />
-        {isCustom && <Btn variant="ghost" onClick={reset}>Reset to default</Btn>}
+        {isCustom && showReset && <Btn variant="ghost" onClick={reset}>Reset to default</Btn>}
         <Btn onClick={() => setLibraryOpen(true)}>Widgets</Btn>
         <Btn onClick={() => setOpen(false)}>{doneLabel}</Btn>
       </div>

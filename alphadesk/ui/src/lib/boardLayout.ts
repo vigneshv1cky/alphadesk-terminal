@@ -164,9 +164,6 @@ export type LayoutApi<T extends PanelDef> = {
   /** How tall a tile may grow, or null to hand it back to the component's
    * own default — which is what an unedited board holds. */
   setHeight: (id: string, height: TileHeight | null) => void
-  /** Put a named layout back — a custom view resets to its OWN tiles, not to
-   * the page's default, because for a view "no layout" means emptied. */
-  restore: (raw: string) => void
   /** Set the board's MEMBERSHIP in one move (the widget-library dialog):
    * kept tiles keep their order and width, newly picked ones append at
    * their default span. An empty pick is ignored — the board is never
@@ -390,19 +387,6 @@ export function usePageLayout<T extends PanelDef>(
 
   const reset = useCallback(() => commit(null), [commit])
 
-  /** Put a NAMED layout back, rather than falling through to the page's
-   * default (2026-09-29, the owner: "in views resetting, resets the views
-   * widgets too, it shouldnt").
-   *
-   * A custom view's tiles ARE its definition, so "no layout" there does not
-   * mean "the default board" — it means the view has been emptied, and the
-   * page then renders every registered widget, which is the opposite of a
-   * hand-picked set. Markets still resets to null, where absence genuinely
-   * is the default. */
-  const restore = useCallback((raw: string) => {
-    const entries = parseLayout(raw, all).visible
-    commit(entries.length ? entries : null)
-  }, [all, commit])
 
-  return { all, items, isCustom, move, moveTo, setSpan, setAlign, setHeight, applyIds, reset, restore }
+  return { all, items, isCustom, move, moveTo, setSpan, setAlign, setHeight, applyIds, reset }
 }
