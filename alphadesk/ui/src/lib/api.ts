@@ -396,6 +396,11 @@ export interface TranscriptList {
 }
 
 export interface TranscriptDoc extends TranscriptRow {
+  /** The company's own guidance SENTENCES from this document, verbatim and in
+   * the order it wrote them — never parsed into figures, because a bare number
+   * drops the conditions its sentence carries. Each is re-checked as a
+   * substring of `text` before it is sent. */
+  guidance?: string[]
   symbol: string
   provider: string
   kind: "release" | "call"
