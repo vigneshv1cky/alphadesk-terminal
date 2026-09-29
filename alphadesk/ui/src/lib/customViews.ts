@@ -16,7 +16,14 @@ import { useAuthMe } from "@/lib/queries"
  * for self-hosters.
  */
 
-export type CustomView = { id: string; name: string; layout?: string }
+export type CustomView = { id: string; name: string; layout?: string; baseline?: string }
+
+/** THE ARRANGEMENT THE READER NAMED AS THIS VIEW'S DEFAULT (2026-09-29).
+ * A view's `layout` is the WORKING copy and is written on every arrangement,
+ * so it can never be returned to — which is why "Reset to default" had to
+ * leave views altogether. A baseline is set only by a deliberate gesture, and
+ * an empty one means the reader has never named one, so nothing is offered. */
+export const viewBaselineKey = (id: string) => `alphadesk.baseline.view:${id}`
 
 const STARTER = "market-chart:8,equity-overview:4"
 const KEY = "alphadesk.views"
@@ -71,6 +78,12 @@ export type MyViewsApi = {
   /** Persist the current composition (server mode; a no-op locally, where
    * lib/boardLayout already stored it). */
   saveLayout: (id: string, layout: string) => void
+  /** The arrangement this view calls its default, or null if none was ever
+   * named. Local mode keeps it beside the working copy in storage. */
+  baselineOf: (id: string) => string | null
+  /** Name the current arrangement as this view's default — the one gesture
+   * that moves it. */
+  saveBaseline: (id: string, layout: string) => void
 }
 
 const VIEWS_QK = ["user-views"] as const
@@ -157,6 +170,25 @@ export function useMyViews(): MyViewsApi {
     return rows.find(v => v.view_id === id)?.layout ?? null
   }, [serverBacked, rows])
 
+  const baselineOf = useCallback((id: string) => {
+    if (!serverBacked) {
+      try { return localStorage.getItem(viewBaselineKey(id)) || null } catch { return null }
+    }
+    return rows.find(v => v.view_id === id)?.baseline || null
+  }, [serverBacked, rows])
+
+  const saveBaseline = useCallback((id: string, layout: string) => {
+    if (!serverBacked) {
+      try { localStorage.setItem(viewBaselineKey(id), layout) } catch { /* private mode */ }
+      setRows(r => r.map(v => (v.view_id === id ? { ...v, baseline: layout } : v)))
+      return
+    }
+    const row = rows.find(v => v.view_id === id)
+    if (!row) return
+    void api.setView(id, { name: row.name, layout: row.layout ?? layout, baseline: layout })
+    setRows(r => r.map(v => (v.view_id === id ? { ...v, baseline: layout } : v)))
+  }, [serverBacked, rows, setRows])
+
   const saveLayout = useCallback((id: string, layout: string) => {
     if (!serverBacked) return
     const row = rows.find(v => v.view_id === id)
@@ -179,5 +211,7 @@ export function useMyViews(): MyViewsApi {
     remove,
     layoutOf,
     saveLayout,
+    baselineOf,
+    saveBaseline,
   }
 }

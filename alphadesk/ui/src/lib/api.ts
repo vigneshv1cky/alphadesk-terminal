@@ -1365,6 +1365,9 @@ export interface ServerView {
   view_id: string
   name: string
   layout: string
+  /** The arrangement the reader named as this view's default; empty until
+   * one is named (2026-09-29). */
+  baseline?: string
   position: number
 }
 
@@ -1510,7 +1513,7 @@ export const api = {
     news_poll_minutes?: number
   }>("/api/keys"),
   views: () => get<{ views: ServerView[] }>("/api/views"),
-  setView: (id: string, body: { name: string; layout: string; position?: number }) =>
+  setView: (id: string, body: { name: string; layout: string; position?: number; baseline?: string }) =>
     put<{ ok: boolean }>(`/api/views/${id}`, body),
   deleteView: (id: string) => del<{ ok: boolean }>(`/api/views/${id}`),
   saveBasket: (id: string, body: { label: string; why: string; symbols: string }) =>

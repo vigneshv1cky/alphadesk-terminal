@@ -1996,6 +1996,9 @@ class ViewIn(BaseModel):
     name: str
     layout: str = ""
     position: int = 0
+    #: The arrangement the reader named as this view's default. None means
+    #: "leave whatever is stored" — see the route below.
+    baseline: str | None = None
 
 
 #: A layout's page key: the layout hook's own, including a view's
@@ -2047,7 +2050,14 @@ def api_views_set(view_id: str, body: ViewIn, request: Request):
         raise HTTPException(422, "a view needs a name")
     if len(body.layout) > 2000:
         raise HTTPException(422, "layout too large")
-    store.upsert_user_view(user_id, view_id, name, body.layout, body.position)
+    if body.baseline is not None and len(body.baseline) > 2000:
+        raise HTTPException(422, "layout too large")
+    # `baseline` ABSENT means leave the stored one alone. Every ordinary save
+    # omits it, so the working copy — written on every arrangement — can never
+    # quietly become the view's default; only the gesture that means it sends
+    # one (2026-09-29).
+    store.upsert_user_view(user_id, view_id, name, body.layout, body.position,
+                           baseline=body.baseline)
     return {"ok": True}
 
 

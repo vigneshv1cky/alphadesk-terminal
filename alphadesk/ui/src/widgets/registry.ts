@@ -21,6 +21,12 @@ export type WidgetDef = {
   /** Library-only tile: offered in the widget library, absent from default
    * boards (see lib/boardLayout's PanelDef). */
   optIn?: boolean
+  /** The smallest height step worth offering this tile (2026-09-29). The
+   * chart declares 2: it spends ~135px of any tile on chrome before a candle
+   * exists, so the small step leaves a sparkline, and it has a floor that
+   * would override the choice anyway. A step the tile will not honour must
+   * not be offered — that is a control that lies. */
+  minStep?: 1 | 2 | 3
   /** Grid width is NOT declared here: the component renders its own
    * `<Widget span={n}>`, so duplicating it in the registry would be a second
    * source of truth that drifts. The layout editor composes and orders tiles;

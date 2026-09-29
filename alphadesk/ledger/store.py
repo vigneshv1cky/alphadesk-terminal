@@ -342,6 +342,12 @@ CREATE TABLE IF NOT EXISTS user_views (
     view_id    TEXT NOT NULL,
     name       TEXT NOT NULL,
     layout     TEXT NOT NULL DEFAULT '',
+    -- THE ARRANGEMENT THE READER CALLED THE DEFAULT (2026-09-29). `layout` is
+    -- the working copy and is written continuously, so it can never be
+    -- returned to; a view had nothing to reset TO, which is why the board's
+    -- "Reset to default" was removed from views entirely. This is set only by
+    -- a deliberate gesture, and empty means the reader has never named one.
+    baseline   TEXT NOT NULL DEFAULT '',
     position   INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT,
     PRIMARY KEY (user_id, view_id)
@@ -592,6 +598,7 @@ def init() -> None:
         "ALTER TABLE earnings ADD COLUMN actual_at TEXT",          # when the actual EPS was FIRST seen here — its age
         "ALTER TABLE earnings ADD COLUMN released_at TEXT",        # EDGAR's acceptance of the earnings 8-K
         "ALTER TABLE user_api_keys ADD COLUMN vendor_plan TEXT",    # the plan the reader declares (Tiingo)
+        "ALTER TABLE user_views ADD COLUMN baseline TEXT NOT NULL DEFAULT ''",  # the view's named default
         "ALTER TABLE users ADD COLUMN last_seen_at TEXT",          # activity gate for per-user polling
         "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE users ADD COLUMN trial_ends_at TEXT",          # access: the free trial's end
@@ -1305,20 +1312,34 @@ def touch_user_key_provider(user_id: str, seam: str, provider: str) -> None:
 def list_user_views(user_id: str) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT view_id, name, layout, position FROM user_views"
+            "SELECT view_id, name, layout, baseline, position FROM user_views"
             " WHERE user_id=? ORDER BY position, view_id", (user_id,)).fetchall()
     return [dict(r) for r in rows]
 
 
 def upsert_user_view(user_id: str, view_id: str, name: str, layout: str,
-                     position: int = 0) -> None:
+                     position: int = 0, baseline: str | None = None) -> None:
+    """`baseline` None LEAVES THE STORED ONE ALONE — every ordinary save passes
+    nothing, so the working copy being written a hundred times a session can
+    never quietly become the default. Only the gesture that means it passes a
+    string."""
     with _lock, _connect() as conn:
-        conn.execute(
-            "INSERT INTO user_views (user_id, view_id, name, layout, position, updated_at)"
-            " VALUES (?,?,?,?,?,?)"
-            " ON CONFLICT (user_id, view_id) DO UPDATE SET name=excluded.name,"
-            " layout=excluded.layout, position=excluded.position, updated_at=excluded.updated_at",
-            (user_id, view_id, name, layout, int(position), _now()))
+        if baseline is None:
+            conn.execute(
+                "INSERT INTO user_views (user_id, view_id, name, layout, position, updated_at)"
+                " VALUES (?,?,?,?,?,?)"
+                " ON CONFLICT (user_id, view_id) DO UPDATE SET name=excluded.name,"
+                " layout=excluded.layout, position=excluded.position,"
+                " updated_at=excluded.updated_at",
+                (user_id, view_id, name, layout, int(position), _now()))
+        else:
+            conn.execute(
+                "INSERT INTO user_views (user_id, view_id, name, layout, baseline, position, updated_at)"
+                " VALUES (?,?,?,?,?,?,?)"
+                " ON CONFLICT (user_id, view_id) DO UPDATE SET name=excluded.name,"
+                " layout=excluded.layout, baseline=excluded.baseline,"
+                " position=excluded.position, updated_at=excluded.updated_at",
+                (user_id, view_id, name, layout, baseline, int(position), _now()))
 
 
 def delete_user_view(user_id: str, view_id: str) -> bool:

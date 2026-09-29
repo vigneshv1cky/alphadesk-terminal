@@ -43,7 +43,11 @@ const WIDTHS: { label: string; span: number | null }[] = [
 const pickerCls = "h-[28px] w-[92px] border border-border bg-panel px-1.5 text-caption text-foreground"
 
 const HEIGHTS: { label: string; height: TileHeight | null; why: string }[] = [
-  { label: "auto", height: null, why: "grows with its content, to the foot of the window" },
+  // "FIT", NOT "AUTO" (2026-09-29, the owner). The word read as automatic or
+  // default — the option you leave alone — when it means SIZE TO THE CONTENT.
+  // Named for what it does, the four read as one scale of intent: Fit is "as
+  // big as this needs", the rest are "hold this much space whatever arrives".
+  { label: "Fit", height: null, why: "as tall as its content needs, up to the foot of the window" },
   // THE PIXELS COME FROM THE TABLE, NOT FROM A COPY OF IT (2026-09-29, the
   // owner spotting a stale tooltip). These said 260 / 402 / 620 while the
   // steps were 360 / 540 / 720 — the numbers moved three times in an hour and
@@ -63,7 +67,10 @@ const PLACES: { label: string; align: TileAlign | null; Icon: typeof AlignLeft }
   { label: "Right", align: "right", Icon: AlignRight },
 ]
 
-export function BoardEditor({ layout, title, defaultOpen = false, open: openProp, onOpenChange, doneLabel = "Done", showReset = true }: {
+export function BoardEditor({
+  layout, title, defaultOpen = false, open: openProp, onOpenChange,
+  doneLabel = "Done", showReset, onSetDefault, onReset, resetLabel = "Reset to default",
+}: {
   layout: LayoutApi<PanelDef>
   /** The tab's name, as a heading at the top of the board — the reader's
    * bearing on a page whose tiles look alike from view to view
@@ -84,6 +91,19 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
    * which the board reads as the page's default — every registered widget.
    * There is no arrangement to restore, so the control is not offered. */
   showReset?: boolean
+  /** Left undefined, the reset shows only once the board has been changed,
+   * which is the board's own rule. A view passes an explicit value: it has a
+   * default only once its reader has named one. */
+  /** What Reset does, when the board's own "clear the layout" is wrong for
+   * it. A view passes its own, returning to the named arrangement. */
+  onReset?: () => void
+  /** Offered where a board can NAME its current arrangement as the one to
+   * return to — a custom view, whose working copy is written continuously and
+   * so can never be a default by itself (2026-09-29). */
+  onSetDefault?: () => void
+  /** What the reset button says, since a view returns to the arrangement its
+   * reader named rather than to the app's default board. */
+  resetLabel?: string
 }) {
   const [openState, setOpenState] = useState(defaultOpen)
   const [libraryOpen, setLibraryOpen] = useState(false)
@@ -115,7 +135,13 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
       <div className="flex min-h-[40px] flex-wrap items-center gap-2 border-b border-row-rule px-2.5 py-2.5">
         <span className="text-label font-medium uppercase tracking-caps">Board layout</span>
         <span className="min-w-0 flex-1" />
-        {isCustom && showReset && <Btn variant="ghost" onClick={reset}>Reset to default</Btn>}
+        {(showReset ?? isCustom) && <Btn variant="ghost" onClick={onReset ?? reset}>{resetLabel}</Btn>}
+        {onSetDefault && (
+          <Btn variant="ghost" onClick={onSetDefault}
+               title="Remember this arrangement as the one Reset returns to">
+            Set as default
+          </Btn>
+        )}
         <Btn onClick={() => setLibraryOpen(true)}>Widgets</Btn>
         <Btn onClick={() => setOpen(false)}>{doneLabel}</Btn>
       </div>
@@ -190,7 +216,10 @@ export function BoardEditor({ layout, title, defaultOpen = false, open: openProp
                     title="How tall this tile may grow"
                     className={pickerCls}>
               {HEIGHTS.map(o => (
-                <option key={o.label} value={o.height ?? ""} title={o.why}>{o.label}</option>
+                <option key={o.label} value={o.height ?? ""} title={o.why}
+                        disabled={!!o.height && !!w.minStep && o.height < w.minStep}>
+                  {o.label}
+                </option>
               ))}
             </select>
             {/* Where a tile narrower than its row sits (2026-09-18): left is
