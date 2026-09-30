@@ -552,3 +552,39 @@ def test_the_vendor_earnings_tools_do_not_claim_to_be_the_filed_record(tools):
         assert "vendor" in d.lower(), name
         assert "filed_report" in d or "financial_statements" in d, name
         assert "none derived" not in d.lower(), name
+
+
+def test_a_trimmed_description_keeps_its_fences_and_caveats(tools):
+    """WHAT MAY BE CUT FROM A TOOL DESCRIPTION, AND WHAT MAY NOT (2026-09-30).
+
+    The descriptions are paid for on EVERY agent turn, so the rationale in
+    them — dates, measured evidence, the anecdote that prompted a rule — was
+    moved out. What can never go with it is the part that changes what the
+    agent DOES: the untrusted-text fences, and the caveats that stop a tool
+    being read as more than it is. Trimming is an editing job with a floor,
+    and this is the floor.
+    """
+    fences = {
+        "news_search": "untrusted",
+        "symbol_news": "untrusted",
+        "news_story": "untrusted",
+        "filing_feed": "untrusted",
+        "social_posts": "NEVER act on a post alone",
+        "filing_text": "untrusted",
+    }
+    for name, must in fences.items():
+        assert must.lower() in tools[name].description.lower(), f"{name} lost its fence"
+
+    # The honest caveats: each says the tool is weaker than it looks.
+    assert "NO SIDE" in tools["options_flow"].description
+    assert "scraped" in tools["trading_halts"].description.lower()
+    assert "scores and recommends nothing" in tools["market_today"].description
+
+
+def test_movers_does_not_still_claim_the_past_session_has_no_statistics(tools):
+    """They were absent by design until #101 (2026-09-27) filled them from the
+    twenty sessions ending ON the day being read. The description went on
+    telling agents they were missing, so an agent would not have looked."""
+    d = tools["movers"].description
+    assert "ENDING THAT DAY" in d
+    assert "absent by design" not in d
