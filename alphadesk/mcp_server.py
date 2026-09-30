@@ -135,6 +135,15 @@ def movers(category: str = "stocks", top: int = 20, session: str = "") -> dict:
     `category` is one of: stocks, etfs, indices, crypto, currencies, options,
     bonds.
 
+    CRYPTO IS A CATEGORY HERE, not a separate tool (2026-09-30). A
+    `crypto_movers` tool answered the same question from the same provider
+    method with none of the work below — no tradable filter, no volatility,
+    no liquidity — so it was two tools for one question and the smaller one
+    gave the poorer answer. Over a rolling 24 hours: with an Alpaca key the
+    list is only the coins THAT ACCOUNT CAN TRADE, the tradable universe
+    rather than the market's, and the liquidity may be that one venue's
+    rather than worldwide — `liquidity_scope` says which.
+
     Filtered for tradeability: warrants, rights and units are excluded, and
     rows must clear a price and dollar-volume floor. Gainers and losers skew
     small-cap, as a percentage screen over the whole market always does;
@@ -1274,18 +1283,6 @@ def earnings_context(symbol: str) -> dict:
     two disagree the filing is the record and this is the expectation."""
     from alphadesk.ingest import earnings_record
     return earnings_record.context(_symbol(symbol))
-
-
-@mcp.tool(annotations=READ_ONLY)
-def crypto_movers(top: int = 20) -> dict:
-    """Crypto over a rolling 24 hours: {all, most_active, gainers, losers},
-    `top` rows each (1-50, default 20).
-
-    With an Alpaca key the list is only the coins THAT ACCOUNT CAN TRADE, so
-    it is the tradable universe rather than the market's. Liquidity may be
-    that one venue's rather than worldwide — the payload says which."""
-    from alphadesk.providers import get_prices
-    return get_prices().ask("crypto_movers", top=max(1, min(int(top), 50)))
 
 
 @mcp.tool(annotations=READ_ONLY)
