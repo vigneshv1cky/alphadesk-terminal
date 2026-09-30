@@ -86,8 +86,14 @@ def _news(top: int, since_iso: str) -> dict:
     def brief(a: dict) -> dict:
         # `source` is the publisher; `feeds` is which of the reader's feeds
         # delivered the story, both named where two carried it (2026-09-22).
+        # `kind` is the publisher's own classification of the story, the same
+        # field symbol_news and news_search carry (alphadesk/newskind.py), so
+        # a headline here can be told apart from the others without opening
+        # it. None where the record does not say.
+        from alphadesk import newskind
         return {"title": a["title"], "url": a.get("url") or "", "source": a.get("source") or "",
-                "feeds": a.get("feeds") or [], "published_at": a.get("published_at")}
+                "feeds": a.get("feeds") or [], "kind": newskind.of_article(a),
+                "published_at": a.get("published_at")}
 
     # Most stories first; ties alphabetical, so the order is stable.
     busiest = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:top]
