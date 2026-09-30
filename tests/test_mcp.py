@@ -419,12 +419,37 @@ def test_every_data_surface_the_app_has_is_reachable_by_an_agent():
     """The agent sees what the screen sees (2026-09-21). Six panels had no
     tool: the funds built on a company, a symbol's events, its reported
     record, the crypto list, the cross-asset board, and the calendar's own
-    accuracy against the SEC."""
+    accuracy against the SEC.
+
+    THE CRYPTO LIST IS STILL REACHED, by `movers(category="crypto")` rather
+    than by a tool of its own (2026-09-30) — see the test below. Reachability
+    is the rule; one tool per surface never was.
+    """
     from alphadesk import mcp_server
     named = {t for t in dir(mcp_server) if not t.startswith("_")}
     for tool in ("related_funds", "symbol_events", "earnings_context",
-                 "crypto_movers", "index_board", "calendar_accuracy"):
+                 "index_board", "calendar_accuracy"):
         assert tool in named, tool
+
+
+def test_the_crypto_list_is_a_movers_category_and_not_its_own_tool(tools):
+    """TWO TOOLS FOR ONE QUESTION, AND THE SMALLER GAVE THE POORER ANSWER
+    (2026-09-30). `crypto_movers` called the provider method that
+    `category_movers` already calls internally, so it returned the same rows
+    with none of the assembly around them — no tradable filter, no
+    volatility, no liquidity, no floors. Removing it loses no data and ends
+    the chance of an agent getting the thinner answer to the same question.
+
+    Removing a published tool is a breaking change for an agent that called
+    it, taken deliberately; the category must therefore stay reachable and
+    the description must carry what the retired tool said."""
+    assert "crypto_movers" not in tools
+    from alphadesk.ingest import movers as mv
+    assert "crypto" in mv.CATEGORIES
+    d = tools["movers"].description
+    assert "crypto" in d
+    assert "THAT ACCOUNT CAN TRADE" in d, "the tradable-universe caveat was lost with the tool"
+    assert "liquidity_scope" in d, "the venue-liquidity caveat was lost with the tool"
 
 
 def test_the_funds_tool_answers_the_opposite_question_to_fund_profile():
