@@ -824,9 +824,14 @@ def insider_activity(symbol: str, limit: int = 30) -> dict:
 
 @mcp.tool(annotations=READ_ONLY)
 def earnings_history(symbol: str, reports: int = 16) -> dict:
-    """Quarterly reports for one symbol, newest first — any upcoming report,
+    """VENDOR report rows for one symbol, newest first — any upcoming report,
     then the latest `reports` past ones (max 120): report date, EPS and
-    revenue estimate and actual, and the surprise."""
+    revenue estimate and actual, and the surprise between them.
+
+    The estimate and the surprise are a vendor's forecast and arithmetic on
+    it, not anything the company filed; only the revenue is joined from the
+    company's own SEC figures. For the filed record ask `filed_report` or
+    `financial_statements`."""
     from alphadesk.ingest import earnings_record
     got = dict(earnings_record.history(_symbol(symbol)) or {})
     rows = got.get("reports") or []
@@ -1220,10 +1225,50 @@ def symbol_events(symbol: str, days: int = 400) -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
+def filed_report(symbol: str, on: str = "") -> dict:
+    """WHAT THE COMPANY ITSELF FILED in its newest report, every figure beside
+    the same period a year earlier: revenue, net income, operating income,
+    diluted EPS, cash flow and the margins, each with its direction.
+
+    Public SEC XBRL, so it needs NO VENDOR KEY and answers for a reader who
+    has connected nothing. This is the record; `earnings_context` and
+    `earnings_history` are vendors' expectations about it.
+
+    NO VERDICT IS RETURNED — no score, rating, sentiment or recommendation.
+    The figures and their direction are the answer.
+
+    Three things the payload states rather than leaving you to assume.
+    `period` is the GRAIN and is not always a quarter: a foreign private
+    issuer files annually on a 20-F and half-yearly on a 6-K, so "year ended"
+    and "quarter ended" are not interchangeable. `currency` is the filer's
+    own — Novo Nordisk files kroner, Alibaba renminbi, VinFast dong — and
+    reading those as dollars misstates every figure. And each metric carries
+    `filed`: false means the figure was COMPUTED HERE rather than tagged by
+    the company — the margins, and free cash flow, which no company files.
+    Do not report one of those as something the company stated.
+
+    `covers_report` says whether the newest filed period is recent enough to
+    be the one a given report announced; `on` (YYYY-MM-DD) is that report's
+    date and only affects that answer. It never selects an older period —
+    the newest on file is the newest on file, and an older one is marked
+    rather than dressed up."""
+    from alphadesk.ingest import filed_figures
+    return filed_figures.filed_quarter(_symbol(symbol), (on or "").strip() or None)
+
+
+@mcp.tool(annotations=READ_ONLY)
 def earnings_context(symbol: str) -> dict:
-    """One company's reported record: the last four quarters' estimate,
-    actual and surprise, the quarterly revenue and net-income trend, and the
-    consensus for the next quarter. Every figure is fetched, none derived."""
+    """VENDOR ESTIMATES AND ACTUALS for one company, with the quarterly
+    revenue and net-income trend: the last four quarters' EPS estimate,
+    reported actual and the surprise between them, plus the consensus for the
+    NEXT quarter, which has not happened.
+
+    NOT THE FILED RECORD, and the difference matters. An estimate is an
+    analyst forecast on the reader's own vendor, the surprise is arithmetic
+    on two of those numbers, and the consensus is about a quarter nobody has
+    reported. For what the company itself told the SEC, ask `filed_report`
+    (one quarter, keyless) or `financial_statements` (the series). Where the
+    two disagree the filing is the record and this is the expectation."""
     from alphadesk.ingest import earnings_record
     return earnings_record.context(_symbol(symbol))
 

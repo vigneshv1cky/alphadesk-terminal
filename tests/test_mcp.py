@@ -504,3 +504,51 @@ def test_a_past_session_is_refused_where_it_cannot_be_built():
     for cat in set(mv.CATEGORIES) - set(mv.SESSION_CATEGORIES):
         out = call(category=cat, session="2026-09-24")
         assert "only available for" in out["error"], cat
+
+
+# ── the filed record, and the vendors' expectations about it ──────────────
+#
+# THE TERMINAL AND THE CONNECTOR MUST NOT DISAGREE ABOUT A FACT (2026-09-30).
+# The Earnings tab was re-sourced to SEC XBRL on 2026-09-28 because a forecast
+# is not a filed record and a surprise is defined against an estimate. The MCP
+# surface did not follow: `earnings_context` and `earnings_history` went on
+# serving vendor estimates and surprise while calling it "one company's
+# reported record", and the filed record the tab now leads with — keyless SEC
+# XBRL, `ingest/filed_figures` — had no tool at all. So the same question got
+# one answer on screen and a differently-shaped one through the connector.
+
+def test_the_filed_record_is_reachable_from_an_agent(tools):
+    """It is the thing the Earnings tab leads with, and it needs no key — so a
+    reader who has connected nothing can still ask what a company reported."""
+    assert "filed_report" in tools
+
+
+def test_the_filed_tool_names_the_key_that_marks_a_figure_as_computed(tools):
+    """Margins and free cash flow are computed here, and the payload says so
+    with `filed: false`. An agent told to look for a key that does not exist
+    reports a derived figure as one the company stated — which is the fault
+    this tool was added to end, reintroduced in its own description."""
+    d = tools["filed_report"].description
+    assert "`filed`" in d
+    assert "derived" not in d.lower() or "filed" in d
+
+
+def test_the_filed_tool_returns_no_verdict(tools):
+    """Same rule the panel is held to: the figures and their direction are the
+    answer. No score, rating, sentiment or recommendation, in the payload or
+    in the description's promises."""
+    d = tools["filed_report"].description.lower()
+    for word in ("verdict", "rating", "sentiment", "score", "recommendation"):
+        assert word not in d or "no verdict" in d
+
+
+def test_the_vendor_earnings_tools_do_not_claim_to_be_the_filed_record(tools):
+    """`earnings_context` called an analyst estimate part of "one company's
+    reported record" and promised "every figure is fetched, none derived"
+    while the surprise it returns is arithmetic on two vendor numbers. Both
+    tools must now say whose numbers these are and point at the filing."""
+    for name in ("earnings_context", "earnings_history"):
+        d = tools[name].description
+        assert "vendor" in d.lower(), name
+        assert "filed_report" in d or "financial_statements" in d, name
+        assert "none derived" not in d.lower(), name
