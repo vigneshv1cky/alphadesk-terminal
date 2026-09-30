@@ -185,16 +185,19 @@ def parse_announcement(title: str, text: str, published_at: str) -> dict | None:
 # The wires companies issue their own releases on. A reporter's article is
 # not the company's word: "Prediction: Micron's Sept. 30 earnings" named a
 # date and tagged SanDisk too (2026-09-14).
-_WIRES = re.compile(r"(^|\.)(globenewswire\.com|prnewswire\.com|prnewswire\.co\.uk|newswire\.ca|businesswire\.com"
-                    r"|newsfilecorp\.com|accessnewswire\.com|accesswire\.com)$", re.I)
-
-
+# THE WIRE LIST LIVES IN ONE PLACE NOW (2026-09-30). This module kept its own
+# copy and the app kept another, with a comment on each asking for them to be
+# kept in step — and they had drifted anyway: the app carried thenewswire.com
+# and this did not, so a company statement distributed through it was not read
+# as one here. `alphadesk/newskind.py` is canonical, and a test parses the
+# TypeScript to hold the remaining copy to it.
 def is_press_release(url: str) -> bool:
-    from urllib.parse import urlparse
-    try:
-        return bool(_WIRES.search(urlparse(url).hostname or ""))
-    except ValueError:
-        return False
+    """Whether the URL's host is a newswire. The KIND rule is broader — it
+    also accepts a wire named as the source while the link points at the
+    publisher — but an announcement is parsed out of the wire's own page, so
+    this stays a question about the URL."""
+    from alphadesk.newskind import _host_of, _is_wire_host
+    return _is_wire_host(_host_of(url))
 
 
 def from_articles(articles: list[dict]) -> list[dict]:
