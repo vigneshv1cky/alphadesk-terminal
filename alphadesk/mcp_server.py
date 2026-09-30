@@ -117,9 +117,22 @@ def market_tape() -> list[dict]:
 
 @mcp.tool(annotations=READ_ONLY)
 def quote(symbol: str) -> dict:
-    """Full quote for one US-listed symbol: price and change, bid/ask, day and
-    52-week ranges, volume, market cap, valuation multiples, beta, EPS and
-    analyst targets.
+    """One US-listed symbol's live quote: price and change, the day's range,
+    open, previous close and volume — always — and `vendor` says which of the
+    reader's vendors answered.
+
+    WHICH OTHER FIELDS COME BACK DEPENDS ON THAT VENDOR, so read `vendor`
+    before concluding a figure does not exist. Alpaca answers with the BOOK
+    (bid, ask and their sizes) and carries no 52-week range and no market cap
+    at all; the others answer with the 52-WEEK RANGE, market cap and trailing
+    and forward P/E, and carry no book. A missing field means that vendor does
+    not publish it, not that the market lacks it.
+
+    NOT HERE AT ALL, whoever answers: beta, EPS and analyst price targets —
+    ask `key_stats` for the multiples, beta and EPS, and `analyst_view` for
+    targets and the consensus. For several symbols at once use `quotes`, which
+    fills the 52-week range and market cap from other sources whatever the
+    quote vendor is, but carries no book.
     """
     from alphadesk.providers import get_prices
     q = get_prices().quote(symbol)

@@ -613,3 +613,23 @@ def test_movers_does_not_still_claim_the_past_session_has_no_statistics(tools):
     d = tools["movers"].description
     assert "ENDING THAT DAY" in d
     assert "absent by design" not in d
+
+
+def test_quote_does_not_promise_fields_no_vendor_returns(tools):
+    """IT DESCRIBED A BEST CASE ACROSS VENDORS AS WHAT IT RETURNS
+    (2026-09-30). The old text promised "52-week ranges, market cap,
+    valuation multiples, beta, EPS and analyst targets". Both quote tools
+    resolve the same surface with Alpaca FIRST, and Alpaca's row carries none
+    of those — the dashboard's own note says its quote "carries no range at
+    all". Beta, EPS and targets are in no quote path at any vendor; they are
+    `key_stats` and `analyst_view`. An agent reading the old description would
+    call this for data it cannot return and conclude the reader has no vendor
+    for it."""
+    d = tools["quote"].description
+    # It must send the reader to the tools that actually hold these.
+    assert "key_stats" in d and "analyst_view" in d
+    # And say the shape depends on who answered, rather than promising one.
+    assert "vendor" in d
+    assert "DEPENDS ON THAT VENDOR" in d
+    # The specific overclaim must not come back.
+    assert "beta, EPS and analyst targets" not in d.replace("NOT HERE AT ALL, whoever answers: beta, EPS and analyst price targets", "")
