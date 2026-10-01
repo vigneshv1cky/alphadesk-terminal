@@ -286,3 +286,26 @@ def test_warm_starts_one_capture_per_cold_symbol(monkeypatch):
     release.set()
     _t.sleep(0.3)
     assert sorted(calls) == ["AMD", "NVDA"]                        # started once each
+
+
+def test_social_posts_query_searches_the_whole_window_then_caps(monkeypatch):
+    """A search must read the mirror's full window and cap the MATCHES;
+    capping first would search only the newest few posts."""
+    import alphadesk.providers as providers
+    posts = [{"text": f"post {i} about tariffs" if i % 2 else f"post {i} about nothing"}
+             for i in range(100)]
+    seen = {}
+
+    class Router:
+        def ask(self, name, **kw):
+            seen.update(kw)
+            return posts[:kw["limit"]]
+    monkeypatch.setattr(providers, "get_prices", lambda: Router())
+
+    got = mcp_server.social_posts(limit=5, query="tariff")
+    assert seen["limit"] == 100
+    assert got["query"] == "tariff" and got["count"] == 5
+    assert all("tariffs" in p["text"] for p in got["posts"])
+
+    plain = mcp_server.social_posts(limit=5)
+    assert seen["limit"] == 5 and "query" not in plain and plain["count"] == 5
