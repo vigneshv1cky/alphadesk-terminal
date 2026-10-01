@@ -977,3 +977,47 @@ def test_scraped_rows_are_pruned_like_every_other_vendor_table(store):
     # is still inside the window and stays; a forty-day-old one does not.
     assert ("halts", 1) not in left and ("posts", 1) not in left
     assert ("earnings", 1) in left
+
+
+# ---------------------------------------------------------------------------
+# A POST SHOWS THE WORDS THE AUTHOR TYPED, NOT THE FEED'S ESCAPING (2026-10-01)
+#
+# The mirror's feed writes an ampersand as "&amp;", and the page showed
+# "Heritage Foundation &amp; Heritage Action" literally. Decoded once, where
+# the text is first read, so the page, the agent tool, the word search and the
+# kind rule all see the same words.
+# ---------------------------------------------------------------------------
+
+_ESCAPED_FEED = """<rss><channel>
+  <item>
+    <title><![CDATA[x]]></title>
+    <link>https://www.trumpstruth.org/statuses/3</link>
+    <description><![CDATA[<p>Kevin Roberts, Heritage Foundation &amp; Heritage Action &quot;win&quot; &#8212; don&#039;t&nbsp;stop</p>]]></description>
+    <pubDate>Thu, 01 Oct 2026 17:00:00 +0000</pubDate>
+  </item>
+  <item>
+    <title><![CDATA[x]]></title>
+    <link>https://www.trumpstruth.org/statuses/2</link>
+    <description><![CDATA[<p>&amp;amp; stays as typed</p>]]></description>
+    <pubDate>Thu, 01 Oct 2026 16:00:00 +0000</pubDate>
+  </item>
+  <item>
+    <title><![CDATA[x]]></title>
+    <link>https://www.trumpstruth.org/statuses/1</link>
+    <description><![CDATA[<p>&nbsp;</p>]]></description>
+    <pubDate>Thu, 01 Oct 2026 15:00:00 +0000</pubDate>
+  </item>
+</channel></rss>"""
+
+
+def test_post_text_is_decoded_once_and_a_blank_one_is_still_media(monkeypatch):
+    from alphadesk.providers import scraped
+
+    monkeypatch.setattr(scraped, "_get_text", lambda *a, **k: _ESCAPED_FEED)
+    rows = scraped.SocialPulse()._read_posts()
+
+    assert rows[0]["text"] == 'Kevin Roberts, Heritage Foundation & Heritage Action "win" — don\'t stop'
+    # Once, not repeatedly: what the author typed as "&amp;" stays "&amp;".
+    assert rows[1]["text"] == "&amp; stays as typed"
+    # A body that was only a non-breaking space is wordless, so media only.
+    assert rows[2]["text"] == "" and rows[2]["no_text"] is True

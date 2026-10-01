@@ -37,6 +37,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from html import unescape
 from typing import Any
 
 from alphadesk.providers.base import ProviderError
@@ -982,7 +983,10 @@ class SocialPulse:
                 inner = re.match(r"^<!\[CDATA\[(.*?)\]\]>$", text, re.S)
                 return (inner.group(1) if inner else text).strip()
             when, link = field("pubDate"), field("link")
-            text = re.sub(r"<[^>]+>", " ", field("description"))
+            # Markup is stripped FIRST and entities decoded AFTER, once: the
+            # feed writes "&" as "&amp;", and decoding before the strip would
+            # turn an author's typed "&lt;b&gt;" into a tag to be removed.
+            text = unescape(re.sub(r"<[^>]+>", " ", field("description")))
             text = re.sub(r"\s+", " ", text).strip()
             at = _rfc822(when)
             # A WORDLESS POST IS STILL A POST (2026-09-23, #66, the reader:
