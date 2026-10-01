@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { QueryFailure } from "@/components/KeyPrompt"
-import { Empty, Widget } from "@/components/terminal"
+import { Btn, Empty, fieldCls, Widget } from "@/components/terminal"
 import { on, isNeedsKey } from "@/lib/api"
 import { newsTime } from "@/lib/newsClock"
+import { matchesQuery } from "@/lib/newsMatch"
 import { postKind, POST_KIND_LABEL, type PostKind } from "@/lib/postKind"
 
 /** SOCIAL POSTS, ON THEIR OWN PAGE (2026-09-29, the owner: "lets make Trump
@@ -31,7 +32,7 @@ import { postKind, POST_KIND_LABEL, type PostKind } from "@/lib/postKind"
 export default function PostsPage() {
   const posts = useQuery({
     queryKey: ["social-posts"],
-    queryFn: ({ signal }) => on(signal).socialPosts(50),
+    queryFn: ({ signal }) => on(signal).socialPosts(100),
     staleTime: 60_000,
     retry: false,
   })
@@ -50,7 +51,13 @@ export default function PostsPage() {
     for (const p of live) { const k = postKind(p); n.set(k, (n.get(k) ?? 0) + 1) }
     return [...n.entries()].sort((a, b) => b[1] - a[1] || POST_KIND_LABEL[a[0]].localeCompare(POST_KIND_LABEL[b[0]]))
   }, [live])
-  const shown = kind ? live.filter(p => postKind(p) === kind) : live
+  // THE NEWS FILTER'S OWN WORD RULE (lib/newsMatch): whole words, in order,
+  // plurals folded, the last word allowed to stop part-way. Over the post's
+  // TEXT only — no ticker or company is resolved from a post, so a search for
+  // "HOOD" finds the word, not a claim about Robinhood.
+  const [query, setQuery] = useState("")
+  const needle = query.trim()
+  const shown = live.filter(p => (!kind || postKind(p) === kind) && (!needle || matchesQuery(needle, p.text)))
 
   return (
     <>
@@ -80,15 +87,29 @@ export default function PostsPage() {
       title="Social posts"
       subtitle="an account mirror — unverified, and never read for tickers"
       scroll="fit"
-      actions={kinds.length > 1 ? (
-        <select value={kind} onChange={e => setKind(e.target.value as PostKind | "")}
-                aria-label="Kind"
-                title="The shape of the post — a repost, media with no caption, a bare link or text. Never what it is about."
-                className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
-          <option value="">All kinds</option>
-          {kinds.map(([k, n]) => <option key={k} value={k}>{`${POST_KIND_LABEL[k]} · ${n}`}</option>)}
-        </select>
-      ) : undefined}
+      actions={
+        <>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search posts — a word or phrase…"
+            aria-label="Search the posts"
+            title="Whole words, in order, as in the news filter. Searches the loaded posts' text only."
+            className={`${fieldCls} w-56`}
+          />
+          {query && <Btn variant="ghost" onClick={() => setQuery("")}>Clear</Btn>}
+          {kinds.length > 1 && (
+            <select value={kind} onChange={e => setKind(e.target.value as PostKind | "")}
+                    aria-label="Kind"
+                    title="The shape of the post — a repost, media with no caption, a bare link or text. Never what it is about."
+                    className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
+              <option value="">All kinds</option>
+              {kinds.map(([k, n]) => <option key={k} value={k}>{`${POST_KIND_LABEL[k]} · ${n}`}</option>)}
+            </select>
+          )}
+          <span className="tnum text-caption text-muted-foreground">{`${shown.length} / ${live.length}`}</span>
+        </>
+      }
     >
       {posts.isPending ? <Empty>loading…</Empty>
       : isNeedsKey(posts.error) ? (
@@ -102,6 +123,8 @@ export default function PostsPage() {
         <Empty>the social source is on, but could not be read — {off.join("; ")}</Empty>
       ) : live.length === 0 ? (
         <Empty>the social source answered, but with no posts in it</Empty>
+      ) : shown.length === 0 ? (
+        <Empty>no post matches these filters</Empty>
       ) : (
         <ul>
           {shown.map((post, i) => (
