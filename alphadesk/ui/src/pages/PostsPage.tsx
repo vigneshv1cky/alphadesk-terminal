@@ -1,8 +1,10 @@
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { Empty, Widget } from "@/components/terminal"
 import { on, isNeedsKey } from "@/lib/api"
 import { newsTime } from "@/lib/newsClock"
+import { postKind, POST_KIND_LABEL, type PostKind } from "@/lib/postKind"
 
 /** SOCIAL POSTS, ON THEIR OWN PAGE (2026-09-29, the owner: "lets make Trump
  * Truth social a tab too").
@@ -39,6 +41,17 @@ export default function PostsPage() {
   const live = posts.isError ? [] : posts.data?.posts ?? []
   const off = Object.values(posts.data?.unavailable ?? {})
 
+  // THE KIND IS THE POST'S OWN SHAPE (repost, media, link, text) — never its
+  // topic, for the reason no ticker is read out of post text. Only the kinds
+  // the window holds are offered, with counts, like the News kind picker.
+  const [kind, setKind] = useState<PostKind | "">("")
+  const kinds = useMemo(() => {
+    const n = new Map<PostKind, number>()
+    for (const p of live) { const k = postKind(p); n.set(k, (n.get(k) ?? 0) + 1) }
+    return [...n.entries()].sort((a, b) => b[1] - a[1] || POST_KIND_LABEL[a[0]].localeCompare(POST_KIND_LABEL[b[0]]))
+  }, [live])
+  const shown = kind ? live.filter(p => postKind(p) === kind) : live
+
   return (
     <>
       {/* THE PAGE SAYS WHICH PAGE IT IS (2026-09-29, the owner: "include
@@ -67,6 +80,15 @@ export default function PostsPage() {
       title="Social posts"
       subtitle="an account mirror — unverified, and never read for tickers"
       scroll="fit"
+      actions={kinds.length > 1 ? (
+        <select value={kind} onChange={e => setKind(e.target.value as PostKind | "")}
+                aria-label="Kind"
+                title="The shape of the post — a repost, media with no caption, a bare link or text. Never what it is about."
+                className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
+          <option value="">All kinds</option>
+          {kinds.map(([k, n]) => <option key={k} value={k}>{`${POST_KIND_LABEL[k]} · ${n}`}</option>)}
+        </select>
+      ) : undefined}
     >
       {posts.isPending ? <Empty>loading…</Empty>
       : isNeedsKey(posts.error) ? (
@@ -82,13 +104,15 @@ export default function PostsPage() {
         <Empty>the social source answered, but with no posts in it</Empty>
       ) : (
         <ul>
-          {live.map((post, i) => (
+          {shown.map((post, i) => (
             <li key={post.url ?? i} className="row-rule hover:bg-foreground/5">
               <a href={post.url ?? undefined} target="_blank" rel="noopener noreferrer"
                  title={post.trust ?? undefined} className="block w-full px-3 py-3 text-left">
                 <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
                   <span className="border border-border px-1 text-label font-semibold leading-[17px] tracking-ticker text-muted-foreground">post</span>
                   <span className="text-muted-foreground">{post.platform ?? "social"}</span>
+                  <span className="text-muted-foreground"
+                        title="The post's own shape, not its topic">{POST_KIND_LABEL[postKind(post)]}</span>
                   <span className="normal-case tracking-normal text-warn">unverified</span>
                   <span className="normal-case tracking-normal text-muted-foreground">{newsTime(post.at)}</span>
                   {post.via && (

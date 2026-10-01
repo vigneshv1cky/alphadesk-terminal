@@ -937,7 +937,11 @@ class SocialPulse:
             raise_if_failing("posts")
             self._fill_posts()
             return None
-        return rows[:max(1, min(int(limit), 100))] or None
+        # THE KIND IS ADDED ON READ, not stored: rows already in the shared
+        # store predate it, and the rule is cheaper than a migration.
+        from alphadesk import postkind
+        return [{**r, "kind": postkind.of_post(r)}
+                for r in rows[:max(1, min(int(limit), 100))]] or None
 
     def _fill_posts(self) -> None:
         """Read the mirror in the background, into the shared store."""

@@ -1348,7 +1348,11 @@ def social_posts(limit: int = 20) -> dict:
 
     The posts come from a THIRD-PARTY MIRROR of the account, not the
     platform (whose own interface refuses us), so it may lag or miss
-    posts — each row names the mirror."""
+    posts — each row names the mirror.
+
+    `kind` is STRUCTURAL, read from the post's own shape and never from its
+    topic: repost, media (no caption), link (only a URL) or text. It says what
+    kind of post it is, not what it is about."""
     from alphadesk.providers import get_prices
     rows = get_prices().ask("social_posts", limit=max(1, min(int(limit), 100)),
                             surface="social")

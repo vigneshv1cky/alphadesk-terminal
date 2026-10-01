@@ -787,6 +787,8 @@ export interface SocialPost {
    * rather than being dropped, so "he did not post" and "he posted a photo"
    * stop looking alike. We do not fetch the media. */
   no_text?: boolean
+  /** repost | media | link | text — the post's own shape, never its topic. */
+  kind?: "repost" | "media" | "link" | "text"
 }
 
 export class NeedsKeyError extends ApiError {
