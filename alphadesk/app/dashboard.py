@@ -53,6 +53,12 @@ app.include_router(admin_router)
 # Mounted before every other route, so the SPA's catch-all can never answer
 # a tool call with the page shell.
 app.mount(agent_tools.MOUNT, _agent_tools_app)
+# The same tools as plain GET endpoints for programs that are not agents
+# (app/rest_data.py), behind the same token gate and mounted before the SPA's
+# catch-all for the same reason.
+from alphadesk.app import rest_data  # noqa: E402
+
+app.mount(rest_data.PREFIX, agent_tools.TokenGate(rest_data.build()))
 # The OAuth sign-in connectors use (Claude.ai, ChatGPT): the authorization
 # server and resource metadata at the root, as the specs place them, and the
 # consent page (app/agent_oauth.py). Also before the SPA's catch-all.
@@ -100,7 +106,8 @@ async def _note_for_prewarm(request: Request, call_next):
     a header and are never noted again."""
     response = await call_next(request)
     if (request.method == "GET" and response.status_code == 200
-            and request.url.path.startswith("/api/") and not request.headers.get("x-alphadesk-prewarm")):
+            and request.url.path.startswith("/api/") and not request.url.path.startswith(rest_data.PREFIX)
+            and not request.headers.get("x-alphadesk-prewarm")):
         from alphadesk import billing, prewarm
         from alphadesk.app import auth
         claims = auth.current_user(request)

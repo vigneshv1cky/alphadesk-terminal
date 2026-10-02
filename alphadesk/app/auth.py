@@ -562,12 +562,14 @@ def is_gated(path: str) -> bool:
     module's own routes and the liveness probe requires a session."""
     # The agent's tool server carries its own credential — an access token
     # the reader issued (app/agent_access.py) — because the reader's own
-    # agent calls it from outside, with no browser session to present.
+    # agent calls it from outside, with no browser session to present. The
+    # plain-HTTP data API (/api/v1, app/rest_data.py) carries the same one,
+    # for the programs that read AlphaDesk without being agents.
     # The payment processor's webhook likewise: the processor calls it with
     # no session, and the route verifies the processor's signature instead —
     # gated, every Stripe event was refused with 401 (2026-09-19).
     return path.startswith("/api") and not path.startswith("/api/auth") \
-        and not path.startswith("/api/agent/tools") \
+        and not path.startswith("/api/agent/tools") and not path.startswith("/api/v1") \
         and not (path == "/api/billing/webhook" or path.startswith("/api/billing/webhook/")) \
         and path != "/api/healthz" and path != "/healthz"
 

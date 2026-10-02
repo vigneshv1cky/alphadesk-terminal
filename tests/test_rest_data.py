@@ -85,3 +85,37 @@ class TestApp:
         assert op["operationId"] == "quote" and op["parameters"][0] == {
             "name": "symbol", "in": "query", "required": True, "schema": {"type": "string"}}
         assert spec["components"]["securitySchemes"]["bearer"]["scheme"] == "bearer"
+
+
+@pytest.fixture()
+def rest(store, monkeypatch):
+    """The real app with a token-bearing client for the local reader."""
+    from alphadesk.app import agent_access, dashboard
+    store.ensure_local_user()
+    uid = dashboard._local_uid()
+    monkeypatch.setattr(agent_access, "limiter", agent_access.RateLimit())
+    _, token = agent_access.issue(uid, "bot")
+    with TestClient(dashboard.app) as c:
+        c.uid, c.token = uid, token
+        c.headers["Authorization"] = f"Bearer {token}"
+        yield c
+
+
+class TestMounted:
+    def test_no_token_is_a_401_and_a_token_is_a_200(self, rest):
+        assert rest.get("/api/v1/data_sources", headers={"Authorization": ""}).status_code == 401
+        r = rest.get("/api/v1/data_sources")
+        assert r.status_code == 200 and "x-ratelimit-remaining" in r.headers and "etag" in r.headers
+
+    def test_the_page_login_gate_leaves_this_door_to_its_token(self):
+        from alphadesk.app.auth import is_gated
+        assert not is_gated("/api/v1/quote") and is_gated("/api/keys")
+
+    def test_a_read_here_is_never_noted_for_prewarm(self, rest, monkeypatch):
+        """Prewarm replays a page's reads without credentials; a replayed API
+        read would only be refused. This door is not a page."""
+        from alphadesk import prewarm
+        noted = []
+        monkeypatch.setattr(prewarm, "note", lambda *a, **k: noted.append(a))
+        assert rest.get("/api/v1/data_sources").status_code == 200
+        assert noted == []
