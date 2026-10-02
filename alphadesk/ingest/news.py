@@ -386,6 +386,66 @@ def older_articles(user_id: str, before: str, limit: int = 100, query: str = "")
     return rows
 
 
+# A symbol's own ask at the vendor, remembered so a panel that refreshes every
+# minute does not repeat it. Keyed by reader, symbol and page edge.
+SYMBOL_ASK_TTL_S = 600.0
+SYMBOL_LOOKBACK_DAYS = 30
+_symbol_asked: dict[tuple, float] = {}
+_symbol_asked_lock = threading.Lock()
+
+
+def symbol_articles(user_id: str, symbol: str, before: str | None, limit: int) -> list[dict]:
+    """One symbol's stories for its panel, newest first (2026-10-02). From
+    what is stored first; when the store runs short of `limit`, the reader's
+    feeds that can read one symbol (Alpaca) are asked for that symbol alone,
+    the answer stored as theirs, and the page read again. The feed-wide poll
+    only ever holds the newest slice of everything, so a quiet name such as
+    SVRN could be empty here however far back the reader paged. An ask is
+    made once per ten minutes per symbol and page edge; any failure leaves
+    the stored page as it was."""
+    owner = news_owner(user_id)
+    rows = store.articles_for_symbol(owner, symbol, before, limit)
+    if len(rows) >= limit:
+        return rows
+    key = (user_id, symbol, before or "")
+    now = time.monotonic()
+    with _symbol_asked_lock:
+        if now - _symbol_asked.get(key, -1e9) < SYMBOL_ASK_TTL_S:
+            return rows
+        _symbol_asked[key] = now
+        if len(_symbol_asked) > 2000:
+            _symbol_asked.clear()
+    try:
+        until = datetime.fromisoformat(before.replace("Z", "+00:00")) if before else None
+    except ValueError:
+        return rows
+    since = (until or datetime.now(timezone.utc)) - timedelta(days=SYMBOL_LOOKBACK_DAYS)
+    keys = store.get_user_keys(user_id, "news")
+    batches = []
+    for row in keys:
+        try:
+            provider = _user_news_provider(user_id, row["created_at"], row["provider"], row["config"])
+        except Exception:
+            continue
+        params = inspect.signature(provider.fetch).parameters
+        if "symbols" not in params or "until" not in params:
+            continue                                   # this feed cannot read one symbol
+        try:
+            got = provider.fetch(since, limit=limit, until=until, symbols=[symbol])
+        except Exception as exc:
+            log.info("%s news from %s: %s", symbol, row["provider"], exc)
+            continue
+        batches.append([{"id": a.id, "title": a.title, "summary": a.summary, "source": a.source,
+                         "url": a.url, "published_at": a.published_at, "tickers": a.symbols,
+                         "image_url": a.image_url, "author": a.author, "body": a.body,
+                         "feeds": [row["provider"]]} for a in got if a.id])
+    merged = drop_unstorable(_merge_feeds(batches), keys)
+    if merged:
+        store.save_articles(merged, owner=owner)
+        rows = store.articles_for_symbol(owner, symbol, before, limit)
+    return rows
+
+
 def backfill_user(user_id: str, provider_name: str, days: float | None = None) -> int:
     """Refill the retention window for one feed after its key is saved
     (2026-10-02). The poll only ever asks for the newest stories, so a

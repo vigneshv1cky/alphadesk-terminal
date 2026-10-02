@@ -163,9 +163,12 @@ class AlpacaNews:
         self.key = (api_key or "").strip()
         self.secret = (api_secret or "").strip()
 
-    def fetch(self, since: datetime, limit: int = 200, until: datetime | None = None) -> list[Article]:
+    def fetch(self, since: datetime, limit: int = 200, until: datetime | None = None,
+              symbols: list[str] | None = None) -> list[Article]:
         """Articles from `since`, newest first; with `until`, only those
-        published before it (a page of older news)."""
+        published before it (a page of older news); with `symbols`, only
+        those the feed tags with one of them — so a quiet name is read on its
+        own rather than hoped for in the newest slice of everything."""
         if not (self.key and self.secret):
             raise ProviderError("no Alpaca key and secret")
         try:
@@ -186,7 +189,8 @@ class AlpacaNews:
                 # without it and the reader showed the summary with a link
                 # out, though the feed delivers the full story on this key.
                 req = NewsRequest(start=since, end=until, limit=50, sort="desc",
-                                  include_content=True, exclude_contentless=True, page_token=token)
+                                  include_content=True, exclude_contentless=True, page_token=token,
+                                  **({"symbols": ",".join(symbols)} if symbols else {}))
                 page = client.get_news(req)
                 items = getattr(page, "data", {}).get("news", []) if hasattr(page, "data") else []
                 if not items:

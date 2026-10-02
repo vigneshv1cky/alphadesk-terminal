@@ -143,6 +143,35 @@ def test_backfill_walks_the_window_a_day_at_a_time(store, monkeypatch):
     assert len(rows) == 3 and all(r["feeds"] == "alpaca" for r in rows)
 
 
+def test_a_quiet_symbol_is_asked_of_the_feed_on_its_own(store, monkeypatch):
+    """The symbol panel read only stored stories, which come from feed-wide
+    fetches, so a quiet name (SVRN) stayed empty however far back the reader
+    paged (2026-10-02). A short page now asks the feed for that symbol."""
+    import uuid
+    from datetime import datetime, timezone
+
+    from alphadesk.ingest import news
+    from alphadesk.providers.base import Article
+
+    uid = uuid.uuid4().hex
+    store.set_user_key(uid, "news", "alpaca", "sealed", "…abcd")
+    asks = []
+
+    class Feed:
+        def fetch(self, since, limit=200, until=None, symbols=None):
+            asks.append(symbols)
+            return [Article(id="q1", title="t", url="https://x/q1",
+                            published_at=datetime.now(timezone.utc).isoformat(), symbols=["SVRN"])]
+
+    monkeypatch.setattr(news, "_user_news_provider", lambda *a, **k: Feed())
+    news._symbol_asked.clear()
+    rows = news.symbol_articles(uid, "SVRN", None, 50)
+    assert [r["article_id"] for r in rows] == ["q1"] and asks == [["SVRN"]]
+    # Asked again inside the window: answered from the store, no second ask.
+    news.symbol_articles(uid, "SVRN", None, 50)
+    assert len(asks) == 1
+
+
 def test_stories_from_a_feed_you_no_longer_hold_are_named(client, store, monkeypatch):
     """A feed removed BEFORE the purge landed (2026-09-18) left its stories
     behind, and they showed up in the news list under publishers the reader
