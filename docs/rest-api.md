@@ -23,7 +23,8 @@ bars at a minute or so for a modest list of symbols.
 
 1. Sign in, and on the **Account** page connect at least one market-data
    vendor (your own key).
-2. Under **Agent access**, create a token. Name it for the program, and put
+2. On the **Agent access** page (in the sidebar, beside Account), create a
+   token. Name it for the program, and put
    your server's address under **Only from**, so a leaked token is useless
    anywhere else. The token is shown once.
 3. Call an endpoint:

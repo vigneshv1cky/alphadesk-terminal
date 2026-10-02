@@ -103,7 +103,7 @@ Readers connect their own agent to the read-only tools at
 `/api/agent/tools/mcp`; every call runs as exactly that reader, rate-limited
 to 120 requests a minute per credential. Two credentials exist:
 
-- **Tokens** created on the Account page for Claude Code, Codex, Cursor and
+- **Tokens** created on the Agent access page (beside Account) for Claude Code, Codex, Cursor and
   opencode: shown once, stored as SHA-256, at most 10 live, revoked at once.
 - **OAuth 2.1** for connector apps that add a server by URL (Claude.ai,
   ChatGPT): registration, PKCE, refresh and revoke, with clients sealed and

@@ -105,9 +105,9 @@ see [Accounts](#accounts-security-and-privacy)).
    card to enter. Paid plans ($19 a month or $190 a year, each after a
    14-day trial) will be announced to account holders before they start;
    nobody is charged without subscribing.
-4. Optional: connect your own agent from the Account page — a token for
-   Claude Code, Codex, Cursor or opencode, or add the server URL as a
-   connector in Claude.ai or ChatGPT.
+4. Optional: connect your own agent from the **Agent access** page (in the
+   sidebar, beside Account) — a token for Claude Code, Codex, Cursor or
+   opencode, or add the server URL as a connector in Claude.ai or ChatGPT.
 
 ### Option B — Self-hosted (AGPL-3.0)
 
@@ -365,9 +365,10 @@ rate-limited to 120 requests a minute per token.
 
 - **Claude.ai, ChatGPT** — add a custom connector with the server address and
   sign in when asked (OAuth 2.1 with PKCE; one live grant per registered app).
-- **Claude Code, Codex, Cursor, opencode** — create a token on the Account
-  page under Agent access (shown once, stored hashed, revocable at once); the
-  page gives each client's exact setup.
+- **Claude Code, Codex, Cursor, opencode** — create a token on the **Agent
+  access** page, in the sidebar beside Account (shown once, stored hashed,
+  revocable at once); the page gives each client's exact setup, and a tab for
+  your own program using the data API below.
 
 **Tools**
 
