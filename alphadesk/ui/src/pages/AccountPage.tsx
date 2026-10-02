@@ -830,7 +830,7 @@ function AgentAccessPanel({ span = 12 }: { span?: number }) {
         <Row label="Only from">
           <input value={ips} onChange={e => setIps(e.target.value)} maxLength={400}
                  aria-label="Addresses this token may be used from (optional)"
-                 placeholder="optional — your server's address, e.g. 203.0.113.7 (several: separate with commas)"
+                 placeholder="optional, e.g. 203.0.113.7, 198.51.100.0/24"
                  className={`${fieldCls} w-full`} />
         </Row>
       </form>
