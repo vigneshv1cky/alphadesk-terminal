@@ -6,6 +6,15 @@
 
 **Tech Stack**: Python 3.11+, FastAPI/Starlette (a mounted sub-app), the `mcp` 1.30 FastMCP tool registry, SQLite/Postgres store, pytest. Frontend (one small step): React 19 + TypeScript + Vite.
 
+## Status (2026-10-02)
+
+Steps 1–11 are built and committed on branch `claude/dazzling-volta-lj4kmt`; Step 12 (merge, deploy, live check) waits for the owner. What the build found that this plan got wrong, corrected below and recorded here:
+
+- **Step 3**: FastAPI cannot resolve a handler's `Request` annotation from an import local to `build()` when the module uses `from __future__ import annotations` — every call answered 422. The imports are at module level in the real code.
+- **Step 7**: the chart route answers **404, not an empty list**, once a walk has gone past the oldest bar. The endpoint turns a 404 *with a cursor* into an empty final page carrying a `note`; without a cursor a 404 stays a 404. The chart's 503 with `Retry-After` is passed through with its header.
+- **Step 11**: `quote` with no vendor key answers **422 "no quote available"**, not 428 — the tool absorbs the missing-key case itself (the agent door does the same). `bars` does answer 428. Giving the tools a distinct "no vendor key" error is a follow-up.
+- Tests that pass on first run (Step 6, and the "404 on the first page" test) were checked by temporarily breaking the code they guard; each failed as intended.
+
 ## Ground rules for every step
 
 - **Read-only is the product.** No route accepts anything but GET. No tool or endpoint name may suggest a write (`tests/test_mcp.py` already guards the tools; Step 6 guards this door).
@@ -236,9 +245,10 @@ class TestApp:
 
 ### 3c. Implement (add to `alphadesk/app/rest_data.py`)
 ```python
-import hashlib
-import json
-from datetime import datetime, timezone
+# Module level, with the other imports at the top of the file (see Status):
+# hashlib, json, datetime/timezone, and from fastapi: FastAPI, HTTPException,
+# Request, Response, jsonable_encoder, JSONResponse; and from
+# alphadesk.providers.base: NeedsKey, ProviderError.
 
 
 def openapi(tools) -> dict:
@@ -267,8 +277,6 @@ def openapi(tools) -> dict:
 
 
 def _reply(request, result):
-    from fastapi import Response
-    from fastapi.encoders import jsonable_encoder
     body = json.dumps(jsonable_encoder(result), separators=(",", ":")).encode()
     headers = {"ETag": '"' + hashlib.sha256(body).hexdigest()[:16] + '"',
                "X-AlphaDesk-As-Of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -280,11 +288,6 @@ def _reply(request, result):
 
 def build(tools=None):
     """The sub-app to mount at PREFIX. `tools` defaults to the live agent tools."""
-    from fastapi import FastAPI, HTTPException, Request
-    from fastapi.responses import JSONResponse
-
-    from alphadesk.providers.base import NeedsKey, ProviderError
-
     if tools is None:
         from alphadesk.mcp_server import mcp
         tools = mcp._tool_manager.list_tools()
@@ -491,6 +494,8 @@ class TestGuards:
 First, a 5-minute read-only look (no code): open `dashboard.api_chart` (`alphadesk/app/dashboard.py`, `def api_chart`) and `ingest/prices.py` `page_attempts` and `history_floor`, and note (a) the format `before` is parsed from, (b) what `need` does. Write what you found as a comment above the endpoint in 7c. The endpoint reuses `api_chart` — it does not re-implement vendor selection or interval resolution.
 
 ### 7a. Write failing test (append)
+
+*As built (see Status): the end-of-history test expects a 200 empty page with a `note` when `api_chart` raises 404 and a `before` was given; a 404 without `before` stays 404; a 503 keeps its `Retry-After`. The first sketch below assumed an empty list from the chart route, which is not what it does.*
 ```python
 class TestBars:
     def _series(self):
@@ -717,7 +722,7 @@ test("an entry that is not an address or range is named", () => {
 
 1. `ALPHADESK_SEMANTIC_SEARCH=off .venv/bin/python -m pytest -q -p no:cacheprovider` → all green; `cd alphadesk/ui && pnpm test && pnpm exec tsc -b && pnpm lint` → green.
 2. Start an **isolated** instance on a spare port with throwaway data (never the owner's local server or `.local-data`): `ALPHADESK_AUTH=off ALPHADESK_DATA=<scratch dir> ALPHADESK_VAULT_KEY=<fresh base64 32 bytes> DASHBOARD_PORT=8001 SEC_USER_AGENT="AlphaDesk verify (<owner email>)" ALPHADESK_SEMANTIC_SEARCH=off .venv/bin/python -m alphadesk.main dashboard`.
-3. Create a token with `curl -X POST localhost:8001/api/agent/access-tokens -H 'Content-Type: application/json' -d '{"name":"verify"}'`, then check with `curl -i -H "Authorization: Bearer <token>"`: `/api/v1/data_sources` → 200 with `ETag`, `X-AlphaDesk-As-Of`, `X-RateLimit-*`; the same call with the `ETag` as `If-None-Match` → 304; no token → 401; `POST` → 405; `/api/v1/quote?symbol=AAPL` (no vendor key) → 428 naming vendors; `/api/v1/openapi.json` → the spec with 51 paths (50 tools plus bars); a loop of 125 calls → the 121st answers 429 with `Retry-After`.
+3. Create a token with `curl -X POST localhost:8001/api/agent/access-tokens -H 'Content-Type: application/json' -d '{"name":"verify"}'`, then check with `curl -i -H "Authorization: Bearer <token>"`: `/api/v1/data_sources` → 200 with `ETag`, `X-AlphaDesk-As-Of`, `X-RateLimit-*`; the same call with the `ETag` as `If-None-Match` → 304; no token → 401; `POST` → 405; `/api/v1/bars/AAPL?interval=1d&range=MAX` (no vendor key) → 428 naming vendors (`quote` answers 422 "no quote available" — see Status); `/api/v1/openapi.json` → the spec with 51 paths (50 tools plus bars); a loop of 125 calls → the 121st answers 429 with `Retry-After`.
 4. Repeat one call with `X-Forwarded-For: 198.51.100.9` against a token created with `allowed_ips: ["203.0.113.7"]` → 403.
 5. Stop only the process listening on the spare port; delete the scratch data.
 
