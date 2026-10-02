@@ -9,6 +9,7 @@ import { DeleteAccountDialog } from "@/components/DeleteAccountDialog"
 import { KeysExportDialog } from "@/components/KeysExportDialog"
 import { AGENT_CLIENTS, agentSetup, type AgentClient } from "@/lib/agentSetup"
 import { connectionGroups } from "@/lib/agentConnections"
+import { parseAllowedIps } from "@/lib/allowedIps"
 
 /** The signed-in user's own page, in the Masthead direction (picked from
  * the design canvas, 2026-09-02): identity as a full-width band — avatar,
@@ -712,6 +713,7 @@ function AgentAccessPanel({ span = 12 }: { span?: number }) {
   const qc = useQueryClient()
   const list = useQuery({ queryKey: ["agent-access-tokens"], queryFn: ({ signal }) => on(signal).agentAccessTokens() })
   const [name, setName] = useState("")
+  const [ips, setIps] = useState("")
   const [fresh, setFresh] = useState<{ id: string; token: string } | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [client, setClient] = useState<AgentClient>("claude-code")
@@ -726,9 +728,12 @@ function AgentAccessPanel({ span = 12 }: { span?: number }) {
     if (busy) return
     setBusy(true); setError(null); setCopied(null)
     try {
-      const made = await api.issueAgentAccessToken(name.trim())
+      // Parsed first: an entry that is not an address is named in the field's
+      // own error before anything is sent or any token is made.
+      const made = await api.issueAgentAccessToken(name.trim(), parseAllowedIps(ips))
       setFresh({ id: made.token_id, token: made.token })
       setName("")
+      setIps("")
       void qc.invalidateQueries({ queryKey: ["agent-access-tokens"] })
     } catch (err) {
       setError(String((err as Error).message ?? err))
@@ -805,7 +810,10 @@ function AgentAccessPanel({ span = 12 }: { span?: number }) {
               <span className="block text-label text-warn">Copy it now: it is not shown again.</span>
             </>
           ) : (
-            <>····{t.hint} · {t.last_used_at ? `last used ${new Date(t.last_used_at).toLocaleString()}` : "not used yet"}</>
+            <>
+              ····{t.hint} · {t.last_used_at ? `last used ${new Date(t.last_used_at).toLocaleString()}` : "not used yet"}
+              {" · "}{t.allowed_ips?.length ? `only from ${t.allowed_ips.join(", ")}` : "from any address"}
+            </>
           )}
         </Row>
       ))}
@@ -817,6 +825,12 @@ function AgentAccessPanel({ span = 12 }: { span?: number }) {
           <input value={name} onChange={e => setName(e.target.value)} maxLength={60}
                  aria-label="Name the agent this token is for"
                  placeholder="which agent, e.g. Claude Code on my laptop"
+                 className={`${fieldCls} w-full`} />
+        </Row>
+        <Row label="Only from">
+          <input value={ips} onChange={e => setIps(e.target.value)} maxLength={400}
+                 aria-label="Addresses this token may be used from (optional)"
+                 placeholder="optional — your server's address, e.g. 203.0.113.7 (several: separate with commas)"
                  className={`${fieldCls} w-full`} />
         </Row>
       </form>
@@ -853,6 +867,7 @@ function AgentAccessPanel({ span = 12 }: { span?: number }) {
       )}
       <Caption>
         Each call runs as you, on your keys, at up to 120 requests a minute per token. Revoking stops a token at once.
+        Name your server's address under "Only from" and a leaked token is useless anywhere else.
       </Caption>
       <Caption>
         An app keeps the tool list it saw when it connected — reconnect it to pick up tools added since.

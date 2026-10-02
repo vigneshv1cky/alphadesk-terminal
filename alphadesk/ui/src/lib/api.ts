@@ -1431,6 +1431,8 @@ export interface AgentAccessToken {
   hint: string
   created_at: string
   last_used_at: string | null
+  /** Addresses or ranges the token may be used from; empty means anywhere. */
+  allowed_ips: string[]
 }
 
 
@@ -1501,8 +1503,8 @@ export const api = {
   saveLayout: (page: string, tiles: string) =>
     put<{ ok: boolean }>(`/api/layouts/${encodeURIComponent(page)}`, { tiles }),
   agentAccessTokens: () => get<{ url: string; tokens: AgentAccessToken[] }>("/api/agent/access-tokens"),
-  issueAgentAccessToken: (name: string) =>
-    post<AgentAccessToken & { token: string; url: string }>("/api/agent/access-tokens", { name }),
+  issueAgentAccessToken: (name: string, allowedIps: string[] = []) =>
+    post<AgentAccessToken & { token: string; url: string }>("/api/agent/access-tokens", { name, allowed_ips: allowedIps }),
   agentConnections: () =>
     get<{ connections: { grant_id: string; client_name: string; created_at: string; last_used_at: string | null }[] }>(
       "/api/agent/connections"),
