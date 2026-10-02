@@ -394,6 +394,13 @@ publisher or filer text say that it is untrusted input. Every tool carries
 `readOnlyHint`, so a client can call them without asking permission for each
 read.
 
+**The same tools as a plain HTTP API.** For a program that is not an agent — a
+trading bot, an importer — the tools are also `GET` endpoints under
+`/api/v1`, with the same token, the same per-reader keys and the same limits,
+plus **every bar of price history** (the agent tools thin it) paged by time,
+and an optional list of addresses a token may be used from. It is read-only,
+and polling rather than streaming: see **[docs/rest-api.md](docs/rest-api.md)**.
+
 ---
 
 ## Accounts, security and privacy
