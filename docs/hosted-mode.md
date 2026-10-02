@@ -70,8 +70,8 @@ python -m alphadesk.main user remove reader@gmail.com
   four-character hint, never the key. A decrypted key exists in memory only
   while a provider is built, and never appears in an error, a log line or a
   response — with one deliberate exception: the reader's own **Export keys**
-  download (2026-10-02), which hands the keys back sealed under a passphrase
-  they chose. It answers only to the reader's browser session (never an agent
+  download (2026-10-02), which hands the keys back as a plain-text file
+  (2026-10-02; a passphrase sent to the route still seals it). It answers only to the reader's browser session (never an agent
   token or OAuth grant), requires a sign-in within the last ten minutes, is
   limited to five an hour, and is logged by count only.
 - **The server holds no vendor keys of its own.** Market data accumulates:

@@ -2007,7 +2007,7 @@ def api_keys_delete(seam: str, request: Request):
 
 
 class KeyExportIn(BaseModel):
-    passphrase: str
+    passphrase: str = ""     # empty: a plain file, no passphrase
 
 
 #: How recently the reader must have signed in to export (seconds), and how
@@ -2057,7 +2057,7 @@ def api_keys_export(body: KeyExportIn, request: Request):
     if not vault.enabled():
         raise HTTPException(503, "the key vault is not enabled on this instance"
                                  " (ALPHADESK_VAULT_KEY is not set)")
-    if len(body.passphrase) < keyexport.MIN_PASSPHRASE:
+    if body.passphrase and len(body.passphrase) < keyexport.MIN_PASSPHRASE:
         raise HTTPException(422, f"the passphrase must be at least {keyexport.MIN_PASSPHRASE} characters")
     wait = export_limiter.check(user_id)
     if wait:
@@ -2077,10 +2077,13 @@ def api_keys_export(body: KeyExportIn, request: Request):
     if not entries:
         raise HTTPException(404, "no keys are stored to export")
     now = datetime.now(timezone.utc)
-    text = keyexport.seal({"exported_at": now.isoformat(timespec="seconds"), "keys": entries}, body.passphrase)
+    payload = {"exported_at": now.isoformat(timespec="seconds"), "keys": entries}
+    # NO PASSPHRASE MEANS A PLAIN FILE (2026-10-02, the owner's call): the keys
+    # readable as they are. Every other fence on this route still applies.
+    text = keyexport.seal(payload, body.passphrase) if body.passphrase else keyexport.plain(payload)
     log.info("keys exported for user %s: %d key%s", user_id, len(entries), "" if len(entries) == 1 else "s")
     return Response(text, media_type="application/json", headers={
-        "Content-Disposition": f'attachment; filename="alphadesk-keys-{now:%Y%m%d}.json"',
+        "Content-Disposition": f'attachment; filename="alphadesk-keys-{"sealed-" if body.passphrase else "plain-"}{now:%Y%m%d}.json"',
         "Cache-Control": "no-store", "Pragma": "no-cache"})
 
 

@@ -125,9 +125,12 @@ Breaking one of these is a bug even if the tests pass.
   by time, reusing the chart route so the vendor, interval and history floor
   are the chart's own. The chart route ends a walk with a 404; the data API
   turns that, when a cursor was given, into an empty final page.
-- **A key leaves the vault only through the reader's own sealed export.** Keys
+- **A key leaves the vault only through the reader's own export.** Keys
   are never shown after entry, with one deliberate exception (2026-10-02): the
-  **Export keys** download, sealed under a passphrase the reader chooses. It
+  **Export keys** download. It was sealed under a passphrase the reader
+  chooses; the same day the owner made it a plain-text file (no passphrase),
+  so the file itself is the secret — the route still seals it if a passphrase
+  is sent. It
   answers only to the reader's browser session — never an agent token or an
   OAuth grant, so the API built for a bot cannot also be the way to walk off
   with every key — only within ten minutes of a sign-in, five an hour, and is

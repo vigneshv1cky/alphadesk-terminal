@@ -414,11 +414,12 @@ and polling rather than streaming: see **[docs/rest-api.md](docs/rest-api.md)**.
 - **Vendor keys**: sealed per reader with AES-256-GCM under a master key held
   outside the database; never logged, never shown after entry. The one way a
   key leaves is the reader's own **Export keys** download on the Account page:
-  a file sealed under a passphrase they choose (scrypt and AES-256-GCM, at
-  least 12 characters), available only to their own browser session — never
-  to an agent token or an OAuth grant — signed in within the last ten minutes
-  (an instance with sign-in off relies on the passphrase alone), limited to
-  five an hour and logged by count, never contents.
+  a plain-text file (no passphrase, by the owner's choice on 2026-10-02, so
+  anyone holding the file holds the keys), available only to their own
+  browser session — never to an agent token or an OAuth grant — signed in
+  within the last ten minutes, limited to five an hour and logged by count,
+  never contents. A passphrase sent to the route still seals the file (scrypt
+  and AES-256-GCM, at least 12 characters).
 - **Agent credentials**: tokens and OAuth codes stored as SHA-256 hashes;
   OAuth clients sealed; consent page signed, same-site and unframeable.
 - **Owners** (configured by email) reach the Admin page; everyone else is a
