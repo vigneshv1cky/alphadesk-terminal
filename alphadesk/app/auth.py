@@ -204,6 +204,15 @@ def issue_session(user_id: str, email: str, session_version: int = 1) -> str:
     return _sign(payload)
 
 
+def session_age_s(claims: dict) -> float:
+    """Seconds since this session was issued. A session records only its
+    expiry, and every one is issued with the same lifetime, so the issue time
+    is the expiry less that lifetime — the same for a password or a single
+    sign-on session. What a deliberate, sensitive action reads to ask the
+    reader to sign in again first."""
+    return time.time() - (int(claims.get("exp", 0)) - SESSION_TTL_S)
+
+
 def read_session(token: str | None) -> dict | None:
     """The session's claims, or None for anything invalid — a bad signature,
     a tampered payload and an expired session all read the same: not

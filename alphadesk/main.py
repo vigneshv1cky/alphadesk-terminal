@@ -291,8 +291,19 @@ def main() -> None:
         make_user_cli()
         sys.exit(0)
     p_keys = sub.add_parser("keys", help="development: seal vendor keys from the environment into the local account")
-    p_keys.add_argument("action", choices=["import-env"])
+    p_keys.add_argument("action", choices=["import-env", "decrypt", "import-file"],
+                        help="import-env: seal .env keys; decrypt FILE: print an exported keys file;"
+                             " import-file FILE: seal an exported keys file into the local account")
+    p_keys.add_argument("file", nargs="?", help="the exported keys file (decrypt, import-file)")
     args = parser.parse_args()
+    if args.cmd == "keys" and args.action in ("decrypt", "import-file"):
+        # An export made on the Account page (2026-10-02), opened with the
+        # passphrase it was sealed under — the way keys leave one AlphaDesk
+        # and enter another without being retyped.
+        if not args.file:
+            parser.error(f"keys {args.action} needs the keys file")
+        from alphadesk.ledger import keyexport
+        sys.exit(keyexport.run_cli(args.action, args.file))
 
     if args.cmd == "dashboard":
         import os

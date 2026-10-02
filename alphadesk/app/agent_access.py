@@ -95,10 +95,12 @@ def resolve(secret: str) -> tuple[str, str] | None:
 
 
 class RateLimit:
-    """A sliding one-minute window per key."""
+    """A sliding window per key: `per_min` hits in `window_s` seconds (a
+    minute unless said otherwise — the name predates the longer windows)."""
 
-    def __init__(self, per_min: int = RATE_PER_MIN) -> None:
+    def __init__(self, per_min: int = RATE_PER_MIN, window_s: float = 60.0) -> None:
         self.per_min = per_min
+        self.window_s = window_s
         self._hits: dict[str, collections.deque] = {}
         self._lock = threading.Lock()
 
@@ -108,10 +110,10 @@ class RateLimit:
         now = now if now is not None else time.monotonic()
         with self._lock:
             hits = self._hits.setdefault(key, collections.deque())
-            while hits and now - hits[0] >= 60.0:
+            while hits and now - hits[0] >= self.window_s:
                 hits.popleft()
             if len(hits) >= self.per_min:
-                return max(0.1, 60.0 - (now - hits[0]))
+                return max(0.1, self.window_s - (now - hits[0]))
             hits.append(now)
             return 0.0
 

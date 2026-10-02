@@ -1975,6 +1975,84 @@ def api_keys_delete(seam: str, request: Request):
     return {"ok": True}
 
 
+class KeyExportIn(BaseModel):
+    passphrase: str
+
+
+#: How recently the reader must have signed in to export (seconds), and how
+#: many exports one reader may make an hour.
+EXPORT_FRESH_SIGN_IN_S = 600
+EXPORT_PER_HOUR = 5
+from alphadesk.app.agent_access import RateLimit as _RateLimit  # noqa: E402 — beside the route it serves
+export_limiter = _RateLimit(per_min=EXPORT_PER_HOUR, window_s=3600.0)
+
+
+@app.post("/api/keys/export")
+def api_keys_export(body: KeyExportIn, request: Request):
+    """The reader's own vendor keys as a file sealed under a passphrase they
+    choose (2026-10-02), to use them elsewhere.
+
+    The vault's rule is that a key is never shown after entry; this is the one
+    deliberate exception, so it is fenced on every side:
+
+      * ONLY THE READER'S OWN BROWSER SESSION. The session cookie is read here
+        and nothing else is — an agent token, an OAuth grant or any other
+        credential reaches a 401, so the API built for a bot is never also the
+        way to walk off with every vendor key.
+      * A SESSION MADE JUST NOW. A cookie that has been around for ten minutes
+        cannot export: a stolen one is the threat this is for, and signing in
+        again is what proves the person is still at the keyboard. An instance
+        run with sign-in off has no one to ask; the passphrase is its only
+        protection.
+      * THIS SITE'S OWN PAGE. A POST naming another origin is refused.
+      * SEALED UNDER THEIR PASSPHRASE, at least twelve characters, so the file
+        is useless without it and safe to keep.
+      * LIMITED AND NOTED: a few an hour per reader, and each one logged by
+        time and count — never the keys, never the passphrase.
+    """
+    from datetime import datetime, timezone
+
+    from alphadesk.app import agent_oauth, auth
+    from alphadesk.ledger import keyexport, vault
+
+    user_id = _key_user(request)
+    origin = request.headers.get("origin")
+    if origin and origin.rstrip("/") not in (agent_oauth.base_url(), f"{request.url.scheme}://{request.url.netloc}"):
+        raise HTTPException(403, "that request did not come from this page")
+    if auth.auth_required():
+        claims = auth.current_user(request)
+        if claims is None or auth.session_age_s(claims) > EXPORT_FRESH_SIGN_IN_S:
+            return JSONResponse({"detail": "sign in again to export your keys", "reauth": True}, status_code=403)
+    if not vault.enabled():
+        raise HTTPException(503, "the key vault is not enabled on this instance"
+                                 " (ALPHADESK_VAULT_KEY is not set)")
+    if len(body.passphrase) < keyexport.MIN_PASSPHRASE:
+        raise HTTPException(422, f"the passphrase must be at least {keyexport.MIN_PASSPHRASE} characters")
+    wait = export_limiter.check(user_id)
+    if wait:
+        return JSONResponse({"detail": "too many exports; try again later"}, status_code=429,
+                            headers={"Retry-After": str(int(wait) + 1)})
+    entries = []
+    for seam in ("news", "prices", "transcripts"):
+        for row in store.get_user_keys(user_id, seam):
+            try:
+                cfg = vault.decrypt(row["config"])
+            except vault.VaultError:
+                raise HTTPException(503, "a stored key cannot be opened — wrong master key or damaged row") from None
+            entries.append({"seam": seam, "provider": row["provider"],
+                            "api_key": cfg.get("api_key", ""), "api_secret": cfg.get("api_secret", ""),
+                            "base_url": cfg.get("base_url", ""), "model": cfg.get("model", ""),
+                            "plan": row.get("vendor_plan") or "free"})
+    if not entries:
+        raise HTTPException(404, "no keys are stored to export")
+    now = datetime.now(timezone.utc)
+    text = keyexport.seal({"exported_at": now.isoformat(timespec="seconds"), "keys": entries}, body.passphrase)
+    log.info("keys exported for user %s: %d key%s", user_id, len(entries), "" if len(entries) == 1 else "s")
+    return Response(text, media_type="application/json", headers={
+        "Content-Disposition": f'attachment; filename="alphadesk-keys-{now:%Y%m%d}.json"',
+        "Cache-Control": "no-store", "Pragma": "no-cache"})
+
+
 def _purge_after_key_removal(user_id: str, seam: str, provider: str | None) -> None:
     """A removed key's data goes with it (store.purge_vendor_data): vendors
     require deletion when the customer's access ends, and removing the key is

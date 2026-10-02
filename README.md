@@ -403,7 +403,13 @@ read.
   is the account key across providers; each sign-in's method is recorded.
 - **Sessions**: HMAC-signed cookie, 14-day lifetime, sign-out everywhere.
 - **Vendor keys**: sealed per reader with AES-256-GCM under a master key held
-  outside the database; never logged, never shown after entry.
+  outside the database; never logged, never shown after entry. The one way a
+  key leaves is the reader's own **Export keys** download on the Account page:
+  a file sealed under a passphrase they choose (scrypt and AES-256-GCM, at
+  least 12 characters), available only to their own browser session — never
+  to an agent token or an OAuth grant — signed in within the last ten minutes
+  (an instance with sign-in off relies on the passphrase alone), limited to
+  five an hour and logged by count, never contents.
 - **Agent credentials**: tokens and OAuth codes stored as SHA-256 hashes;
   OAuth clients sealed; consent page signed, same-site and unframeable.
 - **Owners** (configured by email) reach the Admin page; everyone else is a
@@ -537,6 +543,8 @@ cd alphadesk/ui && pnpm install && pnpm dev
 |---|---|
 | `python -m alphadesk.main dashboard` | The web server and background loops |
 | `python -m alphadesk.main keys import-env` | Development: seal `.env` vendor keys into the local account |
+| `python -m alphadesk.main keys decrypt FILE` | Print the keys in a file exported from the Account page (asks for its passphrase) |
+| `python -m alphadesk.main keys import-file FILE` | Seal the keys in an exported file into the local account, under this instance's own vault key |
 | `python -m alphadesk.main earnings` | Stamp today's EDGAR results releases and list the last three days |
 | `python -m alphadesk.main backfill --hours 72` | Backfill EDGAR results releases |
 | `python -m alphadesk.main calendar-accuracy --days 30` | Score calendar vendors against EDGAR release days |
