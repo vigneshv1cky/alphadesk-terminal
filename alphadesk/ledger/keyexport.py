@@ -28,6 +28,7 @@ import os
 import unicodedata
 
 FORMAT = "alphadesk-keys"
+PLAIN_FORMAT = "alphadesk-keys-plain"
 VERSION = 1
 MIN_PASSPHRASE = 12
 
@@ -73,6 +74,25 @@ def seal(payload: dict, passphrase: str) -> str:
         nonce, json.dumps(payload).encode(), _aad(header))
     return json.dumps({**header, "nonce": base64.b64encode(nonce).decode(),
                        "ciphertext": base64.b64encode(sealed).decode()}, indent=2) + "\n"
+
+
+def plain(payload: dict) -> str:
+    """The file's text for one payload with NO passphrase (2026-10-02): the
+    keys readable as they are, for a reader who would rather guard the file
+    than a passphrase. Anyone holding the file holds the keys."""
+    return json.dumps({"format": PLAIN_FORMAT, "version": VERSION, **payload}, indent=2) + "\n"
+
+
+def read_plain(text: str) -> dict | None:
+    """The payload of a plain file, or None when the text is not one (a sealed
+    file, or something else — open_file says which)."""
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return None
+    if isinstance(doc, dict) and doc.get("format") == PLAIN_FORMAT and doc.get("version") == VERSION:
+        return {k: v for k, v in doc.items() if k not in ("format", "version")}
+    return None
 
 
 def open_file(text: str, passphrase: str) -> dict:
@@ -157,7 +177,9 @@ def run_cli(action: str, path: str) -> int:
         print(f"cannot read {path}: {exc.strerror or exc}", file=sys.stderr)
         return 1
     try:
-        payload = open_file(text, getpass.getpass("passphrase for the keys file: "))
+        payload = read_plain(text)
+        if payload is None:
+            payload = open_file(text, getpass.getpass("passphrase for the keys file: "))
     except KeyFileError as exc:
         print(str(exc), file=sys.stderr)
         return 1

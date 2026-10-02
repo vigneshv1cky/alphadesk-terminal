@@ -1554,7 +1554,7 @@ export const api = {
   /** The reader's vendor keys as a file sealed under a passphrase they chose
    * (2026-10-02). The one place a key leaves the vault, so it asks for a fresh
    * sign-in: ReauthRequired says to sign in again, any other failure is a message. */
-  exportKeys: async (passphrase: string): Promise<{ blob: Blob; name: string }> => {
+  exportKeys: async (passphrase = ""): Promise<{ blob: Blob; name: string }> => {
     const r = await fetch("/api/keys/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

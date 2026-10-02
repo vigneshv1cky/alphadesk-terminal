@@ -27,6 +27,21 @@ class TestFile:
     def test_two_seals_of_the_same_keys_differ(self):
         assert keyexport.seal(PAYLOAD, PASSPHRASE) != keyexport.seal(PAYLOAD, PASSPHRASE)
 
+    def test_no_passphrase_gives_a_plain_file_that_the_cli_reads_without_one(self, client, store, monkeypatch):
+        _sign_in(client, store, monkeypatch)
+        _store_key(client)
+        r = _export(client, passphrase="")
+        assert r.status_code == 200
+        assert "plain" in r.headers["content-disposition"]
+        assert "AK-super-secret-1111" in r.text              # readable, by the owner's choice
+        keys = keyexport.read_plain(r.text)["keys"]
+        assert keys[0]["api_key"] == "AK-super-secret-1111" and keys[0]["provider"] == "alpaca"
+        assert keyexport.read_plain(keyexport.seal({"keys": []}, PASSPHRASE)) is None
+
+    def test_a_plain_export_still_needs_a_fresh_session(self, client, store, monkeypatch):
+        monkeypatch.setenv("ALPHADESK_AUTH", "required")
+        assert _export(client, passphrase="").status_code == 401
+
     def test_a_short_passphrase_is_refused_before_anything_is_sealed(self):
         with pytest.raises(keyexport.KeyFileError, match="at least 12"):
             keyexport.seal(PAYLOAD, "short")
