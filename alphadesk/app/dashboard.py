@@ -448,7 +448,8 @@ def api_news(limit: int = 300, before: str | None = None, q: str | None = None, 
     The per-symbol fan-out stays on /api/screener, where a context window
     needs it; a reader needs each story once.
 
-    Pure database read — no model call, no upstream fetch.
+    A database read, except that a symbol or an older page the store cannot
+    fill asks the reader's own feed (ingest/news.py). No model call.
     """
     from alphadesk.desk.screener import _since_iso
 
@@ -478,7 +479,10 @@ def api_news(limit: int = 300, before: str | None = None, q: str | None = None, 
         # feed — a few hours — so a quiet name like XLK showed three of its
         # two days. Without `before` it is the whole window (NEWS_LOOKBACK_
         # HOURS); with it, the page of that symbol's older stories.
-        rows = store.articles_for_symbol(news_owner(uid), sym, before, min(limit, 300))
+        # Where the store runs short the reader's feed is asked for this
+        # symbol alone (ingest/news.symbol_articles, 2026-10-02).
+        from alphadesk.ingest.news import symbol_articles
+        rows = symbol_articles(uid, sym, before, min(limit, 300))
         if not before:
             edge = _since_iso()
             rows = [a for a in rows if (a.get("published_at") or "") >= edge]
