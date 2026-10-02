@@ -41,3 +41,47 @@ class TestCall:
             rest_data.call(t, {"days": "3"})
         with pytest.raises(rest_data.BadRequest, match="days must be a integer"):
             rest_data.call(t, {"symbol": "A", "days": "three"})
+
+
+from fastapi.testclient import TestClient
+
+from alphadesk.providers.base import NeedsKey, ProviderError
+
+
+def _client(*tools):
+    return TestClient(rest_data.build(list(tools)))
+
+
+class TestApp:
+    def test_a_tool_is_a_get_endpoint_with_a_validator_and_an_as_of_time(self):
+        c = _client(tool("data_sources", {}, lambda: {"sources": [1, 2]}))
+        r = c.get("/data_sources")
+        assert r.status_code == 200 and r.json() == {"sources": [1, 2]}
+        assert r.headers["etag"].startswith('"') and r.headers["x-alphadesk-as-of"].endswith("+00:00")
+        again = c.get("/data_sources", headers={"If-None-Match": r.headers["etag"]})
+        assert again.status_code == 304 and again.content == b""
+
+    def test_every_refusal_has_its_own_status(self):
+        def needs(): raise NeedsKey("chart")
+        def refuses(): raise ValueError("no daily bars for ZZZ")
+        def vendor_down(): raise ProviderError("polygon is unreachable")
+        c = _client(tool("needs", {}, needs), tool("refuses", {}, refuses), tool("down", {}, vendor_down),
+                    tool("q", {"n": {"type": "integer"}}, lambda n: {}, ["n"]))
+        assert c.get("/needs").status_code == 428 and "needs_key" in c.get("/needs").json()["detail"]
+        assert c.get("/refuses").status_code == 422 and "ZZZ" in c.get("/refuses").json()["detail"]
+        assert c.get("/down").status_code == 502
+        assert c.get("/q?n=x").status_code == 422 and c.get("/q").status_code == 422
+        assert c.get("/nothing").status_code == 404
+
+    def test_nothing_but_get_is_accepted(self):
+        c = _client(tool("data_sources", {}, lambda: {}))
+        for method in ("post", "put", "patch", "delete"):
+            assert getattr(c, method)("/data_sources").status_code == 405
+
+    def test_the_spec_describes_every_endpoint_and_its_inputs(self):
+        c = _client(tool("quote", {"symbol": {"type": "string"}}, lambda symbol: {}, ["symbol"]))
+        spec = c.get("/openapi.json").json()
+        op = spec["paths"]["/quote"]["get"]
+        assert op["operationId"] == "quote" and op["parameters"][0] == {
+            "name": "symbol", "in": "query", "required": True, "schema": {"type": "string"}}
+        assert spec["components"]["securitySchemes"]["bearer"]["scheme"] == "bearer"
