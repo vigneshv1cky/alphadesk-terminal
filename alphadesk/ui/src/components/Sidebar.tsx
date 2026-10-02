@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
 import { Activity, Building2, CalendarDays, CalendarRange, ChartCandlestick, ChevronDown, ChevronLeft, FileText, Layers3, LayoutGrid, LineChart, MessageSquare, Newspaper, Plus,
-  ShieldCheck, LayoutDashboard, Star, UserRound,
+  ShieldCheck, LayoutDashboard, Plug, Star, UserRound,
 } from "lucide-react"
 import { useAuthMe, useRail, useThemes } from "@/lib/queries"
 import { useBoardSymbols } from "@/lib/boardSymbols"
@@ -383,6 +383,19 @@ export function Sidebar() {
           >
             <UserRound className="h-[15px] w-[15px] shrink-0" aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate">Account</span>
+          </NavLink>
+          {/* Its own page (2026-10-02): it was one panel at the foot of the
+              Account page, and mixed four jobs. */}
+          <NavLink
+            to="/agent-access"
+            className={({ isActive }) =>
+              `flex h-[32px] shrink-0 items-center gap-2 px-3 text-body ${
+                isActive ? "font-extrabold text-foreground" : "font-semibold text-muted-foreground hover:text-foreground"
+              }`
+            }
+          >
+            <Plug className="h-[15px] w-[15px] shrink-0" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">Agent access</span>
           </NavLink>
         {/* The owner's admin page (2026-09-18): only for ALPHADESK_OWNER_EMAILS. */}
         {me?.user?.owner && (

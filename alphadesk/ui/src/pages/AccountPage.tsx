@@ -1,5 +1,6 @@
 import { LogOut } from "lucide-react"
 import { useState } from "react"
+import { Link } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { on, api, type Access } from "@/lib/api"
 import { useAuthMe, useSystem, useUserKeys } from "@/lib/queries"
@@ -7,9 +8,8 @@ import { Dialog, Empty, fieldCls, Table, TD, TH, THead, TR, Widget, btnCls } fro
 import { PROVIDER_MARKS } from "@/components/providerMarks"
 import { DeleteAccountDialog } from "@/components/DeleteAccountDialog"
 import { KeysExportDialog } from "@/components/KeysExportDialog"
-import { AGENT_CLIENTS, agentSetup, type AgentClient } from "@/lib/agentSetup"
+import { BTN, BTN_DANGER, BTN_PRIMARY, Caption, Heading, Pill, ROOMY, Row } from "@/components/accountParts"
 import { connectionGroups } from "@/lib/agentConnections"
-import { parseAllowedIps } from "@/lib/allowedIps"
 
 /** The signed-in user's own page, in the Masthead direction (picked from
  * the design canvas, 2026-09-02): identity as a full-width band — avatar,
@@ -27,119 +27,30 @@ import { parseAllowedIps } from "@/lib/allowedIps"
  * there is an account.
  */
 
-/** The caption under a panel's table — muted, never bold. One line where the
- * panel is wide enough to hold it; below 520px it wraps rather than ending
- * in an ellipsis, because a clipped sentence is not a caption. */
-function Caption({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-4 py-2.5 text-label leading-[1.45] text-muted-foreground @[520px]:truncate">
-      {children}
-    </div>
-  )
-}
-
 /** A stat tile — the System page's anatomy, so the two pages read alike.
  * Below 640px of panel it is a list row instead, label left and value right
  * on one line (2026-09-19, the owner: the account "doesnt look good in
  * mobile" — a 2×2 grid of 18px figures wrapped "1,041 stories · 24h" and
  * "0 apps · 0 tokens" over two lines, and the cells' labels sat at different
  * heights). */
-function StatCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex min-w-0 items-baseline justify-between gap-3 border-b border-row-rule px-4 py-3 last:border-b-0
+function StatCell({ label, value, to }: { label: string; value: string; to?: string }) {
+  const cls = `flex min-w-0 items-baseline justify-between gap-3 border-b border-row-rule px-4 py-3 last:border-b-0
                     @[640px]:flex-col @[640px]:items-start @[640px]:justify-center @[640px]:gap-1.5 @[640px]:border-b-0
-                    @[640px]:border-r @[640px]:py-6 @[640px]:last:border-r-0">
+                    @[640px]:border-r @[640px]:py-6 @[640px]:last:border-r-0`
+  const body = (
+    <>
       <div className="shrink-0 truncate text-label font-medium uppercase tracking-caps text-muted-foreground">{label}</div>
       <div className="num min-w-0 truncate text-body font-bold leading-[1.2] @[640px]:text-figure @[640px]:font-extrabold">{value}</div>
-    </div>
+    </>
   )
+  // A cell with somewhere to go (2026-10-02: agent access has its own page)
+  // is a link, tinted on hover like the rail's rows.
+  return to
+    ? <Link to={to} className={`${cls} hover:bg-foreground/5`} title="Open this page">{body}</Link>
+    : <div className={cls}>{body}</div>
 }
 
 const labelCls = "mb-1 block text-label font-medium uppercase tracking-caps text-muted-foreground"
-
-/** One row of the Account page: a name, what is on file, and the buttons.
- *
- * ONE SHAPE AT EVERY WIDTH (2026-09-17, the owner's call): the name and its
- * buttons take the first line, and what is on file reads beneath the name
- * across the full width. The row was three-across — a fixed 140px name, a
- * flexible note, the buttons — which at ~360px of pane left the note about
- * 30px wide, one word per line with the buttons printed over it, and at
- * full width left a block of empty space under every name while the note
- * wrapped in a narrow middle column. */
-function Row({ label, children, actions }: {
-  label: React.ReactNode
-  children: React.ReactNode
-  actions?: React.ReactNode
-}) {
-  return (
-    <div className="row-rule grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 px-4 py-3.5">
-      <span className="min-w-0 text-body font-extrabold">{label}</span>
-      <span className="col-span-2 min-w-0 text-caption leading-[1.45] text-muted-foreground">
-        {children}
-      </span>
-      <span className="col-start-2 row-start-1 flex shrink-0 justify-end gap-1.5">
-        {actions}
-      </span>
-    </div>
-  )
-}
-
-/* The shared small button, 20px caps (2026-09-18, the owner's call): at 22px
-   and 12px a row of Replace / Remove outweighed the vendor name it acts on. */
-const BTN = btnCls({ size: "sm" })
-const BTN_DANGER = btnCls({ variant: "danger", size: "sm" })
-/* The way forward on a row (Connect, Add key, Create) differs from Replace
-   only in full-strength text: a red outline on every unconnected vendor made
-   the table shout at the reader to click (2026-09-18, the owner's call). */
-const BTN_PRIMARY = btnCls({ variant: "strong", size: "sm" })
-
-/* Taller rows for the Account tables only (2026-09-18, the owner's call): a
-   row carries a key, a status pill and two buttons, and 30px read cramped.
-   A descendant rule, because the shared cell hard-codes its own height and,
-   without tailwind-merge, a second height class on it would not reliably
-   win; this one outranks it by specificity and touches no other table. */
-const ROOMY = "[&_td]:h-[44px]"
-
-/** A panel title in the accent red (2026-09-18, the owner's call) — the same
- * red the board gives a widget's symbol prefix, so the colour means "a
- * heading" here as it does there. Chrome-grade: accent is tuned to 3:1
- * against the header band, which holds for 13px bold capitals, not prose. */
-const Heading = ({ children }: { children: React.ReactNode }) => <span className="text-accent">{children}</span>
-
-/** A status word in a table cell or a panel header: connected, the plan,
- * how a feed arrives. Tinted, never a filled block, so a column of them
- * reads as a column of facts rather than of buttons. */
-function Pill({ tone, children }: { tone: "gain" | "warn" | "info" | "muted"; children: React.ReactNode }) {
-  const cls = {
-    gain: "bg-gain-tint text-gain",
-    warn: "bg-warn-tint text-warn",
-    info: "bg-info-tint text-info",
-    muted: "bg-surface text-muted-foreground",
-  }[tone]
-  return (
-    <span className={`inline-flex h-[20px] items-center whitespace-nowrap rounded-xs px-2 text-label font-bold uppercase tracking-caps ${cls}`}>
-      {children}
-    </span>
-  )
-}
-
-/** A heading row inside a panel, the section labels the matrix is read by.
- * On the card itself above a hairline (2026-09-18): a grey band under a
- * 40%-ink rule read as a slab across the white card. */
-function SubLabel({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
-  return (
-    // Wraps: on a phone the controls beside a label ("Connect a client" and
-    // its four client tabs) drop to their own line instead of squeezing the
-    // label onto two.
-    // justify-between, not a margin: on one line the controls sit right;
-    // wrapped onto their own line they start at the left rather than hang
-    // off the right edge.
-    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 border-b border-row-rule bg-card px-4 pb-2 pt-4">
-      <span className="whitespace-nowrap text-label font-bold uppercase tracking-caps text-muted-foreground">{children}</span>
-      {right && <span>{right}</span>}
-    </div>
-  )
-}
 
 type Seam = "news" | "prices" | "transcripts"
 
@@ -703,179 +614,6 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
   )
 }
 
-/** Agent access (2026-09-17): AlphaDesk runs no agent of its own. A reader
- * issues a token here and points the agent they already use — Claude Code,
- * Cursor, opencode, anything that speaks MCP — at this instance's tool
- * server; every call runs as them, on their keys. The token is shown ONCE,
- * in the row that created it, and is gone on the next render; the list
- * carries only a name and the last four characters. */
-function AgentAccessPanel({ span = 12 }: { span?: number }) {
-  const qc = useQueryClient()
-  const list = useQuery({ queryKey: ["agent-access-tokens"], queryFn: ({ signal }) => on(signal).agentAccessTokens() })
-  const [name, setName] = useState("")
-  const [ips, setIps] = useState("")
-  const [fresh, setFresh] = useState<{ id: string; token: string } | null>(null)
-  const [copied, setCopied] = useState<string | null>(null)
-  const [client, setClient] = useState<AgentClient>("claude-code")
-  const connections = useQuery({ queryKey: ["agent-connections"], queryFn: ({ signal }) => on(signal).agentConnections() })
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const url = list.data?.url ?? ""
-  const tokens = list.data?.tokens ?? []
-
-  const issue = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (busy) return
-    setBusy(true); setError(null); setCopied(null)
-    try {
-      // Parsed first: an entry that is not an address is named in the field's
-      // own error before anything is sent or any token is made.
-      const made = await api.issueAgentAccessToken(name.trim(), parseAllowedIps(ips))
-      setFresh({ id: made.token_id, token: made.token })
-      setName("")
-      setIps("")
-      void qc.invalidateQueries({ queryKey: ["agent-access-tokens"] })
-    } catch (err) {
-      setError(String((err as Error).message ?? err))
-    } finally {
-      setBusy(false)
-    }
-  }
-  const revoke = async (id: string) => {
-    try {
-      await api.revokeAgentAccessToken(id)
-      if (fresh?.id === id) setFresh(null)
-      void qc.invalidateQueries({ queryKey: ["agent-access-tokens"] })
-    } catch (err) {
-      setError(String((err as Error).message ?? err))
-    }
-  }
-  /** Disconnect every grant in one app's group. An app that registers afresh
-   * each time it is added (Claude.ai does) is a different client to the
-   * server on every add, so its rows cannot be collapsed server-side and the
-   * reader would otherwise revoke them one at a time. */
-  const disconnect = async (ids: string[]) => {
-    try {
-      for (const id of ids) await api.revokeAgentConnection(id)
-      void qc.invalidateQueries({ queryKey: ["agent-connections"] })
-    } catch (err) {
-      setError(String((err as Error).message ?? err))
-    }
-  }
-  const copy = (what: string, text: string) => {
-    void navigator.clipboard?.writeText(text).then(() => setCopied(what), () => setCopied(null))
-  }
-  const setup = url ? agentSetup(client, url, fresh?.token) : null
-
-  const groups = connectionGroups(connections.data?.connections ?? [])
-
-  return (
-    <Widget span={span} title={<Heading>Agent access</Heading>} subtitle="your own agent, over MCP"
-            bodyClassName="@container">
-      <Row label="Server address"
-           actions={url ? <button type="button" className={BTN} onClick={() => copy("url", url)}>
-             {copied === "url" ? "Copied" : "Copy"}</button> : null}>
-        <code className="num block break-all text-caption text-foreground">{url || "…"}</code>
-        {/* Claude.ai and ChatGPT take this address and nothing else: they
-            sign the reader in over OAuth, so a "paste this" tab for them
-            would only repeat the line above. */}
-        <span className="mt-1.5 block text-caption">
-          Claude.ai and ChatGPT: add a custom connector with this address, sign in, allow it. No token needed.
-        </span>
-      </Row>
-      <SubLabel>Connected apps</SubLabel>
-      {groups.length ? groups.map(g => (
-        <Row key={g.name + g.ids[0]} label={<span className="truncate">{g.name}</span>}
-             actions={<button type="button" onClick={() => void disconnect(g.ids)} className={BTN_DANGER}>
-               {g.ids.length > 1 ? `Disconnect ${g.ids.length}` : "Disconnect"}</button>}>
-          {g.ids.length > 1 ? `${g.ids.length} connections` : "1 connection"} · {g.last_used_at
-            ? `last used ${new Date(g.last_used_at).toLocaleString()}`
-            : "not used yet"}
-        </Row>
-      )) : (
-        <div className="row-rule px-4 py-3 text-caption text-muted-foreground">none — add the address above as a connector</div>
-      )}
-      <SubLabel right={<span className="text-label text-muted-foreground">{tokens.length} of 10 live</span>}>Tokens</SubLabel>
-      {tokens.map(t => (
-        <Row key={t.token_id} label={<span className="truncate">{t.name}</span>}
-             actions={<button type="button" onClick={() => void revoke(t.token_id)} className={BTN_DANGER}>Revoke</button>}>
-          {fresh?.id === t.token_id ? (
-            <>
-              <span className="flex min-w-0 flex-wrap items-center gap-2">
-                <code className="num min-w-0 break-all text-foreground">{fresh.token}</code>
-                <button type="button" className={BTN} onClick={() => copy("token", fresh.token)}>
-                  {copied === "token" ? "Copied" : "Copy"}
-                </button>
-              </span>
-              <span className="block text-label text-warn">Copy it now: it is not shown again.</span>
-            </>
-          ) : (
-            <>
-              ····{t.hint} · {t.last_used_at ? `last used ${new Date(t.last_used_at).toLocaleString()}` : "not used yet"}
-              {" · "}{t.allowed_ips?.length ? `only from ${t.allowed_ips.join(", ")}` : "from any address"}
-            </>
-          )}
-        </Row>
-      ))}
-      {/* The form draws the rule: its one row is the form's last child, and
-          a last-child row drops its own, which left the Connect band below
-          with no line above it (2026-09-18). */}
-      <form onSubmit={issue} className="border-b border-row-rule">
-        <Row label="New token" actions={<button type="submit" disabled={busy} className={BTN_PRIMARY}>{busy ? "…" : "Create"}</button>}>
-          <input value={name} onChange={e => setName(e.target.value)} maxLength={60}
-                 aria-label="Name the agent this token is for"
-                 placeholder="which agent, e.g. Claude Code on my laptop"
-                 className={`${fieldCls} w-full`} />
-        </Row>
-        <Row label="Only from">
-          <input value={ips} onChange={e => setIps(e.target.value)} maxLength={400}
-                 aria-label="Addresses this token may be used from (optional)"
-                 placeholder="optional, e.g. 203.0.113.7, 198.51.100.0/24"
-                 className={`${fieldCls} w-full`} />
-        </Row>
-      </form>
-      {error && <div className="px-4 py-2 text-caption text-loss">{error}</div>}
-      {setup && (
-        <>
-          <SubLabel right={
-            <span role="tablist" aria-label="Agent" className="flex flex-wrap gap-1.5">
-              {AGENT_CLIENTS.map(c => (
-                <button key={c.id} type="button" role="tab" aria-selected={client === c.id}
-                        onClick={() => { setClient(c.id); setCopied(null) }}
-                        // Selected by a soft fill, not a red outline (2026-09-18, the owner's call).
-                        className={btnCls({ size: "sm", active: client === c.id }, "normal-case tracking-normal")}>
-                  {c.label}
-                </button>
-              ))}
-            </span>
-          }>Connect a client</SubLabel>
-          <div className="row-rule px-4 py-3.5">
-            <div className="flex items-start gap-3">
-              <span className="min-w-0 flex-1 text-caption leading-[1.45] text-muted-foreground">
-                {setup.where}{" "}
-                {!setup.tokenInline ? null : fresh
-                  ? "It holds your new token, so keep that file out of version control."
-                  : "Create a token above and it is filled in here while it is shown."}
-              </span>
-              <button type="button" className={BTN} onClick={() => copy("setup", setup.text)}>
-                {copied === "setup" ? "Copied" : "Copy"}
-              </button>
-            </div>
-            <pre className="num mt-2 overflow-x-auto whitespace-pre rounded-sm border border-border bg-background px-3 py-2 text-caption leading-[1.45]">{setup.text}</pre>
-          </div>
-        </>
-      )}
-      <Caption>
-        Each call runs as you, on your keys, at up to 120 requests a minute per token. Revoking stops a token at once.
-        Name your server's address under "Only from" and a leaked token is useless anywhere else.
-      </Caption>
-      <Caption>
-        An app keeps the tool list it saw when it connected — reconnect it to pick up tools added since.
-      </Caption>
-    </Widget>
-  )
-}
-
 /** The totals the matrix is read from, one line above it: how many vendors,
  * how much news, how many agents, what kind of session. Every figure is read
  * from the same queries the panels below use, so the two cannot disagree. */
@@ -907,7 +645,7 @@ function StatStrip({ open }: { open: boolean }) {
                     ? `${connected} of ${keyed.length} vendors${scraped ? ` · ${scraped} scraped` : ""}`
                     : "—"} />
         <StatCell label="News" value={feeds.length ? `${stories.toLocaleString()} stories · 24h` : "no feed"} />
-        <StatCell label="Agent access" value={`${plural(apps, "app")} · ${plural(live, "token")}`} />
+        <StatCell label="Agent access" value={`${plural(apps, "app")} · ${plural(live, "token")}`} to="/agent-access" />
         <StatCell label="Session" value={open ? "Open instance" : "14 days · HMAC"} />
       </div>
     </section>
@@ -933,7 +671,7 @@ function SecurityPanel({ providers, sso, signIns, onSignOutEverywhere, email, ow
   const when = (iso: string | null | undefined) =>
     iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""
   return (
-    <Widget span={6} title={<Heading>Security</Heading>} subtitle="how you sign in, and where" bodyClassName="@container">
+    <Widget span={12} title={<Heading>Security</Heading>} subtitle="how you sign in, and where" bodyClassName="@container">
       {providers.map(p => (
         <Row key={p.id}
              label={<span className="flex min-w-0 items-center gap-2">
@@ -1092,7 +830,6 @@ export default function AccountPage() {
           processor there is nothing to show. */}
       {!open && me.user?.access && (me.user.access.enforced || me.user.access.can_subscribe) && <PlanPanel access={me.user.access} />}
       <KeysPanel newsProviders={newsProviders} transcriptProviders={transcriptProviders} />
-      <AgentAccessPanel span={open ? 12 : 6} />
       {!open && <SecurityPanel providers={providers} sso={sso} signIns={me.user?.sign_ins ?? []} onSignOutEverywhere={signOutEverywhere}
                                 email={me.user?.email} owner={!!me.user?.owner} />}
 

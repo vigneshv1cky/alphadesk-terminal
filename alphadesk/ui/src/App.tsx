@@ -32,6 +32,7 @@ const PAGE_IMPORTS = {
   EarningsPage: () => import("@/pages/EarningsPage"),
   CalendarsPage: () => import("@/pages/CalendarsPage"),
   AccountPage: () => import("@/pages/AccountPage"),
+  AgentAccessPage: () => import("@/pages/AgentAccessPage"),
   AdminPage: () => import("@/pages/AdminPage"),
   ThemePage: () => import("@/pages/ThemePage"),
   OptionsPage: () => import("@/pages/OptionsPage"),
@@ -45,7 +46,7 @@ const PAGE_IMPORTS = {
 }
 
 /** Fetched ahead in this order: the pages a reader moves between first. */
-const WARM_ORDER: (keyof typeof PAGE_IMPORTS)[] = ["DashboardPage", "NewsPage", "FilingsPage", "PostsPage", "AnalysisPage", "SectorsPage", "ChartPage", "CompanyPage", "OptionsPage", "EarningsPage", "CalendarsPage", "PortfolioPage", "CustomViewPage", "AccountPage", "AdminPage", "ThemePage", "TermsPage", "PrivacyPage", "DisclaimerPage", "AboutPage"]
+const WARM_ORDER: (keyof typeof PAGE_IMPORTS)[] = ["DashboardPage", "NewsPage", "FilingsPage", "PostsPage", "AnalysisPage", "SectorsPage", "ChartPage", "CompanyPage", "OptionsPage", "EarningsPage", "CalendarsPage", "PortfolioPage", "CustomViewPage", "AccountPage", "AgentAccessPage", "AdminPage", "ThemePage", "TermsPage", "PrivacyPage", "DisclaimerPage", "AboutPage"]
 
 const DashboardPage = lazy(PAGE_IMPORTS.DashboardPage)
 const NewsPage = lazy(PAGE_IMPORTS.NewsPage)
@@ -57,6 +58,7 @@ const PortfolioPage = lazy(PAGE_IMPORTS.PortfolioPage)
 const EarningsPage = lazy(PAGE_IMPORTS.EarningsPage)
 const CalendarsPage = lazy(PAGE_IMPORTS.CalendarsPage)
 const AccountPage = lazy(PAGE_IMPORTS.AccountPage)
+const AgentAccessPage = lazy(PAGE_IMPORTS.AgentAccessPage)
 const AdminPage = lazy(PAGE_IMPORTS.AdminPage)
 const ThemePage = lazy(PAGE_IMPORTS.ThemePage)
 const OptionsPage = lazy(PAGE_IMPORTS.OptionsPage)
@@ -294,6 +296,7 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
               <Route path="/disclaimer" element={<DisclaimerPage />} />
               <Route path="/about" element={<AboutPage />} />
               <Route path="/account" element={<AccountPage />} />
+              <Route path="/agent-access" element={<AgentAccessPage />} />
               <Route path="/admin" element={<AdminPage />} />
               {/* Old paths, kept as redirects so links and bookmarks still
                   land somewhere. /filings merged into Analysis and
