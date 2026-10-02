@@ -71,7 +71,10 @@ Breaking one of these is a bug even if the tests pass.
 
 9. **The agent surface is read-only, one reader at a time.** The agent tools
    have no write surface by construction, and every call runs as exactly the
-   reader whose credential it carries.
+   reader whose credential it carries. The plain-HTTP data API (`/api/v1`,
+   2026-10-02) is the same tools behind the same gate, GET only, for the same
+   reason: programs that trade through their own broker read AlphaDesk, and
+   nothing here ever places an order.
 
 10. **Vendor data belongs to the reader whose key fetched it.** The server
    holds no vendor keys. Providers take keys explicitly; a missing key is an
@@ -113,6 +116,27 @@ Breaking one of these is a bug even if the tests pass.
 
 ## Design rules worth knowing before a pull request
 
+- **The data API is generated from the agent tools, never written beside
+  them.** One generic route looks a tool up by name in the same registry the
+  agent door serves, so a tool added later reaches both doors and neither can
+  drift or write. History is the one place it differs on purpose: the agent
+  tools thin it (130 daily points, 400 intraday) for an AI to read, which would
+  silently hand a backtest a sample, so `/api/v1/bars` returns every bar, paged
+  by time, reusing the chart route so the vendor, interval and history floor
+  are the chart's own. The chart route ends a walk with a 404; the data API
+  turns that, when a cursor was given, into an empty final page.
+- **A key leaves the vault only through the reader's own sealed export.** Keys
+  are never shown after entry, with one deliberate exception (2026-10-02): the
+  **Export keys** download, sealed under a passphrase the reader chooses. It
+  answers only to the reader's browser session — never an agent token or an
+  OAuth grant, so the API built for a bot cannot also be the way to walk off
+  with every key — only within ten minutes of a sign-in, five an hour, and is
+  logged by count, never contents.
+- **An address restriction trusts only the address the platform adds.** A token
+  tied to addresses reads the LAST `X-Forwarded-For` entry, because Cloud Run
+  appends the real client and everything before it is the caller's own claim.
+  Verified live on 2026-10-02: a forged header did not get a restricted token
+  through. Do not "simplify" this to the first entry.
 - **Match the existing design system.** Buttons come from one helper, menus
   from shared classes, sizes from six type roles, spacing from a 4-pixel
   grid, colours from tokens. Do not introduce a new size or a one-off style.

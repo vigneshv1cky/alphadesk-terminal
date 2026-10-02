@@ -240,7 +240,8 @@ and why. Bring evidence and open an issue.
 | **Sectors** | Sector funds by weight and dollars traded, with breadth |
 | **Baskets** | 36 curated baskets grouped by the *news* that moves them (rates, oil, tariffs, chip export rules, bitcoin, …), plus the reader's own |
 | **Portfolio / custom views** | The reader's saved boards |
-| **Account** | Coverage matrix of connected vendors and feeds, agent access (tokens and connected apps), sign-in methods and sessions |
+| **Account** | Coverage matrix of connected vendors and feeds (with the sealed **Export keys** download), sign-in methods and sessions |
+| **Agent access** | Its own page: connect an AI assistant (Claude.ai, ChatGPT) by address, make tokens for programs — each optionally tied to the addresses it may be used from — and ready-to-paste setup for Claude Code, Codex, Cursor, opencode or your own program over the data API |
 | **Admin** | Owners only: accounts, last seen, sign-in methods, sign-out-everywhere, disable, delete |
 | **Terms, Privacy, Disclaimer** | Public drafts pending legal review |
 
@@ -444,8 +445,10 @@ The full account, session, key-vault and agent-credential design is in
                        ┌──────────────────────────────────────────────┐
   Browser (React SPA) ─┤  FastAPI · one process · one port            │
   Reader's agent (MCP) ┤                                              │
+  Your own bot (HTTP) ─┤                                              │
                        │  /api/*  ── panels, composed per request     │
                        │  /api/agent/tools/mcp ── 50 read-only tools  │
+                       │  /api/v1 ── the same tools, GET only, HTTP   │
                        │  OAuth 2.1 at the root (/authorize, /token…) │
                        │                                              │
                        │  Per-reader DataRouter ──► reader's vendors  │──► Alpaca · FMP · Polygon
@@ -487,11 +490,11 @@ constant in bar count.
 ```
 alphadesk/
   main.py            entry point: web server + background loops, and the CLI
-  app/               FastAPI app, auth, admin, agent access (tokens, OAuth, MCP mount)
+  app/               FastAPI app, auth, admin, agent access (tokens, OAuth, MCP mount), the plain-HTTP data API (rest_data.py)
   providers/         the plugin seams, vendor implementations, catalogue, per-reader router
   ingest/            EDGAR, news polling, calendars, movers, prices and indicator math
   desk/              screener window, filings, transcripts, market-today
-  ledger/            store (SQLite / Postgres), database adapter, key vault
+  ledger/            store (SQLite / Postgres), database adapter, key vault and the sealed key export
   mcp_server.py      the agent tools
   semantic.py        search by meaning (self-hosted embedding model)
   cryptonews.py      a coin's news selection

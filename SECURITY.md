@@ -30,13 +30,17 @@ or act as them:
 
 - reading, exporting or decrypting another reader's vendor keys, which are
   sealed with AES-256-GCM (a report that the sealing itself is broken or
-  misused is very much in scope);
+  misused is very much in scope) — including any way to reach the **Export
+  keys** download without the reader's own browser session, without their
+  recent sign-in, or to receive its contents unsealed;
 - crossing the per-reader boundary: any cache, query or agent tool that
   serves one reader's vendor data to another;
 - session handling, single sign-on, the agent access tokens and the OAuth
   flow for connector apps, including consent and token handling;
-- the agent tools gaining any write surface, or running as anyone other than
-  the reader whose credential they carry;
+- the agent tools or the plain-HTTP data API (`/api/v1`) gaining any write
+  surface, or running as anyone other than the reader whose credential they
+  carry;
+- getting past a token's address restriction (the "Only from" allowlist);
 - server-side request forgery, injection, or remote code execution;
 - filing, transcript or headline text reaching something that acts on it —
   that text is attacker-reachable in principle and must stay inert data.
