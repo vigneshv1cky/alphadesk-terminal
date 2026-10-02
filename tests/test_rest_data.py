@@ -159,3 +159,74 @@ class TestGuards:
         assert [rest.get("/api/v1/data_sources").status_code for _ in range(2)] == [200, 200]
         r = rest.get("/api/v1/data_sources")
         assert r.status_code == 429 and int(r.headers["retry-after"]) >= 1
+
+
+class TestBars:
+    """Every bar, not the agent tools' thinned sample. The endpoint reuses the
+    chart route (dashboard.api_chart), so vendor choice, interval resolution
+    and the history floor are the chart's own."""
+
+    def _series(self):
+        return {"vendor": "alpaca", "bars": [
+            {"t": "2026-09-01T13:30:00+00:00", "o": 1, "h": 2, "l": 0.5, "c": 1.5, "v": 100, "rsi_9": 55.0},
+            {"t": "2026-09-02T13:30:00+00:00", "o": 1.5, "h": 2.5, "l": 1, "c": 2, "v": 200, "rsi_9": 60.0}],
+            "indicators_reliable": True, "coverage": 1.0}
+
+    def test_bars_come_back_whole_without_indicators_and_with_a_cursor(self, rest, monkeypatch):
+        from alphadesk.app import dashboard
+        calls = []
+        monkeypatch.setattr(dashboard, "api_chart", lambda *a, **k: calls.append((a, k)) or self._series())
+        r = rest.get("/api/v1/bars/aapl?interval=1d&range=MAX&before=2026-09-03T00:00:00Z")
+        body = r.json()
+        assert r.status_code == 200 and body["symbol"] == "AAPL" and body["vendor"] == "alpaca"
+        assert body["bars"][0] == {"t": "2026-09-01T13:30:00+00:00", "o": 1, "h": 2, "l": 0.5, "c": 1.5, "v": 100}
+        assert [b["t"][:10] for b in body["bars"]] == ["2026-09-01", "2026-09-02"]    # oldest first, nothing dropped
+        assert body["count"] == 2 and body["next_before"] == "2026-09-01T13:30:00+00:00"
+        assert calls[0][1]["interval"] == "1d" and calls[0][1]["before"] == "2026-09-03T00:00:00Z"
+        assert "etag" in r.headers and "x-alphadesk-as-of" in r.headers
+
+    def test_the_end_of_history_is_a_clean_empty_page_not_an_error(self, rest, monkeypatch):
+        """The chart route answers 404 once a walk has gone past the oldest bar.
+        A bot walking back would meet that error at the end of every walk."""
+        from fastapi import HTTPException
+        from alphadesk.app import dashboard
+
+        def end(*a, **k): raise HTTPException(404, "daily bars reach back to 1999")
+        monkeypatch.setattr(dashboard, "api_chart", end)
+        r = rest.get("/api/v1/bars/AAPL?interval=1d&before=1999-01-01T00:00:00Z")
+        assert r.status_code == 200
+        assert r.json() == {"symbol": "AAPL", "interval": "1d", "vendor": None, "bars": [], "count": 0,
+                            "next_before": None, "note": "daily bars reach back to 1999"}
+
+    def test_a_404_on_the_first_page_is_still_a_404(self, rest, monkeypatch):
+        """No cursor means no walk: nothing for the symbol is a real not-found."""
+        from fastapi import HTTPException
+        from alphadesk.app import dashboard
+
+        def none(*a, **k): raise HTTPException(404, "no bars for ZZZZ")
+        monkeypatch.setattr(dashboard, "api_chart", none)
+        assert rest.get("/api/v1/bars/ZZZZ?interval=1d").status_code == 404
+
+    def test_the_charts_own_refusals_pass_through_with_their_headers(self, rest, monkeypatch):
+        from fastapi import HTTPException
+        from alphadesk.app import dashboard
+
+        def slow(*a, **k): raise HTTPException(503, "alpaca: rate limited", headers={"Retry-After": "15"})
+        monkeypatch.setattr(dashboard, "api_chart", slow)
+        r = rest.get("/api/v1/bars/AAPL?interval=1d")
+        assert r.status_code == 503 and r.headers["retry-after"] == "15" and "rate limited" in r.json()["detail"]
+
+        def bad(*a, **k): raise HTTPException(400, "interval must be one of 1m, 1d on alpaca")
+        monkeypatch.setattr(dashboard, "api_chart", bad)
+        r = rest.get("/api/v1/bars/AAPL?interval=7m")
+        assert r.status_code == 400 and "interval must be one of" in r.json()["detail"]
+
+    def test_the_spec_lists_the_bars_endpoint_with_its_path_and_query_inputs(self):
+        spec = TestClient(rest_data.build([])).get("/openapi.json").json()
+        op = spec["paths"]["/bars/{symbol}"]["get"]
+        assert op["operationId"] == "bars"
+        by_name = {p["name"]: p for p in op["parameters"]}
+        assert by_name["symbol"]["in"] == "path" and by_name["symbol"]["required"] is True
+        assert {"interval", "range", "before", "need"} <= set(by_name)
+        assert all(by_name[n]["in"] == "query" and by_name[n]["required"] is False
+                   for n in ("interval", "range", "before", "need"))

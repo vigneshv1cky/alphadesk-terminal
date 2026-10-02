@@ -66,6 +66,13 @@ def call(tool, query: dict):
     return tool.fn(**{n: _coerce(n, props[n], v) for n, v in query.items()})
 
 
+_BARS_DOC = (
+    "EVERY BAR, not the agent tools' thinned sample. One page per call, oldest first: open, high, low, "
+    "close and volume. `next_before` is the oldest bar's time — pass it as `before` for the page behind it. "
+    "An empty page (with a `note`) ends the walk. No indicators: a program computes its own. Daily history "
+    "over years: interval=1d with range=MAX. One vendor serves a whole walk, never a mix.")
+
+
 def openapi(tools) -> dict:
     """A machine-readable spec of every endpoint, from the tools' own schemas."""
     paths = {}
@@ -84,6 +91,21 @@ def openapi(tools) -> dict:
                           "428": {"description": "No connected vendor carries this; the body names them"},
                           "429": {"description": "Rate limit; see Retry-After"},
                           "502": {"description": "A vendor failed"}}}}
+    paths["/bars/{symbol}"] = {"get": {
+        "operationId": "bars", "summary": "Every bar of price history, one page at a time",
+        "description": _BARS_DOC,
+        "parameters": [{"name": "symbol", "in": "path", "required": True, "schema": {"type": "string"}},
+                       {"name": "interval", "in": "query", "required": False, "schema": {"type": "string"}},
+                       {"name": "range", "in": "query", "required": False, "schema": {"type": "string"}},
+                       {"name": "before", "in": "query", "required": False,
+                        "schema": {"type": "string", "format": "date-time"}},
+                       {"name": "need", "in": "query", "required": False, "schema": {"type": "integer"}}],
+        "security": [{"bearer": []}],
+        "responses": {"200": {"description": "A page of bars, oldest first; an empty page ends the walk"},
+                      "400": {"description": "A range, interval or time the chart does not accept"},
+                      "404": {"description": "No bars at all for this symbol"},
+                      "428": {"description": "No connected vendor carries price history"},
+                      "503": {"description": "The vendor failed; see Retry-After and ask again"}}}}
     return {"openapi": "3.1.0", "servers": [{"url": PREFIX}],
             "info": {"title": "AlphaDesk data API", "version": "1",
                      "description": "Read-only. Every call runs as the reader who issued the token, on their keys."},
@@ -118,6 +140,34 @@ def build(tools=None):
     @api.get("/openapi.json")
     def spec():
         return JSONResponse(openapi(registry.values()))
+
+    @api.get("/bars/{symbol}")
+    def bars(symbol: str, request: Request, interval: str | None = None, range: str | None = None,
+             before: str | None = None, need: int | None = None):
+        # Reuses the chart route (dashboard.api_chart), so the vendor choice,
+        # the interval a plan allows and the history floor are the chart's own
+        # — nothing is re-implemented here. Found by reading it (2026-10-02):
+        # `before` is any ISO-8601 instant; `need` only applies with `before`;
+        # a walk that has gone past the oldest bar is answered 404, which a
+        # program would meet at the end of EVERY walk, so a 404 WITH a cursor
+        # becomes an empty final page. Without a cursor it is a real not-found.
+        from alphadesk.app import dashboard
+        out = {"symbol": symbol.upper(), "interval": interval}
+        try:
+            series = dashboard.api_chart(symbol, range=range, interval=interval, before=before, need=need)
+        except HTTPException as exc:
+            if exc.status_code == 404 and before:
+                return _reply(request, {**out, "vendor": None, "bars": [], "count": 0,
+                                        "next_before": None, "note": str(exc.detail)})
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+        except ProviderError as exc:
+            if isinstance(exc, NeedsKey):
+                raise
+            return JSONResponse({"detail": str(exc)}, status_code=502)
+        rows = [{k: b.get(k) for k in ("t", "o", "h", "l", "c", "v")} for b in (series.get("bars") or [])]
+        return _reply(request, {**out, "vendor": series.get("vendor") or series.get("source"),
+                                "bars": rows, "count": len(rows),
+                                "next_before": rows[0]["t"] if rows else None})
 
     @api.get("/{name}")
     def read(name: str, request: Request):
