@@ -48,7 +48,7 @@ export function KeysExportDialog({ onClose }: { onClose: () => void }) {
             To put the keys into another AlphaDesk: <code>python -m alphadesk.main keys import-file {saved}</code>.
           </p>
           <div className="flex justify-end">
-            <button type="button" onClick={onClose} className={btnCls({ size: "lg" })}>Done</button>
+            <button type="button" onClick={onClose} className={btnCls({ size: "lg" }, "rounded-md")}>Done</button>
           </div>
         </div>
       ) : reauth ? (
@@ -58,8 +58,8 @@ export function KeysExportDialog({ onClose }: { onClose: () => void }) {
             back in, then export again.
           </p>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className={btnCls({ size: "lg" })}>Cancel</button>
-            <button type="button" className={btnCls({ variant: "accent", size: "lg" })}
+            <button type="button" onClick={onClose} className={btnCls({ size: "lg" }, "rounded-md")}>Cancel</button>
+            <button type="button" className={btnCls({ variant: "accent", size: "lg" }, "rounded-md")}
                     onClick={() => { void api.logout().finally(() => { window.location.href = "/" }) }}>
               Sign out
             </button>
@@ -73,9 +73,9 @@ export function KeysExportDialog({ onClose }: { onClose: () => void }) {
           </p>
           {error && <p className="text-caption text-loss">{error}</p>}
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className={btnCls({ size: "lg" })}>Cancel</button>
+            <button type="button" onClick={onClose} className={btnCls({ size: "lg" }, "rounded-md")}>Cancel</button>
             <button type="submit" disabled={busy}
-                    className={btnCls({ variant: "accent", size: "lg" }, "px-3 uppercase tracking-caps")}>
+                    className={btnCls({ variant: "accent", size: "lg" }, "rounded-md px-3 uppercase tracking-caps")}>
               {busy ? "Preparing…" : "Download keys"}
             </button>
           </div>

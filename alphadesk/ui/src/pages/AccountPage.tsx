@@ -183,7 +183,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                 <span className="flex items-center gap-2">
                   {/* Only with something to export, and only where the vault can open it. */}
                   {data?.vault && (data?.keys ?? []).length > 0 && (
-                    <button type="button" onClick={() => setExporting(true)} className={btnCls({ size: "sm" })}
+                    <button type="button" onClick={() => setExporting(true)} className={btnCls({ size: "sm" }, "rounded-md")}
                             title="Download your connected keys as a file sealed with a passphrase, to use on another server">
                       Export keys
                     </button>
@@ -603,7 +603,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
           )}
           {error && <p className="text-caption text-loss">{error}</p>}
           <button type="submit" disabled={busy}
-                  className={btnCls({ variant: "accent", size: "lg" }, "mt-1 h-[32px] w-full font-extrabold uppercase tracking-caps")}>
+                  className={btnCls({ variant: "accent", size: "lg" }, "mt-1 h-[32px] w-full rounded-md font-extrabold uppercase tracking-caps")}>
             {busy ? "sealing…" : "Save key"}
           </button>
         </form>
@@ -739,13 +739,13 @@ function PlanPanel({ access }: { access: Access }) {
         <span className="min-w-0 flex-1 text-body font-semibold">{line}</span>
         {access.state === "subscribed" ? (
           <button type="button" disabled={!access.can_subscribe} onClick={() => go(api.billingPortal)}
-                  className={btnCls({ variant: "strong", size: "lg" })}>Manage billing</button>
+                  className={btnCls({ variant: "strong", size: "lg" }, "rounded-md")}>Manage billing</button>
         ) : access.state !== "owner" && (
           <>
             <button type="button" disabled={!access.can_subscribe} onClick={() => go(() => api.billingCheckout("monthly"))}
-                    className={btnCls({ variant: "accent", size: "lg" }, "px-4 uppercase tracking-caps")}>Subscribe monthly</button>
+                    className={btnCls({ variant: "accent", size: "lg" }, "rounded-md px-4 uppercase tracking-caps")}>Subscribe monthly</button>
             <button type="button" disabled={!access.can_subscribe} onClick={() => go(() => api.billingCheckout("yearly"))}
-                    className={btnCls({ variant: "strong", size: "lg" })}>Yearly</button>
+                    className={btnCls({ variant: "strong", size: "lg" }, "rounded-md")}>Yearly</button>
           </>
         )}
       </div>
@@ -816,7 +816,7 @@ export default function AccountPage() {
             ))}
             {/* An icon on a phone, so the email keeps the line. */}
             <button type="button" onClick={signOut} aria-label="Sign out" title="Sign out"
-                    className={btnCls({ variant: "danger" }, "max-sm:w-[28px] max-sm:px-0 sm:h-[28px] sm:px-3 max-sm:h-[28px]")}>
+                    className={btnCls({ variant: "danger" }, "rounded-md max-sm:w-[28px] max-sm:px-0 sm:h-[28px] sm:px-3 max-sm:h-[28px]")}>
               <LogOut className="h-[14px] w-[14px] sm:hidden" aria-hidden="true" />
               <span className="max-sm:hidden">Sign out</span>
             </button>
