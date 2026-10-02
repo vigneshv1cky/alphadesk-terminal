@@ -66,6 +66,13 @@ sample, so history has its own endpoint:
 - One vendor serves a whole walk, never a mix. Which intervals and how far
   back depend on the reader's vendor and plan.
 - For the whole story, see [`examples/pull_daily_bars.py`](examples/pull_daily_bars.py).
+- The newest daily bar is today's, still forming while the market is open;
+  treat it as provisional until after the close.
+- **macOS and `CERTIFICATE_VERIFY_FAILED`:** Python from python.org ships
+  without a certificate list, so it cannot verify an https address that `curl`
+  reaches fine. Run the `Install Certificates.command` that came with that
+  Python, or point `SSL_CERT_FILE` at any certificate bundle (the `certifi`
+  package carries one: `python3 -c "import certifi;print(certifi.where())"`).
 
 ### Staying inside the limits
 
