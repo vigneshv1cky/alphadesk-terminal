@@ -93,3 +93,24 @@ export function agentSetup(client: AgentClient, url: string, token?: string | nu
       }
   }
 }
+
+/** The plain-HTTP data API (2026-10-02) sits beside the tool server on the same
+ * host, under /api/v1, and takes the same token. Derived from the tool
+ * server's address rather than passed in, so the page cannot show one host
+ * for the connector and another for the program. */
+export function dataApiUrl(mcpUrl: string): string {
+  return mcpUrl ? mcpUrl.replace(/\/api\/agent\/tools\/mcp$/, "") + "/api/v1" : ""
+}
+
+/** A copy-and-run example for a program that is not an agent: a quote, and the
+ * full daily history. Same placeholder rule as every snippet here. */
+export function dataApiSetup(mcpUrl: string, token?: string | null): { where: string; text: string; tokenInline: boolean } {
+  const base = dataApiUrl(mcpUrl)
+  const auth = shellQuote(`Authorization: Bearer ${token || TOKEN_PLACEHOLDER}`)
+  return {
+    tokenInline: true,
+    where: "Run from a terminal, or send the same requests from your own program. Replace AAPL with any symbol.",
+    text: `curl -H ${auth} ${shellQuote(`${base}/quote?symbol=AAPL`)}\n`
+      + `curl -H ${auth} ${shellQuote(`${base}/bars/AAPL?interval=1d&range=MAX`)}`,
+  }
+}

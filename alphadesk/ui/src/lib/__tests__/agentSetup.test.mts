@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { AGENT_CLIENTS, agentSetup, TOKEN_PLACEHOLDER } from "../agentSetup.ts"
+import { AGENT_CLIENTS, agentSetup, dataApiSetup, dataApiUrl, TOKEN_PLACEHOLDER } from "../agentSetup.ts"
 
 const URL_ = "https://alphadesk.example.com/api/agent/tools/mcp"
 const TOKEN = "adk_AbC-123_xyz"
@@ -58,4 +58,28 @@ test("Codex gets OpenAI's remote-server table, and the token stays out of the fi
 test("a TOML string never lets a value break out of its quotes", () => {
   const s = agentSetup("codex", 'https://x/" injected = "1', null)
   assert.ok(s.text.includes('url = "https://x/\\" injected = \\"1"'))
+})
+
+test("the data API address is derived from the tool server's, on the same host", () => {
+  assert.equal(dataApiUrl(URL_), "https://alphadesk.example.com/api/v1")
+  assert.equal(dataApiUrl("http://127.0.0.1:8000/api/agent/tools/mcp"), "http://127.0.0.1:8000/api/v1")
+  assert.equal(dataApiUrl(""), "")
+})
+
+test("the program snippet is two curl calls carrying the bearer token", () => {
+  const s = dataApiSetup(URL_, TOKEN)
+  assert.equal(s.tokenInline, true)
+  assert.ok(s.text.includes(`curl -H "Authorization: Bearer ${TOKEN}" "https://alphadesk.example.com/api/v1/quote?symbol=AAPL"`))
+  assert.ok(s.text.includes("/api/v1/bars/AAPL?interval=1d&range=MAX"))
+  assert.equal(s.text.split("\n").length, 2)
+})
+
+test("the program snippet carries the placeholder, never a token, when none is on screen", () => {
+  const s = dataApiSetup(URL_, null)
+  assert.ok(s.text.includes(TOKEN_PLACEHOLDER) && !s.text.includes("adk_"))
+})
+
+test("the program snippet never lets a value break out of its quotes", () => {
+  const s = dataApiSetup('https://x/api/agent/tools/mcp', 'a$(b)`c`"d')
+  assert.ok(s.text.includes('a\\$(b)\\`c\\`\\"d'))
 })
