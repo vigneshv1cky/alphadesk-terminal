@@ -6,6 +6,7 @@ import { useAuthMe, useSystem, useUserKeys } from "@/lib/queries"
 import { Dialog, Empty, fieldCls, Table, TD, TH, THead, TR, Widget, btnCls } from "@/components/terminal"
 import { PROVIDER_MARKS } from "@/components/providerMarks"
 import { DeleteAccountDialog } from "@/components/DeleteAccountDialog"
+import { KeysExportDialog } from "@/components/KeysExportDialog"
 import { AGENT_CLIENTS, agentSetup, type AgentClient } from "@/lib/agentSetup"
 import { connectionGroups } from "@/lib/agentConnections"
 
@@ -164,6 +165,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
   const [model, setModel] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const insecure = window.location.protocol !== "https:"
     && !["localhost", "127.0.0.1"].includes(window.location.hostname)
@@ -255,6 +257,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
 
   return (
     <>
+      {exporting && <KeysExportDialog onClose={() => setExporting(false)} />}
       {/* MARKET DATA as a table (2026-09-18, the owner picked the coverage
           matrix from six drafts). Every column is a real field: the panels a
           vendor serves and how many of them its free plan covers come from
@@ -264,7 +267,18 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
           that does not exist. */}
       <Widget span={12} title={<Heading>Market data</Heading>} bodyClassName="@container"
               subtitle="each panel uses the first connected vendor that carries it"
-              actions={keyedVendors.length ? <Pill tone={connectedCount ? "gain" : "muted"}>{connectedCount} of {keyedVendors.length} connected</Pill> : undefined}>
+              actions={keyedVendors.length ? (
+                <span className="flex items-center gap-2">
+                  {/* Only with something to export, and only where the vault can open it. */}
+                  {data?.vault && (data?.keys ?? []).length > 0 && (
+                    <button type="button" onClick={() => setExporting(true)} className={btnCls({ size: "sm" })}
+                            title="Download your connected keys as a file sealed with a passphrase, to use on another server">
+                      Export keys
+                    </button>
+                  )}
+                  <Pill tone={connectedCount ? "gain" : "muted"}>{connectedCount} of {keyedVendors.length} connected</Pill>
+                </span>
+              ) : undefined}>
         {blocked ?? (
           <>
             {/* THE TABLE NEEDS 820px; below that the panel falls back to one

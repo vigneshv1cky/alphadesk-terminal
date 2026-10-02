@@ -1,5 +1,7 @@
 // AlphaDesk API client — same-origin; Basic Auth handled by the browser.
 
+import { downloadName } from "./keyExport"
+
 export interface Concern {
   claim: string
   evidence: string
@@ -618,6 +620,10 @@ export class ApiError extends Error {
     this.status = status
   }
 }
+
+/** The server wants a fresh sign-in before it will hand over the keys
+ * (HTTP 403 with `reauth`, 2026-10-02) — not a failure to retry, an instruction. */
+export class ReauthRequired extends Error {}
 
 /** What a panel shows when no data vendor the user connected serves it
  * (HTTP 428 from the server, 2026-09-13): the surface, which vendors would
@@ -1543,6 +1549,23 @@ export const api = {
     put<{ ok: boolean }>(`/api/sources/${encodeURIComponent(name)}`, {}),
   setKey: (seam: KeySeam, body: { provider: string; api_key: string; api_secret?: string; base_url?: string; model?: string; plan?: string }) =>
     put<{ ok: boolean; key_hint: string }>(`/api/keys/${seam}`, body),
+  /** The reader's vendor keys as a file sealed under a passphrase they chose
+   * (2026-10-02). The one place a key leaves the vault, so it asks for a fresh
+   * sign-in: ReauthRequired says to sign in again, any other failure is a message. */
+  exportKeys: async (passphrase: string): Promise<{ blob: Blob; name: string }> => {
+    const r = await fetch("/api/keys/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ passphrase }),
+    })
+    if (!r.ok) {
+      noteUnauthorized("/api/keys/export", r.status)
+      const detail = await r.json().catch(() => null)
+      if (r.status === 403 && detail?.reauth) throw new ReauthRequired(detail.detail)
+      throw new Error(detail?.detail ?? `${r.status} ${r.statusText}`)
+    }
+    return { blob: await r.blob(), name: downloadName(r.headers.get("Content-Disposition")) }
+  },
   deleteKey: (seam: KeySeam, provider?: string) =>
     del<{ ok: boolean }>(provider
       ? `/api/keys/${seam}/${encodeURIComponent(provider)}`
