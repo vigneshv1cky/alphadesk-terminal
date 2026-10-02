@@ -1964,6 +1964,13 @@ def api_keys_set(seam: str, body: KeyIn, request: Request, background: Backgroun
     from alphadesk.ingest.news import _PLAN_GATED
     if seam == "news" and plan != "paid" and body.provider in _PLAN_GATED:
         background.add_task(store.purge_vendor_data, user_id, "news", body.provider)
+    # REFILL THE WINDOW (2026-10-02). A new or replaced feed starts with
+    # whatever the poll's newest-100 happens to hold; fetch the retention
+    # window behind it, after the response, so the reader is not made to
+    # page back by hand.
+    if seam == "news":
+        from alphadesk.ingest.news import backfill_user
+        background.add_task(backfill_user, user_id, body.provider)
     # A replaced key must serve the very next ask: the per-user LRU keys on
     # created_at, which the upsert refreshed, so no explicit invalidation.
     return {"ok": True, "seam": seam, "provider": body.provider, "key_hint": api_key[-4:]}
