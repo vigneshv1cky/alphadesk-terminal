@@ -119,3 +119,43 @@ class TestMounted:
         monkeypatch.setattr(prewarm, "note", lambda *a, **k: noted.append(a))
         assert rest.get("/api/v1/data_sources").status_code == 200
         assert noted == []
+
+
+class TestGuards:
+    def test_every_data_tool_has_exactly_one_endpoint(self):
+        from alphadesk.mcp_server import mcp
+        built = rest_data.build()
+        assert set(built.state.tools) == {t.name for t in mcp._tool_manager.list_tools()}
+
+    def test_no_route_on_this_door_accepts_anything_but_get(self):
+        from fastapi.routing import APIRoute
+        for route in rest_data.build().routes:
+            if isinstance(route, APIRoute):
+                assert route.methods <= {"GET", "HEAD"}, route.path
+
+    def test_a_write_verb_is_refused_on_the_mounted_door(self, rest):
+        for method in ("post", "put", "patch", "delete"):
+            assert getattr(rest, method)("/api/v1/data_sources").status_code == 405
+
+    def test_two_readers_never_see_each_other(self, rest, store, monkeypatch):
+        from alphadesk.app import agent_access
+        from alphadesk.identity import request_user
+        from alphadesk.mcp_server import mcp
+        store.create_user("u2", "other@example.com", "sso-only")
+        _, other = agent_access.issue("u2", "bot")
+        monkeypatch.setattr(mcp._tool_manager.get_tool("data_sources"), "fn", lambda: {"who": request_user()})
+        mine = rest.get("/api/v1/data_sources").json()["who"]
+        theirs = rest.get("/api/v1/data_sources", headers={"Authorization": f"Bearer {other}"}).json()["who"]
+        assert (mine, theirs) == (rest.uid, "u2")
+
+    def test_a_revoked_token_stops_at_once(self, rest, store):
+        row = store.list_agent_access_tokens(rest.uid)[0]
+        assert store.revoke_agent_access_token(rest.uid, row["token_id"])
+        assert rest.get("/api/v1/data_sources").status_code == 401
+
+    def test_the_limit_ends_in_a_429_with_a_retry_time(self, rest, monkeypatch):
+        from alphadesk.app import agent_access
+        monkeypatch.setattr(agent_access, "limiter", agent_access.RateLimit(per_min=2))
+        assert [rest.get("/api/v1/data_sources").status_code for _ in range(2)] == [200, 200]
+        r = rest.get("/api/v1/data_sources")
+        assert r.status_code == 429 and int(r.headers["retry-after"]) >= 1
