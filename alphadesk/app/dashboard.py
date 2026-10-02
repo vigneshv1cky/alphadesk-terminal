@@ -601,6 +601,13 @@ def api_board_get(request: Request):
 
 class AccessTokenIn(BaseModel):
     name: str = ""
+    #: Addresses or ranges the token may be used from; empty means anywhere.
+    allowed_ips: list[str] = []
+
+
+def _token_view(row: dict) -> dict:
+    """A token row as the page reads it: the address list as a list."""
+    return {**row, "allowed_ips": [p for p in (row.get("allowed_ips") or "").split(",") if p]}
 
 
 def _tools_url(request: Request) -> str:
@@ -616,7 +623,7 @@ def api_agent_access_tokens(request: Request):
     """The reader's live agent tokens (never the tokens themselves) and the
     address their agent connects to."""
     return {"url": _tools_url(request),
-            "tokens": store.list_agent_access_tokens(_key_user(request))}
+            "tokens": [_token_view(t) for t in store.list_agent_access_tokens(_key_user(request))]}
 
 
 @app.post("/api/agent/access-tokens")
@@ -624,11 +631,11 @@ def api_agent_access_token_issue(body: AccessTokenIn, request: Request):
     """Issue a token. The response is the ONLY time the token is shown."""
     from alphadesk.app import agent_access
     try:
-        row, secret = agent_access.issue(_key_user(request), body.name)
-    except agent_access.TokenLimit as exc:
+        row, secret = agent_access.issue(_key_user(request), body.name, allowed_ips=body.allowed_ips)
+    except (agent_access.TokenLimit, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
     # no-store: a token must not linger in any cache between here and the page.
-    return JSONResponse({**row, "token": secret, "url": _tools_url(request)},
+    return JSONResponse({**_token_view(row), "token": secret, "url": _tools_url(request)},
                         headers={"Cache-Control": "no-store"})
 
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import collections
 import hashlib
+import ipaddress
 import os
 import secrets
 import threading
@@ -59,15 +60,54 @@ def _hash(secret: str) -> str:
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()
 
 
-def issue(user_id: str, name: str) -> tuple[dict, str]:
-    """(the stored row as listed, the token itself — shown once)."""
+def parse_allowlist(entries) -> list:
+    """The networks a token may be used from. `entries` is a list, or text
+    separated by commas or newlines; empty means anywhere. ValueError names
+    the entry that is neither an address nor a range."""
+    if isinstance(entries, str):
+        entries = entries.replace("\n", ",").split(",")
+    nets = []
+    for part in entries or []:
+        part = str(part).strip()
+        if not part:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(part, strict=False))
+        except ValueError:
+            raise ValueError(f"{part!r} is not an address or range") from None
+    return nets
+
+
+def normalise_allowlist(entries) -> list[str]:
+    """The same entries in the form a reader reads back: a single address
+    without a /32, a range as its network."""
+    return [str(n.network_address) if n.num_addresses == 1 else str(n) for n in parse_allowlist(entries)]
+
+
+def address_allowed(address: str, nets: list) -> bool:
+    """No list means from anywhere; otherwise the address must sit inside one."""
+    if not nets:
+        return True
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return any(ip in n for n in nets)
+
+
+def issue(user_id: str, name: str, allowed_ips=None) -> tuple[dict, str]:
+    """(the stored row as listed, the token itself — shown once). `allowed_ips`
+    restricts where the token may be used from; a malformed entry is a
+    ValueError, raised before anything is stored."""
     from alphadesk.ledger import store
+    listed = normalise_allowlist(allowed_ips)
     if len(store.list_agent_access_tokens(user_id)) >= MAX_TOKENS:
         raise TokenLimit(f"revoke a token first — at most {MAX_TOKENS} can be live")
     secret = TOKEN_PREFIX + secrets.token_urlsafe(32)
     token_id = "tok_" + secrets.token_hex(6)
     label = (name or "").strip()[:60] or "agent"
-    store.create_agent_access_token(user_id, token_id, label, _hash(secret), secret[-4:])
+    store.create_agent_access_token(user_id, token_id, label, _hash(secret), secret[-4:],
+                                    allowed_ips=",".join(listed))
     row = next(r for r in store.list_agent_access_tokens(user_id) if r["token_id"] == token_id)
     return row, secret
 
@@ -78,6 +118,13 @@ _touch_lock = threading.Lock()
 
 def resolve(secret: str) -> tuple[str, str] | None:
     """(token id, reader) for a live access token, else None."""
+    row = resolve_row(secret)
+    return (row["token_id"], row["user_id"]) if row else None
+
+
+def resolve_row(secret: str) -> dict | None:
+    """The live token's row — id, reader and the addresses it may be used
+    from — else None."""
     if not secret.startswith(TOKEN_PREFIX):
         return None
     from alphadesk.ledger import store
@@ -91,7 +138,7 @@ def resolve(secret: str) -> tuple[str, str] | None:
             _touched[row["token_id"]] = now
     if due:
         store.touch_agent_access_token(row["token_id"])
-    return row["token_id"], row["user_id"]
+    return row
 
 
 class RateLimit:

@@ -415,7 +415,10 @@ CREATE TABLE IF NOT EXISTS agent_access_tokens (
     hint         TEXT NOT NULL,
     created_at   TEXT,
     last_used_at TEXT,
-    revoked_at   TEXT
+    revoked_at   TEXT,
+    -- Comma-separated addresses and ranges the token may be used from; empty
+    -- means anywhere (2026-10-02).
+    allowed_ips  TEXT
 );
 
 -- OAuth for agent apps that connect by sign-in rather than a pasted token
@@ -587,6 +590,7 @@ def init() -> None:
     # ALTER aborts a Postgres transaction, and one already-migrated column
     # must not roll back the migration after it.
     for ddl in (
+        "ALTER TABLE agent_access_tokens ADD COLUMN allowed_ips TEXT",
         "ALTER TABLE earnings ADD COLUMN market_cap REAL",
         "ALTER TABLE earnings ADD COLUMN pre_report_close REAL",   # pre-armed reporter context
         "ALTER TABLE earnings ADD COLUMN implied_move_pct REAL",
@@ -1449,18 +1453,18 @@ def get_dollar_pool(owner: str, vendor: str) -> tuple[int, list[str]] | None:
 
 
 def create_agent_access_token(user_id: str, token_id: str, name: str, token_hash: str,
-                              hint: str) -> None:
+                              hint: str, allowed_ips: str = "") -> None:
     with _lock, _connect() as conn:
         conn.execute(
-            "INSERT INTO agent_access_tokens (token_id, user_id, name, token_hash, hint, created_at)"
-            " VALUES (?,?,?,?,?,?)", (token_id, user_id, name, token_hash, hint, _now()))
+            "INSERT INTO agent_access_tokens (token_id, user_id, name, token_hash, hint, created_at, allowed_ips)"
+            " VALUES (?,?,?,?,?,?,?)", (token_id, user_id, name, token_hash, hint, _now(), allowed_ips))
 
 
 def list_agent_access_tokens(user_id: str) -> list[dict]:
     """A reader's live tokens, newest first. Never carries the hash."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT token_id, name, hint, created_at, last_used_at FROM agent_access_tokens"
+            "SELECT token_id, name, hint, created_at, last_used_at, allowed_ips FROM agent_access_tokens"
             " WHERE user_id=? AND revoked_at IS NULL ORDER BY created_at DESC, token_id",
             (user_id,)).fetchall()
     return [dict(r) for r in rows]
@@ -1470,7 +1474,7 @@ def agent_access_token_by_hash(token_hash: str) -> dict | None:
     """The live token with this hash, or None (unknown or revoked)."""
     with _connect() as conn:
         row = conn.execute(
-            "SELECT token_id, user_id, last_used_at FROM agent_access_tokens"
+            "SELECT token_id, user_id, last_used_at, allowed_ips FROM agent_access_tokens"
             " WHERE token_hash=? AND revoked_at IS NULL", (token_hash,)).fetchone()
     return dict(row) if row else None
 

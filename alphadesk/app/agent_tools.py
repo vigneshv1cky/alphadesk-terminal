@@ -45,6 +45,15 @@ from alphadesk.app import agent_access, agent_oauth
 MOUNT = "/api/agent/tools"
 
 
+def client_address(scope) -> str:
+    """The caller's address as the FRONT DOOR saw it: the last X-Forwarded-For
+    entry — Cloud Run appends the real client, and anything earlier was sent by
+    the caller and proves nothing — else the socket peer."""
+    headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []}
+    forwarded = [p.strip() for p in headers.get("x-forwarded-for", "").split(",") if p.strip()]
+    return forwarded[-1] if forwarded else (scope.get("client") or ("",))[0]
+
+
 class TokenGate:
     """ASGI wrapper: no valid token, no tool. A valid one runs the whole
     request as its reader — the tool functions resolve their data router from
@@ -60,6 +69,7 @@ class TokenGate:
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []}
         token = agent_access.bearer(headers.get("authorization"))
         uid = limit_key = None
+        allowed = []
         if token and token.startswith(agent_oauth.ACCESS_PREFIX):
             # An access token from the OAuth sign-in (connectors).
             found = await anyio.to_thread.run_sync(agent_oauth.resolve_access, token)
@@ -67,11 +77,17 @@ class TokenGate:
                 limit_key, uid = found
         elif token and token.startswith(agent_access.TOKEN_PREFIX):
             # A reader-issued access token: a store lookup, so off the loop.
-            found = await anyio.to_thread.run_sync(agent_access.resolve, token)
-            if found:
-                limit_key, uid = found
+            row = await anyio.to_thread.run_sync(agent_access.resolve_row, token)
+            if row:
+                limit_key, uid = row["token_id"], row["user_id"]
+                allowed = agent_access.parse_allowlist(row.get("allowed_ips") or "")
         if not uid:
             await _refuse(send)
+            return
+        # A token its reader tied to addresses answers only to them, so a
+        # leaked one is useless from anywhere else.
+        if not agent_access.address_allowed(client_address(scope), allowed):
+            await _forbidden(send)
             return
         # The access gate reaches the agent too: a reader past the trial with
         # no subscription is refused here as on the web (alphadesk/billing.py).
@@ -101,6 +117,15 @@ class TokenGate:
             await self.app(scope, receive, send_with_limits)
         finally:
             reset_request_user(held)
+
+
+async def _forbidden(send) -> None:
+    body = json.dumps({"detail": "this token cannot be used from this address"}).encode("utf-8")
+    await send({"type": "http.response.start", "status": 403, "headers": [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body)).encode("ascii")),
+    ]})
+    await send({"type": "http.response.body", "body": body})
 
 
 async def _payment_required(send) -> None:
