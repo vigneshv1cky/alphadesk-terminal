@@ -85,6 +85,64 @@ def test_the_key_route_purges(client, store, monkeypatch):
         assert conn.execute("SELECT COUNT(*) AS n FROM news_articles WHERE owner=?", (uid,)).fetchone()["n"] == 0
 
 
+def test_replacing_an_ungated_news_key_keeps_its_stories(client, store, monkeypatch):
+    """Replacing an Alpaca key declared "free" by default and purged every
+    Alpaca story on file (2026-10-02). Only a plan-gated vendor (Tiingo) is
+    purged on a free declaration, and after the response, not inside it."""
+    import uuid
+
+    from alphadesk.app import auth
+    monkeypatch.setenv("ALPHADESK_AUTH", "required")
+    import base64
+    monkeypatch.setenv("ALPHADESK_VAULT_KEY", base64.b64encode(b"\x08" * 32).decode())
+    from alphadesk.ingest import news
+    monkeypatch.setattr(news, "backfill_user", lambda *a, **k: 0)   # no vendor call from a test
+    uid = uuid.uuid4().hex
+    store.create_user(uid, "swap@example.com", auth.hash_password("a-long-password"))
+    assert client.post("/api/auth/login", json={"email": "swap@example.com",
+                                                "password": "a-long-password"}).status_code == 200
+    with store._lock, store._connect() as conn:
+        for aid, feed in (("a", "alpaca"), ("t", "tiingo")):
+            conn.execute("INSERT INTO news_articles (owner, article_id, title, feeds) VALUES (?, ?, 't', ?)",
+                         (uid, aid, feed))
+    for provider in ("alpaca", "tiingo"):
+        r = client.put("/api/keys/news", json={"provider": provider, "api_key": "k" * 12,
+                                               "api_secret": "s" * 12})
+        assert r.status_code == 200, r.text
+    with store._connect() as conn:
+        left = {r["article_id"] for r in conn.execute("SELECT article_id FROM news_articles WHERE owner=?", (uid,))}
+    assert left == {"a"}
+
+
+def test_backfill_walks_the_window_a_day_at_a_time(store, monkeypatch):
+    """After a key save the retention window is refilled from the feed, one
+    day per ask, stored as that feed's (2026-10-02)."""
+    import uuid
+    from datetime import datetime, timezone
+
+    from alphadesk.ingest import news
+    from alphadesk.providers.base import Article
+
+    uid = uuid.uuid4().hex
+    store.set_user_key(uid, "news", "alpaca", "sealed", "…abcd")
+    asks = []
+
+    class Feed:
+        def fetch(self, since, limit=200, until=None):
+            asks.append((since, until))
+            n = len(asks)
+            return [Article(id=f"s{n}", title="t", url=f"https://x/{n}",
+                            published_at=datetime.now(timezone.utc).isoformat(), symbols=["AAPL"])]
+
+    monkeypatch.setattr(news, "_user_news_provider", lambda *a, **k: Feed())
+    assert news.backfill_user(uid, "alpaca", days=3) == 3
+    assert len(asks) == 3
+    assert all((u - s_).total_seconds() <= 86400 + 1 for s_, u in asks)
+    with store._connect() as conn:
+        rows = conn.execute("SELECT feeds FROM news_articles WHERE owner=?", (uid,)).fetchall()
+    assert len(rows) == 3 and all(r["feeds"] == "alpaca" for r in rows)
+
+
 def test_stories_from_a_feed_you_no_longer_hold_are_named(client, store, monkeypatch):
     """A feed removed BEFORE the purge landed (2026-09-18) left its stories
     behind, and they showed up in the news list under publishers the reader

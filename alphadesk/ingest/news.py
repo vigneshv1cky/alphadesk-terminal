@@ -11,10 +11,11 @@ unchanged — it was already tuned and working.
 import functools
 import inspect
 import logging
+import math
 import os
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from alphadesk.ledger import store
@@ -383,6 +384,49 @@ def older_articles(user_id: str, before: str, limit: int = 100, query: str = "")
         store.save_articles(merged, owner=owner)
         rows = store.articles_before(owner, before, limit, query)
     return rows
+
+
+def backfill_user(user_id: str, provider_name: str, days: float | None = None) -> int:
+    """Refill the retention window for one feed after its key is saved
+    (2026-10-02). The poll only ever asks for the newest stories, so a
+    reader whose stored stories were lost, or who has just connected a feed,
+    saw a thin window until they paged back by hand. This walks the window a
+    day at a time (a single ask is capped well below a week of an all-symbol
+    feed) and stores the answer as that feed's. A feed that cannot page
+    backwards is skipped. Any failure is logged and ends the backfill; the
+    poll carries on regardless. Returns the stories stored."""
+    from alphadesk.config import NEWS_KEEP_DAYS
+    days = NEWS_KEEP_DAYS if days is None else days
+    row = next((r for r in store.get_user_keys(user_id, "news") if r["provider"] == provider_name), None)
+    if row is None:
+        return 0
+    try:
+        provider = _user_news_provider(user_id, row["created_at"], row["provider"], row["config"])
+    except Exception as exc:
+        log.info("backfill %s for %s: %s", provider_name, user_id[:8], exc)
+        return 0
+    if "until" not in inspect.signature(provider.fetch).parameters:
+        return 0
+    keys = store.get_user_keys(user_id, "news")
+    now = datetime.now(timezone.utc)
+    stored = 0
+    for day in range(max(1, math.ceil(days))):
+        until = now - timedelta(days=day)
+        since = max(until - timedelta(days=1), now - timedelta(days=days))
+        try:
+            got = provider.fetch(since, limit=400, until=until)
+        except Exception as exc:
+            log.info("backfill %s for %s: %s", provider_name, user_id[:8], exc)
+            break
+        batch = [{"id": a.id, "title": a.title, "summary": a.summary, "source": a.source,
+                  "url": a.url, "published_at": a.published_at, "tickers": a.symbols,
+                  "image_url": a.image_url, "author": a.author, "body": a.body,
+                  "feeds": [provider_name]} for a in got if a.id]
+        batch = drop_unstorable(_merge_feeds([batch]), keys)
+        if batch:
+            store.save_articles(batch, owner=news_owner(user_id))
+            stored += len(batch)
+    return stored
 
 
 def full_story(user_id: str, article_id: str) -> Optional[dict]:
