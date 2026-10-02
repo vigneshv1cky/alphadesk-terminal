@@ -264,3 +264,14 @@ def test_the_public_address_is_answered_and_nothing_else(store, monkeypatch):
         tok = _token_for(store, "user-42")
         assert _mcp(c, token=tok, host="alphadesk.example.com").status_code == 200
         assert _mcp(c, token=tok, host="evil.example.net").status_code in (400, 403, 421)
+
+
+def test_the_limiter_reports_how_much_of_the_window_is_left():
+    from alphadesk.app.agent_access import RateLimit
+    rl = RateLimit(per_min=3, window_s=60.0)
+    assert rl.remaining("k", now=0.0) == 3
+    rl.check("k", now=1.0)
+    rl.check("k", now=2.0)
+    assert rl.remaining("k", now=3.0) == 1
+    assert rl.remaining("k", now=62.5) == 3        # both hits aged out of the window
+    assert rl.remaining("someone-else", now=3.0) == 3

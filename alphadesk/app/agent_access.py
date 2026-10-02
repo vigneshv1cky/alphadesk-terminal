@@ -117,6 +117,13 @@ class RateLimit:
             hits.append(now)
             return 0.0
 
+    def remaining(self, key: str, now: float | None = None) -> int:
+        """Hits this key may still make in the current window."""
+        now = now if now is not None else time.monotonic()
+        with self._lock:
+            live = sum(1 for h in self._hits.get(key, ()) if now - h < self.window_s)
+        return max(0, self.per_min - live)
+
 
 limiter = RateLimit()
 
