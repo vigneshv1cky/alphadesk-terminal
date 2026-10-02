@@ -275,3 +275,12 @@ def test_the_limiter_reports_how_much_of_the_window_is_left():
     assert rl.remaining("k", now=3.0) == 1
     assert rl.remaining("k", now=62.5) == 3        # both hits aged out of the window
     assert rl.remaining("someone-else", now=3.0) == 3
+
+
+def test_a_gated_response_says_how_much_of_the_limit_is_left(reader_client):
+    token = reader_client.post("/api/agent/access-tokens", json={"name": "a"}).json()["token"]
+    r = _mcp(reader_client, token=token)
+    assert r.status_code == 200
+    assert r.headers["x-ratelimit-limit"] == "120" and r.headers["x-ratelimit-window"] == "60"
+    assert r.headers["x-ratelimit-remaining"] == "119"        # this call is counted
+    assert _mcp(reader_client, token=token).headers["x-ratelimit-remaining"] == "118"

@@ -83,9 +83,22 @@ class TokenGate:
         if wait:
             await _slow_down(send, wait)
             return
+        remaining = agent_access.limiter.remaining(limit_key)
+
+        async def send_with_limits(message):
+            # Said on every answer, so a program can slow down before it is
+            # refused rather than learn the limit from a 429.
+            if message["type"] == "http.response.start":
+                message = {**message, "headers": [
+                    *message.get("headers", []),
+                    (b"x-ratelimit-limit", str(agent_access.limiter.per_min).encode()),
+                    (b"x-ratelimit-remaining", str(remaining).encode()),
+                    (b"x-ratelimit-window", str(int(agent_access.limiter.window_s)).encode())]}
+            await send(message)
+
         held = set_request_user(uid)
         try:
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, send_with_limits)
         finally:
             reset_request_user(held)
 
