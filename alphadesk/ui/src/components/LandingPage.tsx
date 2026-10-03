@@ -70,6 +70,7 @@ const PROMISES = [
 /** The sign-in errors an SSO callback bounces back with, in words. */
 const OAUTH_ERRORS: Record<string, string> = {
   "account-disabled": "That account has been disabled by this instance's operator.",
+  "not-allowed": "That account is not allowed on this server. Ask its operator to add your address.",
   "state-mismatch": "The sign-in attempt expired or was tampered with — try again.",
   "sso-failed": "Sign-in failed — try again.",
   "no-verified-email": "That account has no verified email address.",
