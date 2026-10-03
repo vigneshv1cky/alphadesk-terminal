@@ -326,6 +326,15 @@ def main() -> None:
         problem = _auth.access_token_problem()
         if problem:
             sys.exit(problem)
+        if not _auth.auth_required():
+            # An instance acting as one existing account (ALPHADESK_LOCAL_USER_
+            # EMAIL) must name one that is there, or every request would fail.
+            from alphadesk.ledger import store as _store
+            _store.init()
+            try:
+                _store.ensure_local_user()
+            except RuntimeError as exc:
+                sys.exit(str(exc))
         host = env_value("DASHBOARD_HOST", "127.0.0.1")
         if not _auth.auth_required() and not _auth.access_token() and host not in ("127.0.0.1", "localhost", "::1"):
             log.warning("sign-in is off and the server listens on %s: anyone who can reach it can use it "

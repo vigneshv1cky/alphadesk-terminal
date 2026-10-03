@@ -597,7 +597,7 @@ def token_login(body: TokenBody, response: Response):
     state = store.user_session_state(uid)
     response.set_cookie(
         SESSION_COOKIE,
-        issue_session(uid, "local@alphadesk.invalid", (state or {}).get("session_version") or 1),
+        issue_session(uid, store.user_email(uid) or "local@alphadesk.invalid", (state or {}).get("session_version") or 1),
         max_age=SESSION_TTL_S, httponly=True, samesite="strict",
         secure=os.environ.get("ALPHADESK_COOKIE_SECURE", "").strip() == "1",
     )

@@ -69,7 +69,7 @@ def test_removing_a_key_deletes_what_it_fetched(store):
         assert [r["vendor"] for r in conn.execute("SELECT vendor FROM earnings_forecasts")] == ["finnhub"]
 
 
-def test_the_key_route_purges(client, store, monkeypatch):
+def test_the_key_route_keeps_the_data_unless_purging_is_switched_on(client, store, monkeypatch):
     import uuid
 
     from alphadesk.app import auth
@@ -81,7 +81,12 @@ def test_the_key_route_purges(client, store, monkeypatch):
     with store._lock, store._connect() as conn:
         conn.execute("INSERT INTO news_articles (owner, article_id, title, feeds) VALUES (?, 'x', 't', 'polygon')", (uid,))
     assert client.delete("/api/keys/news/polygon").status_code == 200
-    with store._connect() as conn:
+    with store._connect() as conn:                      # a removed key leaves its stories (the default)
+        assert conn.execute("SELECT COUNT(*) AS n FROM news_articles WHERE owner=?", (uid,)).fetchone()["n"] == 1
+    store.set_user_key(uid, "news", "polygon", "sealed", "…abcd")
+    monkeypatch.setenv("ALPHADESK_PURGE_ON_KEY_REMOVAL", "1")
+    assert client.delete("/api/keys/news/polygon").status_code == 200
+    with store._connect() as conn:                      # opted in, they go with it
         assert conn.execute("SELECT COUNT(*) AS n FROM news_articles WHERE owner=?", (uid,)).fetchone()["n"] == 0
 
 
