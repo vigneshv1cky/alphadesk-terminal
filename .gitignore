@@ -56,3 +56,6 @@ design_handoff_alphadesk_workspace/
 terraform/
 scripts/deploy.env
 .claude/settings.json
+
+# The local data folder (vault key and database): never committed or uploaded by a deploy.
+.local-data/
