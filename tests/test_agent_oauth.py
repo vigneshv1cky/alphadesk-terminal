@@ -377,3 +377,31 @@ def test_the_consent_page_says_what_the_app_actually_gets(client):
     page = client.get("/oauth/consent", params={"request": _consent_blob(client, reg["client_id"], challenge)})
     assert "vendor keys" in page.text and "model key" not in page.text
     assert "read-only tools" in page.text
+
+
+def test_the_consent_page_leads_with_the_address_and_warns_on_a_strange_one(client, monkeypatch):
+    monkeypatch.delenv("ALPHADESK_OAUTH_REDIRECT_HOSTS", raising=False)
+    reg = _register(client)
+    _, challenge = _pkce()
+    page = client.get("/oauth/consent", params={"request": _consent_blob(client, reg["client_id"], challenge)})
+    assert page.status_code == 200
+    assert "Your access will be sent to" in page.text and "AlphaDesk has not verified it" in page.text
+
+
+def test_known_and_unknown_redirect_addresses():
+    from alphadesk.app import agent_oauth as o
+    assert o.redirect_known("https://claude.ai/api/mcp/auth_callback")
+    assert o.redirect_known("https://chatgpt.com/connector_platform_oauth_redirect")
+    assert o.redirect_known("http://localhost:6274/cb") and o.redirect_known("http://127.0.0.1:9/cb")
+    assert not o.redirect_known("https://claude.ai.evil.example/cb")          # a look-alike prefix is not claude.ai
+    assert not o.redirect_known("https://evil.example/cb")
+    assert not o.redirect_known("cursor://anysphere.cursor-retrieval/oauth")  # a custom scheme is not vouched for
+
+
+def test_an_operator_list_refuses_every_other_address(monkeypatch):
+    from alphadesk.app import agent_oauth as o
+    monkeypatch.delenv("ALPHADESK_OAUTH_REDIRECT_HOSTS", raising=False)
+    assert o.redirect_allowed("https://anything.example/cb")
+    monkeypatch.setenv("ALPHADESK_OAUTH_REDIRECT_HOSTS", "claude.ai, chatgpt.com")
+    assert o.redirect_allowed("https://claude.ai/cb") and o.redirect_allowed("https://x.chatgpt.com/cb")
+    assert not o.redirect_allowed("https://evil.example/cb") and not o.redirect_allowed("https://claude.ai.evil.example/cb")

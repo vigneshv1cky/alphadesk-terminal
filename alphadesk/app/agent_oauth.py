@@ -395,6 +395,39 @@ def _reader(request: Request) -> tuple[str, str] | None:
     return claims["uid"], claims.get("email") or "your account"
 
 
+# WHERE A GRANT GOES (2026-10-03). Any program can register itself here under
+# any name and any return address, so "Allow Claude to use AlphaDesk?" proved
+# nothing: a look-alike registered as "Claude" with its own address would, on
+# Allow, be handed the reader's access. The page now leads with the ADDRESS the
+# grant is sent to, says the name is the app's own claim, and warns loudly when
+# the address is not one of the connectors people actually use. An operator can
+# also refuse every other address (ALPHADESK_OAUTH_REDIRECT_HOSTS).
+KNOWN_REDIRECT_HOSTS = ("claude.ai", "claude.com", "anthropic.com", "chatgpt.com", "openai.com",
+                        "localhost", "127.0.0.1", "[::1]")
+
+
+def _host_in(host: str, names) -> bool:
+    host = (host or "").lower()
+    return any(host == n or host.endswith("." + n) for n in names)
+
+
+def redirect_host(redirect_uri: str) -> str:
+    return (urlsplit(redirect_uri).hostname or "").lower()
+
+
+def redirect_known(redirect_uri: str) -> bool:
+    """Whether the grant goes to a connector people actually use."""
+    return urlsplit(redirect_uri).scheme in ("http", "https") and _host_in(redirect_host(redirect_uri), KNOWN_REDIRECT_HOSTS)
+
+
+def redirect_allowed(redirect_uri: str) -> bool:
+    """The operator's own list, when there is one: only those addresses (and
+    their subdomains) may receive a grant. Unset, every address may."""
+    raw = os.environ.get("ALPHADESK_OAUTH_REDIRECT_HOSTS", "").replace(",", " ").split()
+    names = [n.lower() for n in raw if n]
+    return not names or _host_in(redirect_host(redirect_uri), names)
+
+
 def _page(title: str, body: str, status: int = 200) -> HTMLResponse:
     doc = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)} · AlphaDesk</title>
@@ -408,6 +441,9 @@ main{{max-width:460px;margin:12vh auto;padding:0 16px}}
 h1{{font-size:17px;margin:0 0 10px}} p{{margin:8px 0;color:var(--muted)}} strong{{color:var(--fg)}}
 ul{{margin:10px 0 16px;padding-left:18px;color:var(--muted)}}
 .row{{display:flex;gap:8px;margin-top:18px}}
+.dest{{border:2px solid var(--border);border-radius:6px;padding:10px 12px;margin:12px 0;background:var(--bg)}}
+.dest .host{{display:block;font:700 15px ui-monospace,Menlo,monospace;color:var(--fg);word-break:break-all}}
+.dest.warn{{border-color:var(--accent)}} .warnmsg{{color:var(--accent);font-weight:700;margin:6px 0 0}}
 button,a.btn{{flex:1;height:34px;border:1px solid var(--border);border-radius:5px;background:transparent;color:var(--fg);
 font:600 13px system-ui;cursor:pointer;text-align:center;line-height:32px;text-decoration:none}}
 button.primary{{background:var(--fg);color:var(--bg);border-color:var(--fg)}}
@@ -438,14 +474,24 @@ async def consent_page(request: Request):
     client = await provider.get_client(req["client_id"])
     if client is None:
         return _page("Unknown app", "<h1>This app is not registered</h1>", 400)
+    if not redirect_allowed(req["redirect_uri"]):
+        return _page("Not allowed", "<h1>This server does not connect to that address</h1>"
+                     f"<p>The app asked to be sent to <code>{html.escape(redirect_host(req['redirect_uri']) or req['redirect_uri'])}</code>,"
+                     " which this server's operator has not allowed.</p>", 403)
     name = html.escape(client.client_name or "An agent app")
-    dest = html.escape(urlsplit(req["redirect_uri"]).netloc or req["redirect_uri"])
+    dest = html.escape(redirect_host(req["redirect_uri"]) or req["redirect_uri"])
+    known = redirect_known(req["redirect_uri"])
+    warning = ("" if known else
+               '<p class="warnmsg">AlphaDesk does not recognise this address as Claude, ChatGPT or an app on this '
+               "computer. Anyone can register an app under any name. Continue only if you started this connection "
+               "yourself, from an app you trust, and you recognise the address.</p>")
     body = f"""<h1>Allow {name} to use AlphaDesk?</h1>
 <p>Signed in as <strong>{html.escape(who[1])}</strong>.</p>
+<div class="dest{'' if known else ' warn'}"><span>Your access will be sent to:</span><span class="host">{dest}</span>{warning}</div>
+<p>The name above is the one the app gave itself; AlphaDesk has not verified it. Check the address, not the name.</p>
 <ul><li>It can call AlphaDesk's read-only tools <strong>as you</strong>, on your own data and vendor keys.</li>
 <li>It cannot see your keys, change your account, or place trades.</li>
 <li>You can disconnect it any time on the Account page, under Agent access.</li></ul>
-<p>After you choose, you go back to <code>{dest}</code>.</p>
 <form method="post" action="{CONSENT_PATH}"><input type="hidden" name="request" value="{html.escape(blob)}">
 <div class="row"><button type="submit" name="decision" value="deny">Cancel</button>
 <button class="primary" type="submit" name="decision" value="allow">Allow</button></div></form>"""
@@ -469,6 +515,8 @@ async def consent_decision(request: Request):
         return _page("Unknown app", "<h1>This app is not registered</h1>", 400)
 
     redirect_uri = req["redirect_uri"]
+    if form.get("decision") == "allow" and not redirect_allowed(redirect_uri):
+        return _page("Not allowed", "<h1>This server does not connect to that address</h1>", 403)
     if form.get("decision") != "allow":
         return RedirectResponse(construct_redirect_uri(
             redirect_uri, error="access_denied", error_description="the reader declined",
