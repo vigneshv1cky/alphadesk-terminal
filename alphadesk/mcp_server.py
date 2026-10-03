@@ -54,6 +54,17 @@ mcp = FastMCP(
         "economic_calendar, corporate_calendar, earnings_calendar.\n"
         "* What just happened across filings, halts, government action and "
         "social posts, on one time-ordered tape: catalysts.\n"
+        "* WHY a stock moved, in one call: what_moved (the big-move days with the "
+        "stories and filings leading into each). Whether a move has faded, held "
+        "or turned: move_state. Whether it is already priced in: priced_in. "
+        "What could move at the next open (Friday evening and weekends answer "
+        "for Monday): candidates. The day's gainers or losers with their news, "
+        "filings and shape: movers_in_context. The whole news window by name: "
+        "news_scan. The facts before entering a position (spread, liquidity, "
+        "tradability, levels, risks): entry_facts. These return measurements "
+        "and flags, never a verdict, and none places an order. Read "
+        "data_freshness in a reply first: a free plan's volume is one "
+        "exchange's alone.\n"
         "* Another asset class: movers takes a category — stocks, etfs, "
         "indices, crypto, currencies, options, bonds. Do not reach for a "
         "per-class tool; there is one.\n"
@@ -951,6 +962,57 @@ def filing_text(accession: str, page: int = 1) -> dict:
             "text": text[start:start + _FILING_PAGE_CHARS]}
 
 
+def _parallel(fn, items, workers: int = 4) -> list:
+    """fn(item) for each item on a few threads, keeping order. The calling
+    reader's identity travels into each thread: the context is copied HERE, in
+    the calling thread, because a copy made inside a worker is that worker's
+    empty one and would run every lookup as nobody. An exception comes back as
+    the result instead of stopping the rest."""
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor
+
+    def run(pair):
+        ctx, item = pair
+        try:
+            return ctx.run(fn, item)
+        except Exception as exc:
+            return exc
+
+    work = [(contextvars.copy_context(), item) for item in items]
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(work) or 1))) as pool:
+        return list(pool.map(run, work))
+
+
+def freshness_from_plan(plan: dict | None) -> dict:
+    """How current and how complete the reader's price data is, from the Alpaca
+    plan the Account page shows (2026-10-03). A free key's feed is the IEX
+    exchange alone: prices are live but VOLUME is a small fraction of the
+    consolidated tape, and bars for the last 15 minutes of the consolidated tape
+    are withheld — so volume, liquidity and spread figures are understated."""
+    if not plan:
+        return {"known": False, "note": "no Alpaca plan was read; check data_sources and each quote's as-of time"}
+    real = bool(plan.get("realtime"))
+    out = {"known": True, "vendor": "alpaca", "stock_feed": plan.get("stocks"), "realtime": real,
+           "chart_delay_minutes": plan.get("chart_delay_minutes")}
+    out["note"] = ("real-time consolidated data" if real else
+                   "free-plan feed: live prices come from the IEX exchange only, so VOLUME and liquidity read far below "
+                   "the market's total, and consolidated bars run 15 minutes late")
+    return out
+
+
+def _data_freshness() -> dict:
+    from alphadesk.ledger import store
+    from alphadesk.providers import registry
+    try:
+        uid = registry._request_uid()
+        if not uid or "alpaca" not in {r["provider"] for r in store.get_user_keys(uid, "prices")}:
+            return {"known": False, "note": "no Alpaca price key is connected; see data_sources for what answers"}
+        vendor = registry.get_prices().vendors.get("alpaca")
+        return freshness_from_plan(getattr(vendor, "_inner", vendor).plan())
+    except Exception as exc:
+        return {"known": False, "note": f"plan could not be read: {str(exc)[:100]}"}
+
+
 @mcp.tool(annotations=READ_ONLY)
 def what_moved(symbol: str, days: int = 90, min_move_pct: float = 10.0) -> dict:
     """ONE CALL FOR "WHY DID THIS STOCK MOVE": the sessions the price moved at
@@ -1019,22 +1081,26 @@ def move_state(symbols: list[str] | str) -> dict:
 
     NO VERDICT: nothing says the move is over or will go on. Pair it with
     `what_moved` for why, and `priced_in` for how it compares with the stock's
-    usual reactions."""
+    usual reactions. Read `data_freshness` first: on a free Alpaca plan the
+    volume figures are the IEX exchange's alone and understate the market."""
     from alphadesk.app import dashboard
     from alphadesk.desk import movestate
     from alphadesk.providers import get_prices
     wanted = _symbols(symbols)[:8]
     if not wanted:
         raise ValueError("at least one symbol is required")
+    def one(sym):
+        series = get_prices().chart_series(sym, days=5) or {}
+        daily = _http_errors(dashboard.api_chart, sym, range="3M").get("bars") or []
+        return movestate.move_state(series.get("bars") or [], daily)
+
     out, failed = {}, {}
-    for sym in wanted:
-        try:
-            series = get_prices().chart_series(sym, days=5) or {}
-            daily = _http_errors(dashboard.api_chart, sym, range="3M").get("bars") or []
-            out[sym] = movestate.move_state(series.get("bars") or [], daily)
-        except Exception as exc:
-            failed[sym] = str(exc)[:160]
-    return {"symbols": out, "failed": failed}
+    for sym, got in zip(wanted, _parallel(one, wanted)):
+        if isinstance(got, Exception):
+            failed[sym] = str(got)[:160]
+        else:
+            out[sym] = got
+    return {"data_freshness": _data_freshness(), "symbols": out, "failed": failed}
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -1187,25 +1253,30 @@ def movers_in_context(direction: str = "gainers", category: str = "stocks", top:
     except Exception as exc:
         halted = set()
         unavailable["halts"] = str(exc)[:160]
+    def shape_of(sym):
+        series = get_prices().chart_series(sym, days=5) or {}
+        daily = _http_errors(dashboard.api_chart, sym, range="3M").get("bars") or []
+        return movestate.move_state(series.get("bars") or [], daily)
+
+    symbols = [str(m.get("symbol") or "").upper() for m in rows]
+    shapes: dict[str, dict] = {}
+    if with_shape and cat in ("stocks", "etfs"):
+        pick = symbols[:10]
+        for sym, got in zip(pick, _parallel(shape_of, pick)):
+            if isinstance(got, Exception):
+                unavailable[f"shape:{sym}"] = str(got)[:100]
+            else:
+                shapes[sym] = got
     out = []
-    for i, m in enumerate(rows):
-        sym = str(m.get("symbol") or "").upper()
+    for m, sym in zip(rows, symbols):
         articles = []
         if has_news:
             for a in store.articles_for_symbol(owner, sym, None, 40, body=False):
                 at = movestate._at(a.get("published_at"))
                 if at is not None and at >= since:
                     articles.append({**a, "kind": newskind.of_article(a)})
-        shape = None
-        if with_shape and i < 10 and cat in ("stocks", "etfs"):
-            try:
-                series = get_prices().chart_series(sym, days=5) or {}
-                daily = _http_errors(dashboard.api_chart, sym, range="3M").get("bars") or []
-                shape = movestate.move_state(series.get("bars") or [], daily)
-            except Exception as exc:
-                unavailable[f"shape:{sym}"] = str(exc)[:100]
-        out.append(focus.build_row(m, articles, by_symbol.get(sym, []), sym in halted, shape))
-    return {"direction": want, "category": cat, "session": session.isoformat(), "news_since": since.isoformat(timespec="minutes"),
+        out.append(focus.build_row(m, articles, by_symbol.get(sym, []), sym in halted, shapes.get(sym)))
+    return {"data_freshness": _data_freshness(), "direction": want, "category": cat, "session": session.isoformat(), "news_since": since.isoformat(timespec="minutes"),
             "count": len(out), "rows": out, "unavailable": unavailable}
 
 
@@ -1334,7 +1405,7 @@ def entry_facts(symbol: str, risk_dollars: float = 0.0, stop_pct: float = 0.0) -
     if asset and asset.get("tradable") is False:
         risks.append({"kind": "not_tradable_at_broker", "detail": "the broker lists it as not tradable"})
     return {
-        "symbol": sym, "as_of": now.isoformat(timespec="minutes"),
+        "symbol": sym, "as_of": now.isoformat(timespec="minutes"), "data_freshness": _data_freshness(),
         "market": {"open_now": bool(cal.is_session(now.date()) and cal.OPEN <= now.time() < cal.CLOSE),
                    "latest_session": cal.latest_session(now).isoformat(),
                    "next_session": cal.upcoming_session(now).isoformat()},
@@ -1984,7 +2055,7 @@ def data_sources() -> dict:
              "serves": serves.get(v.name, []) or (["whatever no keyed vendor carried"]
                                                   if not v.official else [])}
             for v in catalogue.VENDORS.values()]
-    return {"sources": rows, "scraped": sorted(SCRAPED_SOURCES),
+    return {"data_freshness": _data_freshness(), "sources": rows, "scraped": sorted(SCRAPED_SOURCES),
             "connected": connected}
 
 

@@ -169,3 +169,25 @@ def test_pre_trade_facts_are_plain_arithmetic():
     assert tc.size_for(20.0, 100, 5) == {"risk_dollars": 100, "stop_distance_pct": 5, "loss_per_share": 1.0,
                                          "shares": 100, "position_dollars": 2000.0}
     assert tc.size_for(20.0, 0, 5) is None and tc.size_for(None, 100, 5) is None
+
+
+def test_the_data_plan_is_stated_in_plain_terms():
+    from alphadesk.mcp_server import freshness_from_plan
+    free = freshness_from_plan({"realtime": False, "stocks": "iex", "chart_delay_minutes": 15})
+    assert free["known"] and free["realtime"] is False and "IEX" in free["note"] and free["chart_delay_minutes"] == 15
+    paid = freshness_from_plan({"realtime": True, "stocks": "sip", "chart_delay_minutes": 0})
+    assert paid["realtime"] is True and "consolidated" in paid["note"]
+    assert freshness_from_plan(None)["known"] is False
+
+
+def test_parallel_calls_keep_the_calling_readers_identity_and_the_order():
+    from alphadesk.identity import request_user, reset_request_user, set_request_user
+    from alphadesk.mcp_server import _parallel
+    held = set_request_user("reader-1")
+    try:
+        got = _parallel(lambda n: (n, request_user()), [3, 1, 2])
+        assert got == [(3, "reader-1"), (1, "reader-1"), (2, "reader-1")]
+        bad = _parallel(lambda n: 1 / n, [1, 0, 2])
+        assert bad[0] == 1.0 and isinstance(bad[1], ZeroDivisionError) and bad[2] == 0.5   # one failure does not stop the rest
+    finally:
+        reset_request_user(held)
