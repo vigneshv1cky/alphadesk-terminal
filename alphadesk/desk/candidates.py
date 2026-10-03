@@ -15,7 +15,11 @@ from alphadesk.desk import sessions
 WEIGHTS = {"earnings_soon": 3, "earnings_in_horizon": 2, "halt_today": 3,
            "material_8k": 2, "stake_filing": 2, "offering_filing": 2, "on_board": 1}
 _STAKE = ("SCHEDULE 13D", "SC 13D", "SCHEDULE 13G", "SC 13G", "SC TO")
-_OFFERING = ("424B", "S-1", "S-3", "F-1", "F-3")
+# Priced offerings and first registrations only. The 424B2 and 424B3 forms are
+# overwhelmingly banks' structured-note prospectuses (the filing feed warns of
+# this), and S-3/F-3 are routine shelf registrations: counting them ranked TD
+# first on a Friday (2026-10-03).
+_OFFERING = ("424B1", "424B4", "424B5", "S-1", "F-1")
 
 
 def _day(raw) -> date | None:

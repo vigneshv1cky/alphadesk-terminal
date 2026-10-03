@@ -11,7 +11,7 @@ flag cuts depends on the case, and that is left to the reader.
 
 from __future__ import annotations
 
-_OFFERING = ("424B", "S-1", "S-3", "F-1", "F-3")
+_OFFERING = ("424B1", "424B4", "424B5", "S-1", "F-1")   # not 424B2/3 (structured notes) or shelf S-3/F-3
 _STAKE = ("SCHEDULE 13D", "SC 13D", "SCHEDULE 13G", "SC 13G", "SC TO")
 #: A story naming this many tickers or more is a list ("12 Industrials Stocks
 #: Moving…"), which mentions a name and says nothing of why it moved.

@@ -1017,14 +1017,17 @@ def _data_freshness() -> dict:
 def what_moved(symbol: str, days: int = 90, min_move_pct: float = 10.0) -> dict:
     """ONE CALL FOR "WHY DID THIS STOCK MOVE": the sessions the price moved at
     least `min_move_pct` (default 10) over the last `days` (default 90, max 365),
-    each with the stories published and the SEC filings accepted in the window
+    each with the stories about the name itself, the LIST stories that only
+    mention it ("12 Industrials Stocks Moving…", kept apart in `list_mentions`
+    because they explain nothing), and the SEC filings accepted in the window
     leading into it — from the previous close to that close — and, for every
     filing in the span, the size of the move on the first session that could
     react to it (a filing accepted after 4pm New York time reacts the next day).
 
     NO VERDICT. Nothing says a story or filing CAUSED a move; the window is the
-    evidence. `nothing_attached` is true for a day with neither: that is the
-    finding, and usually means the news is under another ticker or a theme
+    evidence. `nothing_attached` is true for a day with no story of its own
+    and no filing (`only_named_in_lists` marks those with just list mentions):
+    that is the finding, and usually means the news is under another ticker or a theme
     (search it with `news_search`) or there was none. Stories carry their
     publisher's `kind` and `named_tickers` (a "movers" list names many stocks
     and says nothing of one). Open a story with `news_story` and a filing with
@@ -1397,7 +1400,7 @@ def entry_facts(symbol: str, risk_dollars: float = 0.0, stop_pct: float = 0.0) -
         risks.append({"kind": "report_ahead", "detail": f"next report {str(nxt.get('date'))[:10]}"})
     for f in recent:
         form = str(f.get("form") or "")
-        kind = ("offering_filing" if form.startswith(("424B", "S-1", "S-3", "F-1", "F-3")) else
+        kind = ("offering_filing" if form.startswith(("424B1", "424B4", "424B5", "S-1", "F-1")) else
                 "stake_filing" if form.startswith(("SCHEDULE 13", "SC 13", "SC TO")) else
                 "material_8k" if form.startswith("8-K") else None)
         if kind:

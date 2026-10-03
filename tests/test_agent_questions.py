@@ -77,13 +77,15 @@ def test_candidates_collect_dated_evidence_for_the_next_session():
                   {"symbol": "UNK", "report_date": "2026-10-02"},                                         # no timing: could be Monday
                   {"symbol": "TUE", "report_date": "2026-10-06", "time": "bmo"}],                         # a later session
         filings=[{"symbols": ["AAA"], "form": "8-K", "items": [{"item": "1.01"}], "filed_at": "2026-10-02T17:00:00-04:00"},
+                 {"symbols": ["BANK"], "form": "424B2", "items": [], "filed_at": "2026-10-02T17:00:00-04:00", "role": "filer"},   # a structured note
+                 {"symbols": ["OFFR"], "form": "424B5", "items": [], "filed_at": "2026-10-02T17:00:00-04:00", "role": "filer"},
                  {"symbols": ["CCC"], "form": "SCHEDULE 13D", "items": [], "filed_at": "2026-10-02T18:00:00-04:00", "role": "subject"},
                  {"symbols": ["DDD"], "form": "10-Q", "items": [], "filed_at": "2026-10-02T18:00:00-04:00"}],
         halts=[{"symbol": "EEE", "today": True, "resumed": False, "reason_code": "T1", "halted_at": "2026-10-02T10:00"}],
         movers=[{"symbol": "AAA", "change_pct": 12.5}],
         board=["CCC", "ZZZ"], target_sessions=monday)
     got = {r["symbol"]: r for r in rows}
-    assert set(got) == {"AAA", "FRI", "UNK", "CCC", "EEE"}          # FRIB already traded; TUE is a later session; a 10-Q is no catalyst
+    assert set(got) == {"AAA", "FRI", "UNK", "CCC", "EEE", "OFFR"}           # a bank's 424B2 note prospectus is no catalyst          # FRIB already traded; TUE is a later session; a 10-Q is no catalyst
     assert got["AAA"]["evidence_weight"] == 5 and got["AAA"]["already_moved_pct"] == 12.5
     assert "timing not stated" in got["UNK"]["evidence"][0]["detail"]
     assert got["CCC"]["on_board"] is True and got["CCC"]["evidence_weight"] == 3

@@ -71,8 +71,8 @@ def test_big_moves_are_matched_to_the_stories_and_filings_leading_into_them():
     got = moves.join_moves(bars, articles, filings, min_move_pct=10)
     (day,) = got["big_move_days"]
     assert day["date"] == "2026-09-03" and day["change_pct"] == 23.53
-    assert [s["title"] for s in day["stories"]] == ["after the close", "pre-market"]
-    assert day["stories"][1]["named_tickers"] == 12
+    assert [s["title"] for s in day["stories"]] == ["after the close"]
+    assert [s["title"] for s in day["list_mentions"]] == ["pre-market"] and day["list_mentions"][0]["named_tickers"] == 12
     assert [f["accession"] for f in day["filings"]] == ["A-1"]
     assert not day["nothing_attached"]
     (reaction,) = got["filing_reactions"]                 # accepted after the close: the next session reacts

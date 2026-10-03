@@ -18,6 +18,8 @@ from zoneinfo import ZoneInfo
 
 NY = ZoneInfo("America/New_York")
 CLOSE = time(16, 0)
+#: A story naming this many tickers or more is a list, which mentions and does not explain.
+LIST_STORY_TICKERS = 8
 
 
 def _ny(iso: str | None) -> datetime | None:
@@ -73,14 +75,17 @@ def join_moves(bars: list[dict], articles: list[dict], filings: list[dict],
         return _session_close(m["previous_date"]), _session_close(m["date"])
 
     def stories_in(lo, hi):
-        out = []
+        """(stories about the name, list-style stories that only mention it)."""
+        own, lists = [], []
         for a in articles:
             at = _ny(a.get("published_at"))
             if at is not None and lo <= at <= hi:
-                out.append({"published_at": a.get("published_at"), "title": a.get("title"),
-                            "kind": a.get("kind"), "source": a.get("source"),
-                            "named_tickers": len(a.get("tickers") or [])})
-        return sorted(out, key=lambda s: s["published_at"] or "")
+                row = {"published_at": a.get("published_at"), "title": a.get("title"),
+                       "kind": a.get("kind"), "source": a.get("source"),
+                       "named_tickers": len(a.get("tickers") or [])}
+                (lists if row["named_tickers"] >= LIST_STORY_TICKERS else own).append(row)
+        key = lambda s: s["published_at"] or ""  # noqa: E731
+        return sorted(own, key=key), sorted(lists, key=key)
 
     def filings_in(lo, hi):
         out = []
@@ -94,11 +99,16 @@ def join_moves(bars: list[dict], articles: list[dict], filings: list[dict],
     days = []
     for m in big:
         lo, hi = window(m)
-        stories, filed = stories_in(lo, hi), filings_in(lo, hi)
+        stories, lists = stories_in(lo, hi)
+        filed = filings_in(lo, hi)
         days.append({**{k: m[k] for k in ("date", "close", "change_pct", "volume", "volume_vs_median")},
                      "window": {"from": lo.isoformat(), "to": hi.isoformat()},
-                     "stories": stories, "filings": filed,
-                     "nothing_attached": not stories and not filed})
+                     "stories": stories, "list_mentions": lists, "filings": filed,
+                     # A list story ("12 Industrials Stocks Moving…") names the
+                     # stock among many and explains nothing, so it does not
+                     # count as an explanation attached to the move.
+                     "nothing_attached": not stories and not filed,
+                     "only_named_in_lists": bool(lists) and not stories and not filed})
 
     # Each filing in the span against the first session able to react to it:
     # accepted after the 4pm close reacts the NEXT session.
@@ -121,5 +131,6 @@ def join_moves(bars: list[dict], articles: list[dict], filings: list[dict],
         "sessions": len(moves),
         "big_move_days": days,
         "big_moves_with_nothing_attached": sum(1 for d in days if d["nothing_attached"]),
+        "big_moves_only_named_in_lists": sum(1 for d in days if d["only_named_in_lists"]),
         "filing_reactions": reactions,
     }
