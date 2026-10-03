@@ -228,3 +228,16 @@ def test_the_agent_door_answers_to_every_name_the_server_is_given(monkeypatch):
     hosts, origins = agent_access.allowed_hosts()
     assert {"one.example.app", "two.example.app", "two.example.app:*", "three.example.app:8443"} <= set(hosts)
     assert "https://two.example.app" in origins and "https://one.example.app" in origins
+
+
+def test_a_companys_own_words_name_the_crypto_it_holds_and_the_companies_it_mentions():
+    from alphadesk.desk import related
+    text = ("OceanPal Inc. (NASDAQ: SVRN) operates the first publicly traded NEAR Protocol treasury, accumulating NEAR tokens, "
+            "generating yield through staking. The sale to Sezali Inc. (NASDAQ: SEZL) was settled in securities; "
+            "no NEAR was sold. The word sui generis is not a coin.")
+    got = related.extract_related([{"source": "0000-26-1", "text": text}], "SVRN", ["OceanPal"])
+    assets = {c["asset"]: c for c in got["crypto"]}
+    assert "NEAR" in assets and assets["NEAR"]["mentions"] >= 2 and assets["NEAR"]["first_source"] == "0000-26-1"
+    assert "SUI" not in assets                                           # "sui generis" is not the coin
+    assert [c["ticker"] for c in got["companies"]] == ["SEZL"]           # its own ticker is left out
+    assert related.extract_related([{"source": "x", "text": "ABC treasury is a heading."}], "SVRN")["crypto"] == []

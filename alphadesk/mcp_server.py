@@ -60,7 +60,8 @@ mcp = FastMCP(
         "What could move at the next open (Friday evening and weekends answer "
         "for Monday): candidates. The day's gainers or losers with their news, "
         "filings and shape: movers_in_context. The whole news window by name: "
-        "news_scan. The facts before entering a position (spread, liquidity, "
+        "news_scan. What else a stock is tied to (a token it holds, a counterparty, "
+        "funds and baskets), read from its own filings: related_assets. The facts before entering a position (spread, liquidity, "
         "tradability, levels, risks): entry_facts. These return measurements "
         "and flags, never a verdict, and none places an order. Read "
         "data_freshness in a reply first: a free plan's volume is one "
@@ -1426,6 +1427,74 @@ def entry_facts(symbol: str, risk_dollars: float = 0.0, stop_pct: float = 0.0) -
         "sizing": tc.size_for(last, float(risk_dollars or 0) or None, float(stop_pct or 0) or None),
         "unavailable": unavailable,
     }
+
+
+@mcp.tool(annotations=READ_ONLY)
+def related_assets(symbol: str) -> dict:
+    """WHAT ELSE THIS COMPANY IS TIED TO, read from its own words — for "what
+    moves with this stock?" when the obvious answer is not its industry. A
+    vendor's peer list follows the company's old industry code (SVRN, now a NEAR
+    Protocol token treasury, still lists dry-bulk shippers), and no symbol
+    search finds a token; the company's filings and press releases say what it
+    is. This reads the newest filings (with press-release exhibits) and the
+    latest stories about the name and returns:
+
+    * `from_own_words.crypto` — crypto assets the text names, with a mention
+      count, the first source (an accession for `filing_text`, or a story) and
+      the sentence. Each carries `price_symbol` and `priceable`: true means
+      `price_history` works for it; false means the reader's price vendors do
+      not carry it (a CoinGecko key on the Account page adds many coins).
+    * `from_own_words.companies` — other listed companies the text names, with
+      tickers (a counterparty, an acquirer, a partner).
+    * `vendor_peers`, `funds` and `baskets` — the vendor's peers (check them
+      against what the company says it is), funds built on the name, and the
+      editorial baskets that hold it.
+
+    A mention is a mention: it says what the text names, not that the price
+    follows it. Measure that with `price_history` on both and compare, as
+    `what_moved` does for filings. `unavailable` names any source not read."""
+    from alphadesk.app import dashboard
+    from alphadesk.desk import filings as filings_desk, related
+    from alphadesk.identity import request_user
+    from alphadesk.ingest.news import news_owner
+    from alphadesk.ledger import store
+    sym = _symbol(symbol)
+    unavailable: dict[str, str] = {}
+
+    def attempt(name, fn, default=None):
+        try:
+            return fn()
+        except Exception as exc:
+            unavailable[name] = str(exc)[:140]
+            return default
+
+    sources, read = [], []
+    rows = attempt("filings", lambda: filings_desk.list_filings(sym), [])
+    for row in [r for r in rows if r.get("readable") and r.get("form") in ("6-K", "8-K", "10-K", "10-Q", "20-F")][:3]:
+        text = attempt(f"filing:{row['accession']}", lambda a=row["accession"]: _filing_document(a))
+        if text:
+            sources.append({"source": row["accession"], "text": text})
+            read.append({"accession": row["accession"], "form": row["form"], "filed": row.get("filing_date")})
+    uid = request_user()
+    if uid and store.get_user_keys(uid, "news"):
+        for a in store.articles_for_symbol(news_owner(uid), sym, None, 15, body=False):
+            sources.append({"source": f"story:{a['article_id']}", "text": f"{a.get('title') or ''}. {a.get('summary') or ''}"})
+        read.append({"stories": sum(1 for s in sources if s["source"].startswith("story:"))})
+    else:
+        unavailable["news"] = "no news feed is connected"
+    names = [n for n in ((attempt("name", lambda: (company_profile(sym) or {}).get("name"))),) if n]
+    found = related.extract_related(sources, sym, names)
+    for c in found["crypto"]:
+        pair = f"{c['asset']}-USD"
+        c["price_symbol"] = pair
+        c["priceable"] = bool(attempt(f"price:{c['asset']}", lambda p=pair: _http_errors(
+            dashboard.api_chart, p, range="1M", interval="1d").get("bars")))
+        unavailable.pop(f"price:{c['asset']}", None)
+    return {"symbol": sym, "from_own_words": {**found, "read": read},
+            "vendor_peers": attempt("peers", lambda: peers(sym)),
+            "funds": attempt("funds", lambda: related_funds(sym)),
+            "baskets": attempt("baskets", lambda: baskets(symbol=sym)),
+            "unavailable": unavailable}
 
 
 @mcp.tool(annotations=READ_ONLY)
