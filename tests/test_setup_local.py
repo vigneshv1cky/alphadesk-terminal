@@ -44,3 +44,32 @@ def test_a_python_with_no_root_certificates_falls_back_to_certifi(monkeypatch):
     monkeypatch.setenv("SSL_CERT_FILE", "/mine.pem")                 # an operator's own choice wins
     config._ensure_ca_bundle()
     assert os.environ["SSL_CERT_FILE"] == "/mine.pem"
+
+
+def test_like_cloud_writes_the_settings_the_live_server_runs_on(tmp_path, monkeypatch):
+    from alphadesk.app import auth
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(setup_local, "ensure_database", lambda url: f"checked {url}")
+    h = auth.hash_password("a-long-password-1")
+    assert setup_local.run_init("me@example.com", True, like_cloud=True, password_hash=h,
+                                database_url="postgresql://u@127.0.0.1:5432/alphadesk") == 0
+    text = (tmp_path / ".env").read_text()
+    assert "ALPHADESK_AUTH=off" not in text                        # sign-in is ON, like the cloud
+    assert "ALPHADESK_DATABASE_URL=postgresql://u@127.0.0.1:5432/alphadesk" in text
+    assert "ALPHADESK_LOGIN_EMAIL=me@example.com" in text
+    assert f"ALPHADESK_LOGIN_PASSWORD_HASH='{h}'" in text
+    assert "ALPHADESK_KEEP_DATA=forever" in text
+
+
+def test_like_cloud_needs_a_real_hash_and_login(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    assert setup_local.run_init("me@example.com", True, like_cloud=True, password_hash=None) == 1
+    assert setup_local.run_init("me@example.com", True, like_cloud=True, password_hash="plain") == 1
+    assert setup_local.run_init("me@example.com", True, like_cloud=True, login_email="nope", password_hash="scrypt$a$b") == 1
+    assert not (tmp_path / ".env").exists()
+
+
+def test_the_database_helper_never_raises_and_refuses_odd_names(monkeypatch):
+    assert "not a plain name" in setup_local.ensure_database("postgresql://u@h:5432/bad;name")
+    msg = setup_local.ensure_database("postgresql://u@127.0.0.1:1/alphadesk")        # nothing listens there
+    assert "not reachable" in msg and "start it" in msg

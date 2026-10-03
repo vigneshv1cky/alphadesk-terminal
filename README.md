@@ -69,6 +69,24 @@ your stored vendor keys, the contact address the SEC asks for, and
 single-person mode. **Keep a copy of that file** — without the vault key the
 stored vendor keys cannot be opened. The server listens on this machine only.
 
+**To run exactly what the cloud runs** — Postgres and a login of your own, instead of
+SQLite and no sign-in — set it up with `--like-cloud`. It asks for a password
+(type it in a terminal; it is never printed), makes the settings file with a
+password hash, and creates the Postgres database if the server is running:
+
+```bash
+brew install postgresql@16 && brew services start postgresql@16
+```
+
+```bash
+python -m alphadesk.main init --email you@example.com --like-cloud
+```
+
+Then `python -m alphadesk.main dashboard` as above, and sign in with that email and
+password. Use `--login` for a different login email, `--database-url` for another
+Postgres, and `--password-hash` (from `python -m alphadesk.main hash-password`)
+to skip the prompt.
+
 With Docker instead:
 
 ```bash
@@ -602,6 +620,7 @@ cd alphadesk/ui && pnpm install && pnpm dev
 | `python -m alphadesk.main backfill --hours 72` | Backfill EDGAR results releases |
 | `python -m alphadesk.main calendar-accuracy --days 30` | Score calendar vendors against EDGAR release days |
 | `python -m alphadesk.main mcp [--http]` | The agent tools standalone (EDGAR only — no reader identity) |
+| `python -m alphadesk.main init --email you@example.com [--like-cloud]` | First-time setup: vault key, SEC contact and settings file. `--like-cloud` writes Postgres plus a login (asks for a password) instead of no sign-in |
 | `python -m alphadesk.main hash-password` | Make the password hash for `ALPHADESK_LOGIN_PASSWORD_HASH` (asks for the password) |
 
 ### Extending

@@ -287,6 +287,11 @@ def main() -> None:
     p_init.add_argument("--email", required=True,
                         help="your real contact email; the SEC asks for one in every request")
     p_init.add_argument("--quiet", action="store_true", help="print nothing when already set up")
+    p_init.add_argument("--like-cloud", action="store_true",
+                        help="the settings the live server runs on: Postgres and a login (asks for a password) instead of no sign-in")
+    p_init.add_argument("--login", help="the login email (default: --email); with --like-cloud")
+    p_init.add_argument("--password-hash", help="a hash from `hash-password`, to skip the password prompt; with --like-cloud")
+    p_init.add_argument("--database-url", help="a postgresql:// URL (default with --like-cloud: postgresql://localhost:5432/alphadesk)")
     p_back = sub.add_parser("backfill")
     p_back.add_argument("--hours", type=float, default=72)
     sub.add_parser("earnings", help="stamp today's EDGAR results releases and list the last three days")
@@ -323,7 +328,19 @@ def main() -> None:
 
     if args.cmd == "init":
         from alphadesk.setup_local import run_init
-        sys.exit(run_init(args.email, args.quiet))
+        pw_hash = args.password_hash
+        if args.like_cloud and not pw_hash:
+            import getpass
+
+            from alphadesk.app import auth as _a
+            pw = getpass.getpass("a password for your login (12+ characters): ")
+            if len(pw) < _a.LOGIN_PASSWORD_MIN:
+                sys.exit(f"use at least {_a.LOGIN_PASSWORD_MIN} characters")
+            if pw != getpass.getpass("again: "):
+                sys.exit("the two entries do not match")
+            pw_hash = _a.hash_password(pw)
+        sys.exit(run_init(args.email, args.quiet, like_cloud=args.like_cloud, login_email=args.login,
+                          password_hash=pw_hash, database_url=args.database_url))
 
     if args.cmd == "dashboard":
         # Importing config is what loads .env; without it this line reported
