@@ -110,12 +110,12 @@ def test_a_tool_call_runs_as_the_reader_the_token_names(tools_client, monkeypatc
         return [{"symbol": "SPY"}]
 
     class FakeRouter:
-        def market_tape(self):
+        def ask(self, name, *a, **k):
             return fake_tape()
 
     monkeypatch.setattr("alphadesk.providers.get_prices", lambda: FakeRouter())
     resp = _mcp(tools_client, token=_token_for(store, "reader-7"), method="tools/call",
-                params={"name": "market_tape", "arguments": {}})
+                params={"name": "index_board", "arguments": {}})
     assert resp.status_code == 200, resp.text[:300]
     assert seen.get("user") == "reader-7"
     assert mcp_server is not None
@@ -127,7 +127,7 @@ def test_two_readers_calls_never_share_an_identity(tools_client, monkeypatch, st
     seen = []
 
     class FakeRouter:
-        def market_tape(self):
+        def ask(self, name, *a, **k):
             seen.append(request_user())
             return []
 
@@ -135,7 +135,7 @@ def test_two_readers_calls_never_share_an_identity(tools_client, monkeypatch, st
     tokens = {uid: _token_for(store, uid) for uid in ("alice", "bob")}
     for uid in ("alice", "bob", "alice"):
         _mcp(tools_client, token=tokens[uid], method="tools/call",
-             params={"name": "market_tape", "arguments": {}})
+             params={"name": "index_board", "arguments": {}})
     assert seen == ["alice", "bob", "alice"]
     # And nothing is left behind on the request that follows without a token.
     assert _mcp(tools_client).status_code == 401
@@ -195,14 +195,14 @@ def test_an_issued_token_runs_tool_calls_as_its_reader(reader_client, monkeypatc
     seen = []
 
     class FakeRouter:
-        def market_tape(self):
+        def ask(self, name, *a, **k):
             seen.append(request_user())
             return []
 
     monkeypatch.setattr("alphadesk.providers.get_prices", lambda: FakeRouter())
     token = reader_client.post("/api/agent/access-tokens", json={"name": "a"}).json()["token"]
     resp = _mcp(reader_client, token=token, method="tools/call",
-                params={"name": "market_tape", "arguments": {}})
+                params={"name": "index_board", "arguments": {}})
     assert resp.status_code == 200, resp.text[:300]
     assert seen == [reader_client.uid]
     listed = reader_client.get("/api/agent/access-tokens").json()["tokens"]

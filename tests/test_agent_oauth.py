@@ -127,7 +127,7 @@ def test_a_connector_signs_in_and_calls_tools_as_the_reader(client, monkeypatch,
     seen = []
 
     class FakeRouter:
-        def market_tape(self):
+        def ask(self, name, *a, **k):
             seen.append(request_user())
             return []
 
@@ -136,7 +136,7 @@ def test_a_connector_signs_in_and_calls_tools_as_the_reader(client, monkeypatch,
     assert tok["access_token"].startswith("ado_") and tok["refresh_token"].startswith("adr_")
     assert tok["token_type"].lower() == "bearer" and tok["expires_in"] == 3600
 
-    resp = _mcp(client, tok["access_token"], "tools/call", {"name": "market_tape", "arguments": {}})
+    resp = _mcp(client, tok["access_token"], "tools/call", {"name": "index_board", "arguments": {}})
     assert resp.status_code == 200, resp.text[:300]
     assert seen == [client.uid]
 

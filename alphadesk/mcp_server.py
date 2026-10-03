@@ -95,7 +95,7 @@ mcp = FastMCP(
         "insider_activity is what its officers traded. quote is one symbol, "
         "quotes is a basket in one call. When two look alike, the cheaper "
         "call is usually the right one to try first.\n\n"
-        "ORDERING. The screener window is deliberately unranked. Where a list is "
+        "ORDERING. Where a list is "
         "sorted (movers, market_today, sectors) it is sorted only by the measured "
         "number shown beside each row — never a score. Say what the numbers are; "
         "what deserves attention is the reader's call."
@@ -119,16 +119,6 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldH
 
 
 # ── Market data ────────────────────────────────────────────────────────────
-
-@mcp.tool(annotations=READ_ONLY)
-def market_tape() -> list[dict]:
-    """Index, rate, commodity and crypto levels: the top-of-terminal strip.
-
-    Returns [{symbol, label, price, change_pct}].
-    """
-    from alphadesk.providers import get_prices
-    return get_prices().market_tape()
-
 
 @mcp.tool(annotations=READ_ONLY)
 def quote(symbol: str) -> dict:
@@ -411,35 +401,6 @@ def market_today(top: int = 10) -> dict:
 
 # ── The window ─────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=READ_ONLY)
-def screener_window(limit: int = 200, after: str = "") -> dict:
-    """The symbols currently in view — those with fresh news or a report due
-    inside the horizon — alphabetically, in pages. Each row is
-    {symbol, report_date, session, article_count}; headlines are NOT here —
-    call `symbol_news` for a symbol's stories and their links.
-
-    Deliberately UNRANKED. The order carries no opinion; do not present it as
-    a recommendation or a top list.
-
-    Paging: up to `limit` rows (max 500) of symbols after `after`; pass the
-    returned `next_after` to continue, until it is null. `total` is the whole
-    window's size.
-    """
-    from alphadesk.desk import screener
-    rows = screener.inventory()
-    start = (after or "").strip().upper()
-    size = max(1, min(int(limit), 500))
-    rest = [r for r in rows if r["symbol"] > start] if start else rows
-    page = rest[:size]
-    return {
-        "total": len(rows),
-        "symbols": [{"symbol": r["symbol"], "report_date": r["report_date"],
-                     "session": r["session"], "article_count": r["article_count"]}
-                    for r in page],
-        "next_after": page[-1]["symbol"] if len(rest) > size else None,
-    }
-
-
 #: A story's summary as returned to an agent; the full text stays behind the
 #: link (or the reader's own app).
 _SUMMARY_CHARS = 600
@@ -624,20 +585,18 @@ def list_filings(symbol: str) -> list[dict]:
 # ── Calendar ───────────────────────────────────────────────────────────────
 
 @mcp.tool(annotations=READ_ONLY)
-def earnings_calendar(days_ahead: int = 7) -> list[dict]:
-    """Companies reporting within the next `days_ahead` days, from the
-    connected user's calendar vendors. The MCP server carries no user and no
-    vendor key (2026-09-13), so without one this answers an empty list."""
+def earnings_calendar(days_ahead: int = 7, days_back: int = 0) -> list[dict]:
+    """Companies reporting within the next `days_ahead` days (default 7) and,
+    with `days_back` (1-30), those that reported in the last `days_back` days,
+    from the connected user's calendar vendors. Each row says `status`:
+    "upcoming", or "reported" with EPS actual against estimate where the
+    calendar has filled it in. The MCP server carries no user and no vendor
+    key (2026-09-13), so without one this answers an empty list."""
     from alphadesk.ingest import earnings_calendar
-    return earnings_calendar.upcoming(days=max(1, min(days_ahead, 60)))
-
-
-@mcp.tool(annotations=READ_ONLY)
-def recently_reported(days_back: int = 3) -> list[dict]:
-    """Companies that reported in the last `days_back` days, with EPS actual vs
-    estimate where the calendar has filled it in."""
-    from alphadesk.ingest import earnings_calendar
-    return earnings_calendar.recently_reported(days=max(1, min(days_back, 30)))
+    rows = [{**r, "status": "upcoming"} for r in earnings_calendar.upcoming(days=max(1, min(days_ahead, 60)))]
+    if days_back:
+        rows = [{**r, "status": "reported"} for r in earnings_calendar.recently_reported(days=max(1, min(int(days_back), 30)))] + rows
+    return rows
 
 
 # ── Raw data for the reader's own agent (2026-09-17) ──────────────────────
@@ -1886,8 +1845,8 @@ def filed_report(symbol: str, on: str = "") -> dict:
     diluted EPS, cash flow and the margins, each with its direction.
 
     Public SEC XBRL, so it needs NO VENDOR KEY and answers for a reader who
-    has connected nothing. This is the record; `earnings_context` and
-    `earnings_history` are vendors' expectations about it.
+    has connected nothing. This is the record; `earnings_history` holds the
+    vendors' expectations about it.
 
     NO VERDICT IS RETURNED — no score, rating, sentiment or recommendation.
     The figures and their direction are the answer.
@@ -1910,46 +1869,11 @@ def filed_report(symbol: str, on: str = "") -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
-def earnings_context(symbol: str) -> dict:
-    """VENDOR ESTIMATES AND ACTUALS for one company, with the quarterly
-    revenue and net-income trend: the last four quarters' EPS estimate,
-    reported actual and the surprise between them, plus the consensus for the
-    NEXT quarter, which has not happened.
-
-    NOT THE FILED RECORD, and the difference matters. An estimate is an
-    analyst forecast on the reader's own vendor, the surprise is arithmetic
-    on two of those numbers, and the consensus is about a quarter nobody has
-    reported. For what the company itself told the SEC, ask `filed_report`
-    (one quarter, keyless) or `financial_statements` (the series). Where the
-    two disagree the filing is the record and this is the expectation."""
-    from alphadesk.ingest import earnings_record
-    return earnings_record.context(_symbol(symbol))
-
-
-@mcp.tool(annotations=READ_ONLY)
 def index_board() -> dict:
     """The cross-asset board: indices, rates, commodities and currencies,
-    each with its level and change. Wider than market_tape, which is the
-    strip's condensed form of the same idea."""
+    each with its level and change."""
     from alphadesk.providers import get_prices
     return {"indices": get_prices().ask("index_board")}
-
-
-@mcp.tool(annotations=READ_ONLY)
-def calendar_accuracy(days: int = 30) -> dict:
-    """HOW RIGHT THIS READER'S EARNINGS CALENDAR HAS BEEN, scored against the
-    SEC's record of when each company actually released: one day, three days
-    and a week ahead, over the last `days` (1-120, default 30).
-
-    A measured record of which vendor's dates proved right, rather than a
-    claim about them — worth weighting an upcoming date by. Empty until the
-    calendar has been captured for a while; the capture runs once a day."""
-    from alphadesk.ingest import calendar_accuracy as acc
-    from alphadesk.providers import registry
-    uid = registry._request_uid()
-    if not uid:
-        raise ValueError("this tool runs as a signed-in reader — the standalone server has no identity")
-    return acc.report(uid, max(1, min(int(days), 120)))
 
 
 @mcp.tool(annotations=READ_ONLY)

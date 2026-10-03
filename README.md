@@ -433,13 +433,13 @@ rate-limited to 120 requests a minute per token.
 
 | For | Tools |
 |---|---|
-| Today | `market_today`, `market_tape`, `movers` (stocks, ETFs, indices, crypto, currencies, options, bonds), `sector_performance`, `sector_breadth` |
-| The reader's names | `my_board`, `quotes`, `screener_window`, `baskets`, `find_symbol` |
+| Today | `market_today`, `index_board`, `movers` (stocks, ETFs, indices, crypto, currencies, options, bonds), `sector_performance`, `sector_breadth` |
+| The reader's names | `my_board`, `quotes`, `baskets`, `find_symbol` |
 | One company | `quote`, `key_stats`, `company_profile`, `fund_profile`, `analyst_view`, `financial_statements`, `earnings_history`, `ownership`, `insider_activity`, `peers`, `compare_metrics` |
 | Prices | `price_history`, `price_chart` |
 | News | `symbol_news`, `news_search`, `news_story` |
 | Filings and calls | `list_filings`, `filing_text`, `transcripts`, `transcript_text` |
-| Calendars | `earnings_calendar`, `recently_reported`, `economic_calendar`, `corporate_calendar` |
+| Calendars | `earnings_calendar` (upcoming, and reported with `days_back`), `economic_calendar`, `corporate_calendar` |
 | Options | `option_expirations`, `option_chain`, `options_flow` |
 | What just happened | `catalysts` (filings, halts, government action and social posts on one tape), `filing_feed`, `trading_halts`, `government_actions`, `social_posts` |
 | A past session | `movers(session=…)` for stocks and ETFs, with `market_sessions` for the days the market actually opened |

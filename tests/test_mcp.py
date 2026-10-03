@@ -17,10 +17,10 @@ def tools():
 
 
 EXPECTED = {
-    "market_tape", "quote", "movers", "price_chart",
-    "screener_window", "symbol_news", "news_search", "market_today", "find_symbol",
+    "quote", "movers", "price_chart",
+    "symbol_news", "news_search", "market_today", "find_symbol",
     "list_filings",
-    "earnings_calendar", "recently_reported",
+    "earnings_calendar",
     "quotes", "price_history", "key_stats", "analyst_view", "ownership", "insider_activity",
     "earnings_history", "company_profile", "fund_profile", "financial_statements", "filing_text", "my_board", "news_story",
     "economic_calendar", "corporate_calendar", "sector_performance", "sector_breadth",
@@ -360,21 +360,6 @@ def test_symbol_news_without_a_news_key_names_the_key(store):
         llm.reset_request_user(held)
 
 
-def test_the_window_is_small_and_pages(reader, monkeypatch):
-    from alphadesk.desk import screener
-    rows = [{"symbol": s, "report_date": None, "session": None, "article_count": 1,
-             "headlines": [{"title": "t", "url": "u"}] * 5} for s in ("AAPL", "AMD", "MSFT", "NVDA", "TSLA")]
-    monkeypatch.setattr(screener, "inventory", lambda: rows)
-    first = mcp_server.screener_window(limit=2)
-    assert first["total"] == 5
-    assert [r["symbol"] for r in first["symbols"]] == ["AAPL", "AMD"]
-    assert "headlines" not in first["symbols"][0]
-    second = mcp_server.screener_window(limit=2, after=first["next_after"])
-    third = mcp_server.screener_window(limit=2, after=second["next_after"])
-    assert [r["symbol"] for r in second["symbols"] + third["symbols"]] == ["MSFT", "NVDA", "TSLA"]
-    assert third["next_after"] is None
-
-
 def test_baskets_list_find_by_member_and_open_one(monkeypatch):
     """The baskets are the app's own editorial groups, handed to the agent so
     it can find what moves with a name (2026-09-18)."""
@@ -427,8 +412,7 @@ def test_every_data_surface_the_app_has_is_reachable_by_an_agent():
     """
     from alphadesk import mcp_server
     named = {t for t in dir(mcp_server) if not t.startswith("_")}
-    for tool in ("related_funds", "symbol_events", "earnings_context",
-                 "index_board", "calendar_accuracy"):
+    for tool in ("related_funds", "symbol_events", "index_board"):
         assert tool in named, tool
 
 
@@ -568,11 +552,11 @@ def test_the_filed_tool_returns_no_verdict(tools):
 
 
 def test_the_vendor_earnings_tools_do_not_claim_to_be_the_filed_record(tools):
-    """`earnings_context` called an analyst estimate part of "one company's
+    """The old `earnings_context` called an analyst estimate part of "one company's
     reported record" and promised "every figure is fetched, none derived"
     while the surprise it returns is arithmetic on two vendor numbers. Both
     tools must now say whose numbers these are and point at the filing."""
-    for name in ("earnings_context", "earnings_history"):
+    for name in ("earnings_history",):
         d = tools[name].description
         assert "vendor" in d.lower(), name
         assert "filed_report" in d or "financial_statements" in d, name
