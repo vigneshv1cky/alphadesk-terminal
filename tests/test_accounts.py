@@ -1,20 +1,14 @@
-"""Deleting an account removes everything it holds (store.delete_account,
-the account routes in app/admin.py)."""
+"""Deleting an account removes everything it holds (store.delete_account)."""
 import re
 import uuid
 from pathlib import Path
 
 import pytest
 
-from alphadesk import billing
-
 
 @pytest.fixture(autouse=True)
 def _settings(monkeypatch):
-    for k in ("ALPHADESK_OWNER_EMAILS", "ALPHADESK_BILLING_ENFORCE"):
-        monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("ALPHADESK_SECRET", "test-secret-not-for-production")
-    billing._cache.clear()
 
 
 def _sign_in(client, store, monkeypatch, email="reader@example.com"):
@@ -70,31 +64,3 @@ def test_delete_account_removes_everything_and_nobody_else(store):
     assert _count(store, "u1") == 0
     assert _count(store, "u2") == before_other
     assert store.delete_account("u1") is None
-
-
-def test_a_reader_deletes_their_own_account(client, store, monkeypatch):
-    uid = _sign_in(client, store, monkeypatch)
-    _fill(store, uid)
-    assert client.post("/api/account/delete", json={"confirm": "wrong@example.com"}).status_code == 422
-    assert _count(store, uid) > 0
-    assert client.post("/api/account/delete", json={"confirm": "Reader@Example.com"}).status_code == 200
-    assert _count(store, uid) == 0
-    assert client.get("/api/board").status_code == 401        # the session died with it
-
-
-def test_an_owner_cannot_delete_themselves_but_can_delete_others(client, store, monkeypatch):
-    monkeypatch.setenv("ALPHADESK_OWNER_EMAILS", "boss@example.com")
-    store.create_user("victim", "someone@example.com", "sso-only")
-    _fill(store, "victim")
-    boss = _sign_in(client, store, monkeypatch, email="boss@example.com")
-    assert client.post("/api/account/delete", json={"confirm": "boss@example.com"}).status_code == 422
-    assert client.post(f"/api/admin/users/{boss}/delete", json={"confirm": "boss@example.com"}).status_code == 422
-    assert client.post("/api/admin/users/victim/delete", json={"confirm": "nope"}).status_code == 422
-    assert client.post("/api/admin/users/victim/delete", json={"confirm": "someone@example.com"}).status_code == 200
-    assert _count(store, "victim") == 0
-
-
-def test_a_non_owner_cannot_delete_others(client, store, monkeypatch):
-    store.create_user("victim", "someone@example.com", "sso-only")
-    _sign_in(client, store, monkeypatch)
-    assert client.post("/api/admin/users/victim/delete", json={"confirm": "someone@example.com"}).status_code == 403

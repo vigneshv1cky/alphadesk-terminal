@@ -32,8 +32,7 @@ log = logging.getLogger("alphadesk.config")
 
 #: The app's own settings, whose values a reader may have commented.
 _OUR_PREFIXES = ("ALPHADESK_", "DASHBOARD_", "NEWS_", "CHART_", "RSI_", "SEC_USER_AGENT",
-                 "FORECAST_", "SCREENER_", "FILING_", "RESEARCH_", "OWNERSHIP_", "MCP_",
-                 "STRIPE_")
+                 "FORECAST_", "SCREENER_", "FILING_", "RESEARCH_", "OWNERSHIP_", "MCP_")
 
 
 def _strip_inline_comments() -> None:
@@ -241,16 +240,6 @@ def session_label(dt: datetime | None = None) -> str:
         if 16 * 60 <= minutes < 20 * 60:
             return "After hours"
     return "Overnight"
-
-
-# ── Stripe (the hosted service's payment processor, alphadesk/billing.py) ────
-# All four empty by default: a self-hosted copy never needs them, and with no
-# secret key checkout answers "payments are not set up yet" and charges
-# nothing. Read at call time, so a changed setting needs no restart of the
-# code path (tests set them per case).
-def stripe_settings() -> dict[str, str]:
-    return {k: os.environ.get(k, "").strip() for k in
-            ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_ID_MONTHLY", "STRIPE_PRICE_ID_YEARLY")}
 
 
 # ── Symbols ─────────────────────────────────────────────────────────────────

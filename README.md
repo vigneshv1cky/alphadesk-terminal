@@ -150,11 +150,7 @@ see [Accounts](#accounts-security-and-privacy)).
 2. On the **Account** page, connect the market-data and news providers you
    already use (Alpaca, FMP, Finnhub, Polygon, CoinGecko, …). SEC
    EDGAR and the US Treasury need no key.
-3. **It is free during early access** — there is no plan to choose and no
-   card to enter. Paid plans ($19 a month or $190 a year, each after a
-   14-day trial) will be announced to account holders before they start;
-   nobody is charged without subscribing.
-4. Optional: connect your own agent from the **Agent access** page (in the
+3. Optional: connect your own agent from the **Agent access** page (in the
    sidebar, beside Account) — a token for Claude Code, Codex, Cursor or
    opencode, or add the server URL as a connector in Claude.ai or ChatGPT.
 
@@ -229,9 +225,7 @@ not start with sign-in on and no login set.
 **3. Keep it private or publish your changes.** Under the AGPL, if you let
 other people use a modified copy over a network, you must offer them the
 source of your version. Using it yourself, unmodified, or keeping your
-changes to yourself on your own machine carries no such obligation. Billing
-stays off (`ALPHADESK_BILLING_ENFORCE` is off by default), so every account
-on your instance has full access.
+changes to yourself on your own machine carries no such obligation.
 
 ---
 
@@ -289,7 +283,6 @@ and why. Bring evidence and open an issue.
 | **Portfolio / custom views** | The reader's saved boards |
 | **Account** | Coverage matrix of connected vendors and feeds (with the sealed **Export keys** download), sign-in methods and sessions |
 | **Agent access** | Its own page: connect an AI assistant (Claude.ai, ChatGPT) by address, make tokens for programs — each optionally tied to the addresses it may be used from — and ready-to-paste setup for Claude Code, Codex, Cursor, opencode or your own program over the data API |
-| **Admin** | Owners only: accounts, last seen, sign-in methods, sign-out-everywhere, disable, delete |
 | **Terms, Privacy, Disclaimer** | Public drafts pending legal review |
 
 ### Across the terminal
@@ -465,9 +458,6 @@ and polling rather than streaming: see **[docs/rest-api.md](docs/rest-api.md)**.
   and AES-256-GCM, at least 12 characters).
 - **Agent credentials**: tokens and OAuth codes stored as SHA-256 hashes;
   OAuth clients sealed; consent page signed, same-site and unframeable.
-- **Owners** (configured by email) reach the Admin page; everyone else is a
-  reader. **Access is free**: a trial is recorded but the access gate is off
-  and no payment processor is configured.
 - **Retention — vendor data is kept only as long as a feature reads it**:
   stories 7 days, full article text 72 hours, meaning vectors with their
   stories, company announcements 30 days past the report, the forecast log
@@ -543,7 +533,6 @@ alphadesk/
   semantic.py        search by meaning (self-hosted embedding model)
   cryptonews.py      a coin's news selection
   newsquery.py       the word-search rule
-  billing.py         owners, trial, the (off) access gate and payment seam
   config.py          settings, retention, curated baskets
   ui/                React 19 + Vite frontend (built into app/static)
   deploy/            deployment guide and the configuration template
@@ -637,14 +626,11 @@ required.
 | `ALPHADESK_AUTH` | `off` for a single local account without sign-in |
 | `ALPHADESK_ACCESS_TOKEN` | with sign-in off, a shared secret (16+ characters) that guards the browser; ignored where accounts gate |
 | `ALPHADESK_LOCAL_USER_EMAIL` | with sign-in off, act as this existing account instead of a fresh local one — for a server that began with accounts and became one person's own; nothing is moved |
+| `ALPHADESK_PURGE_OTHER_ACCOUNTS` | maintenance: `count` logs how many accounts besides the login exist; `delete` removes them, whole, at the next start (unset it afterwards) |
 | `ALPHADESK_PURGE_ON_KEY_REMOVAL` | `1` deletes a vendor's stored data when its key is removed (for an instance serving other people whose vendor terms require it); off by default |
 | `ALPHADESK_BASE_URL` | Public URL; OAuth redirects and the agent host allowlist depend on it |
 | `ALPHADESK_SECRET` | Session signing secret |
 | `ALPHADESK_COOKIE_SECURE` | Secure cookies (on behind HTTPS) |
-| `ALPHADESK_OWNER_EMAILS` | Owner accounts (Admin page, never gated) |
-| `ALPHADESK_TRIAL_DAYS` / `ALPHADESK_BILLING_ENFORCE` / `ALPHADESK_BILLING_PROVIDER` | Trial length, access gate (`on` for the managed service; off by default), payment processor (`stripe` when a Stripe key is set) |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Managed service only: Stripe checkout and signed webhooks at `/api/billing/webhook`. Unset, checkout answers 503 and nothing is charged |
-| `STRIPE_PRICE_ID_MONTHLY` / `STRIPE_PRICE_ID_YEARLY` | The two plans' Stripe price IDs ($19 a month, $190 a year) |
 | `ALPHADESK_SEMANTIC_SEARCH` | `off` disables search by meaning |
 | `ALPHADESK_EMBED_MODEL` / `ALPHADESK_SEMANTIC_THRESHOLD` | Embedding model (default Qwen/Qwen3-Embedding-0.6B) and similarity cutoff (0.50) |
 | `ALPHADESK_PLUGINS` / `ALPHADESK_WIDGET_BACKENDS` | Provider plugins; external tile backends |

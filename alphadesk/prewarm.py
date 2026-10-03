@@ -45,7 +45,7 @@ MAX_PER_TICK = 60
 HEADER = "X-AlphaDesk-Prewarm"
 
 #: Never recorded or replayed: not reads of market data, or not safe to repeat.
-_NEVER = ("/api/stream", "/api/auth", "/api/admin", "/api/agent", "/api/account", "/api/keys",
+_NEVER = ("/api/stream", "/api/auth", "/api/agent", "/api/account", "/api/keys",
           "/api/views", "/api/board", "/api/chart/state", "/api/widgets", "/api/system",
           "/api/data/vendors", "/api/news/related", "/api/search", "/api/earnings/find")
 #: Refreshed every FAST_S: what changes minute to minute.
@@ -120,13 +120,12 @@ def _load(user_id: str) -> dict[str, float]:
 
 
 def _owners() -> list[tuple[str, str]]:
-    """(user_id, email) of every owner seen within ACTIVE_HOURS; on an open
-    instance, its one local account."""
-    from alphadesk import billing
+    """(user_id, email) of every account seen within ACTIVE_HOURS that may use
+    the server: the one login, or on an open instance its one local account."""
     from alphadesk.app import auth
     from alphadesk.ledger import store
     return [(u["user_id"], u.get("email") or "") for u in store.active_users(ACTIVE_HOURS)
-            if not auth.auth_required() or billing.is_owner(u.get("email"))]
+            if auth.email_allowed(u.get("email"))]
 
 
 def _replay(user_id: str, email: str, path: str) -> None:

@@ -48,9 +48,6 @@ export default function PrivacyPage() {
       <P><strong>Data fetched for you.</strong> News stories, calendar records and similar data
         retrieved from your connected providers are stored under your account so your window loads
         quickly. They are not shared with other users.</P>
-      <P><strong>Plan records.</strong> AlphaDesk is free and takes no payments. A trial date is recorded
-        when your account is created, in case paid plans are ever introduced; nothing else about
-        payment is collected.</P>
       <P><strong>Technical information.</strong> Our hosting provider records server logs of requests
         to the service, including IP address, browser type, the address requested and the time.
         Sign-in events in those logs include the email address.</P>

@@ -604,11 +604,6 @@ function noteUnauthorized(path: string, status: number) {
   if (status === 401 && path.startsWith("/api") && !path.startsWith("/api/auth")) {
     window.dispatchEvent(new Event("alphadesk:unauthorized"))
   }
-  // 402: the access gate stopped an account whose trial has ended — the
-  // shell swaps to the subscribe screen (App.tsx), as a 401 swaps to sign-in.
-  if (status === 402 && path.startsWith("/api") && !path.startsWith("/api/billing")) {
-    window.dispatchEvent(new Event("alphadesk:payment-required"))
-  }
 }
 
 /** A failed request, with the status a caller may branch on — a 404 is
@@ -1314,39 +1309,6 @@ export interface ExternalWidgetData {
   metrics?: { label: string; value: string | number | null }[]
 }
 
-/** Who may use the terminal (alphadesk/billing.py). `expired` only stops
- * the reader when `enforced` is on. */
-export interface Access {
-  state: "owner" | "subscribed" | "trialing" | "expired"
-  trial_ends_at: string | null
-  days_left: number | null
-  plan_status: string | null
-  plan_period_end: string | null
-  enforced: boolean
-  /** A payment processor is configured. */
-  can_subscribe: boolean
-}
-
-export interface AdminUser {
-  user_id: string
-  email: string
-  disabled: boolean
-  created_at: string | null
-  last_seen_at: string | null
-  sign_ins: string[]
-  access: Access
-  /** What the account holds, for the admin page's detail. */
-  counts?: { keys: number; views: number; baskets: number; agent_tokens: number; agent_apps: number }
-}
-
-export interface AdminUsers {
-  users: AdminUser[]
-  totals: Record<"accounts" | "disabled" | "owner" | "subscribed" | "trialing" | "expired", number>
-  enforced: boolean
-  trial_days: number
-  payments: boolean
-}
-
 export interface AuthMe {
   auth_required: boolean
   /** The instance is guarded by one shared access token, not accounts: the
@@ -1357,10 +1319,6 @@ export interface AuthMe {
   user: {
     email: string
     sign_ins?: { method: string; first_at: string | null; last_at: string | null }[]
-    /** Trial or subscription (alphadesk/billing.py), 2026-09-18. */
-    access?: Access | null
-    /** Owners open the admin page. */
-    owner?: boolean
   } | null
   /** Where a signed-in reader must go first: the agent-app consent page they
    * left to sign in. Given once. */
@@ -1470,19 +1428,6 @@ export type FiledQuarter = {
 
 export const api = {
   authMe: () => get<AuthMe>("/api/auth/me"),
-  billing: () => get<Access>("/api/billing"),
-  billingCheckout: (plan: "monthly" | "yearly" = "monthly") => post<{ url: string }>("/api/billing/checkout", { plan }),
-  billingPortal: () => post<{ url: string }>("/api/billing/portal", {}),
-  adminUsers: () => get<AdminUsers>("/api/admin/users"),
-  adminSetDisabled: (userId: string, disabled: boolean) =>
-    post<{ ok: boolean }>(`/api/admin/users/${encodeURIComponent(userId)}/disabled`, { disabled }),
-  adminSignOut: (userId: string) =>
-    post<{ ok: boolean }>(`/api/admin/users/${encodeURIComponent(userId)}/sign-out`, {}),
-  deleteMyAccount: (confirm: string) => post<{ ok: boolean }>("/api/account/delete", { confirm }),
-  adminDeleteUser: (userId: string, confirm: string) =>
-    post<{ ok: boolean }>(`/api/admin/users/${encodeURIComponent(userId)}/delete`, { confirm }),
-  adminExtendTrial: (userId: string, days: number) =>
-    post<{ ok: boolean; trial_ends_at: string }>(`/api/admin/users/${encodeURIComponent(userId)}/trial`, { days }),
   saveBoard: (symbols: string[], active: string) => put<{ ok: boolean }>("/api/board", { symbols, active }),
   /** The strip this account last had, from whichever browser arranged it. */
   getBoard: () => get<{ symbols: string[]; active: string; updated_at: string | null }>("/api/board"),

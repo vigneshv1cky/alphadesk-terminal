@@ -95,12 +95,6 @@ class TokenGate:
         if not await anyio.to_thread.run_sync(_auth.uid_allowed, uid):
             await _forbidden_account(send)
             return
-        # The access gate reaches the agent too: a reader past the trial with
-        # no subscription is refused here as on the web (alphadesk/billing.py).
-        from alphadesk import billing
-        if await anyio.to_thread.run_sync(billing.blocked_user, uid):
-            await _payment_required(send)
-            return
         wait = agent_access.limiter.check(limit_key)
         if wait:
             await _slow_down(send, wait)
@@ -137,15 +131,6 @@ async def _forbidden_account(send) -> None:
 async def _forbidden(send) -> None:
     body = json.dumps({"detail": "this token cannot be used from this address"}).encode("utf-8")
     await send({"type": "http.response.start", "status": 403, "headers": [
-        (b"content-type", b"application/json"),
-        (b"content-length", str(len(body)).encode("ascii")),
-    ]})
-    await send({"type": "http.response.body", "body": body})
-
-
-async def _payment_required(send) -> None:
-    body = json.dumps({"detail": "this AlphaDesk account's free trial has ended; subscribe on the Account page"}).encode("utf-8")
-    await send({"type": "http.response.start", "status": 402, "headers": [
         (b"content-type", b"application/json"),
         (b"content-length", str(len(body)).encode("ascii")),
     ]})
