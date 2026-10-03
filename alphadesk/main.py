@@ -335,6 +335,8 @@ def main() -> None:
             _login_store.init()
             logging.getLogger("alphadesk").info(
                 "login from the settings for %s: %s", _auth.login_email(), _auth.apply_login_from_settings())
+            from alphadesk.ledger import purge as _purge
+            _purge.run_at_start(_auth.login_email())
         if not _auth.auth_required():
             # An instance acting as one existing account (ALPHADESK_LOCAL_USER_
             # EMAIL) must name one that is there, or every request would fail.
