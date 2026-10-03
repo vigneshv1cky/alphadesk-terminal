@@ -218,6 +218,22 @@ CREATE TABLE IF NOT EXISTS scraped_data (
 );
 CREATE INDEX IF NOT EXISTS idx_scraped_at ON scraped_data (fetched_at);
 
+-- EVERY SOCIAL POST EVER SEEN (2026-10-03). The mirror holds only the newest
+-- hundred posts and the row above is overwritten on each read, so a post from
+-- a few days back — the one that moved a stock — could no longer be found.
+-- Each read now also files its posts here, once per URL, and nothing prunes
+-- them: the owner keeps data forever. Shared, like the public data it copies.
+CREATE TABLE IF NOT EXISTS social_posts_archive (
+    url      TEXT PRIMARY KEY,
+    at       TEXT NOT NULL,
+    account  TEXT,
+    platform TEXT,
+    text     TEXT,
+    via      TEXT,
+    saved_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_social_archive_at ON social_posts_archive (at);
+
 -- WHAT A VENDOR LAST ANSWERED (2026-10-03). The price cache lived in memory
 -- only, so every restart began cold and the slow-changing answers (history,
 -- fundamentals, profiles, ratings) were asked of the vendor again every few
@@ -2103,6 +2119,36 @@ def put_scraped(source: str, kind: str, key: str, rows: list[dict]) -> None:
         conn.execute("DELETE FROM scraped_data WHERE source=? AND kind=? AND key=?", (source, kind, key))
         conn.execute("INSERT INTO scraped_data (source, kind, key, payload, fetched_at) VALUES (?,?,?,?,?)",
                      (source, kind, key, json.dumps(rows), datetime.now(timezone.utc).isoformat()))
+
+
+def save_social_posts(rows: list[dict]) -> int:
+    """File posts in the archive, once per URL (a post already filed is left
+    alone). Returns how many were new."""
+    fresh = [r for r in rows or [] if r.get("url") and r.get("at")]
+    if not fresh:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    with _lock, _connect() as conn:
+        before = conn.execute("SELECT COUNT(*) AS n FROM social_posts_archive").fetchone()["n"]
+        conn.executemany(
+            "INSERT INTO social_posts_archive (url, at, account, platform, text, via, saved_at) VALUES (?,?,?,?,?,?,?)"
+            " ON CONFLICT (url) DO NOTHING",
+            [(r["url"], r["at"], r.get("account"), r.get("platform"), r.get("text"), r.get("via"), now) for r in fresh])
+        after = conn.execute("SELECT COUNT(*) AS n FROM social_posts_archive").fetchone()["n"]
+    return after - before
+
+
+def archived_social_posts(limit: int = 5000, since_iso: str | None = None) -> list[dict]:
+    """The archived posts, newest first, up to `limit`."""
+    sql = "SELECT url, at, account, platform, text, via FROM social_posts_archive"
+    args: list = []
+    if since_iso:
+        sql += " WHERE at >= ?"
+        args.append(since_iso)
+    sql += " ORDER BY at DESC LIMIT ?"
+    args.append(int(limit))
+    with _connect() as conn:
+        return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
 
 def scraped_freshness() -> list[dict]:

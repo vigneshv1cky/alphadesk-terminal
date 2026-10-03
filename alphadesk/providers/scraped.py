@@ -958,6 +958,10 @@ class SocialPulse:
                 return
             note_fill("posts", None)
             store.put_scraped("social", "posts", "LATEST", rows)
+            try:
+                store.save_social_posts(rows)           # the archive keeps what the mirror drops
+            except Exception as exc:                    # pragma: no cover
+                log.debug("social archive: %s", exc)
 
         background_fill.submit("social-posts", _FILL_OWNER, ["LATEST"], job, pool=_fill_pool)
 

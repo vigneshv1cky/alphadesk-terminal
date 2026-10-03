@@ -52,7 +52,28 @@ class NeedsKey(ProviderError):
             label = SURFACES[surface].label if surface in SURFACES else surface
         except Exception:                              # pragma: no cover
             label = surface
-        super().__init__(f"{label} needs a key — connect one on the Account page")
+        # WHAT HAPPENED, in words (2026-10-03). "Needs a key — connect one" was
+        # said even when the reader held every vendor that serves the surface
+        # and they had simply returned nothing for a small company with no
+        # analyst coverage (SVRN, GRML), which sent an agent hunting for a key
+        # that was already there.
+        serving: list[str] = []
+        try:
+            serving = [n for n, _ in SURFACES[surface].vendors if n in (self.connected or [])]
+        except Exception:                              # pragma: no cover
+            pass
+        if self.failed:
+            why = "; ".join(f"{n}: {m}" for n, m in list(self.failed.items())[:3])
+            message = f"{label} could not be read from a connected source ({why})"
+        elif self.refused:
+            message = (f"{label}: the plan on {', '.join(self.refused)} does not include it — "
+                       "upgrade that plan or connect another source on the Account page")
+        elif serving:
+            message = (f"{label}: {', '.join(serving)} returned nothing for this request — most often the "
+                       "company has no coverage there (small companies often have none); no key is missing")
+        else:
+            message = f"{label} needs a key — connect one on the Account page"
+        super().__init__(message)
 
     def prompt(self) -> dict:
         from alphadesk.providers.catalogue import prompt

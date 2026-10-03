@@ -282,3 +282,25 @@ def test_coingecko_daily_bars_are_one_close_per_day(monkeypatch):
     assert [b["c"] for b in bars] == [1.0, 2.5] and len({b["t"] for b in bars}) == 2
     monkeypatch.setattr(coingecko, "resolve_id", lambda base, key=None: None)
     assert coingecko.daily_bars("NOPE-USD", 30, "k") is None
+
+
+def test_a_surface_that_answered_nothing_is_not_called_a_missing_key():
+    from alphadesk.providers.base import NeedsKey
+    nothing = NeedsKey("analyst_ratings", [], connected=["alpaca", "finnhub", "fmp"])
+    assert "returned nothing" in str(nothing) and "no key is missing" in str(nothing)
+    assert "finnhub" in str(nothing) and "fmp" in str(nothing)
+    assert "plan on fmp" in str(NeedsKey("analyst_ratings", ["fmp"], connected=["fmp"]))
+    assert "could not be read" in str(NeedsKey("analyst_ratings", [], connected=["fmp"], failed={"fmp": "timeout"}))
+    assert "needs a key" in str(NeedsKey("analyst_ratings", [], connected=["alpaca"]))        # nothing that serves it is connected
+    assert "needs a key" in str(NeedsKey("analyst_ratings"))                                  # unknown: the old words
+
+
+def test_social_posts_are_archived_once_and_found_after_the_mirror_drops_them(store):
+    posts = [{"url": f"https://x/{i}", "at": f"2026-09-{20 + i:02d}T12:00:00+00:00", "account": "a", "platform": "Truth Social",
+              "text": "The Greenland agreement is great" if i == 0 else f"other post {i}", "via": "mirror"} for i in range(3)]
+    assert store.save_social_posts(posts) == 3
+    assert store.save_social_posts(posts) == 0                          # the same URLs are not filed twice
+    assert store.save_social_posts([{"url": "", "at": ""}, {"text": "no url"}]) == 0
+    got = store.archived_social_posts(10)
+    assert [p["url"] for p in got] == ["https://x/2", "https://x/1", "https://x/0"]          # newest first
+    assert store.archived_social_posts(10, since_iso="2026-09-21T00:00:00+00:00")[-1]["url"] == "https://x/1"
