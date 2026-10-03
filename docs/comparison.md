@@ -52,7 +52,7 @@ For much of it, no.
 - **Your own key:** quotes, charts, news, earnings and corporate calendars,
   options chains, crypto, movers. A free Alpaca key covers a great deal.
   Vendors supported include Alpaca, Financial Modeling Prep, Finnhub,
-  Polygon, Alpha Vantage, CoinGecko, Tiingo and Marketaux.
+  Polygon, Alpha Vantage, CoinGecko and Marketaux.
 
 AlphaDesk never resells data. Each request runs on your account with that
 vendor, under your agreement with them. Check your plan's terms before

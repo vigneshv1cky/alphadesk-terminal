@@ -1700,11 +1700,6 @@ class KeyIn(BaseModel):
     api_secret: str | None = None   # news seam only: Alpaca auths with a pair
     base_url: str | None = None
     model: str | None = None
-    #: What plan the reader says this key is on: "paid" or "free". Only
-    #: Tiingo reads it, and only because its terms forbid a free or trial
-    #: plan's data being written to durable storage at all. Tiingo publishes
-    #: no way to ask a token which plan it is on, so the account holder says.
-    plan: str | None = None
 
 
 def _key_user(request: Request) -> str:
@@ -1740,18 +1735,6 @@ def api_keys_list(request: Request):
                 # How its stories arrive: over a held socket in seconds, or on
                 # the poll. The page says so per feed (2026-09-18).
                 k["delivery"] = "stream" if k["provider"] in STREAMING_NEWS else "poll"
-                # WHETHER ITS STORIES ARE KEPT AT ALL. A feed whose terms
-                # forbid storage on the plan the reader declared contributes
-                # nothing to the window, because the window is served from
-                # the store. Said here rather than left to be discovered as
-                # a feed that is connected, polling, and permanently empty.
-                from alphadesk.ingest.news import _PLAN_GATED
-                gated = k["provider"] in _PLAN_GATED and (k.get("vendor_plan") or "") != "paid"
-                k["stores"] = not gated
-                if gated:
-                    k["not_stored_reason"] = (
-                        "a Starter or trial plan may not have its data written to durable "
-                        "storage, so these stories are not kept and do not reach the window")
     # STORIES FROM A FEED THE READER NO LONGER HAS (2026-09-22). Removing a
     # key purges what it delivered, but that purge only landed on 2026-09-18,
     # so a feed removed before it left its stories behind — and they show up
@@ -1951,23 +1934,8 @@ def api_keys_set(seam: str, body: KeyIn, request: Request, background: Backgroun
                             "api_secret": (body.api_secret or "").strip(),
                             "base_url": (body.base_url or "").strip(),
                             "model": (body.model or "").strip()})
-    # Anything that is not the word "paid" is read as the restrictive case,
-    # including a missing declaration and a typo.
-    plan = "paid" if (body.plan or "").strip().lower() == "paid" else "free"
-    store.set_user_key(user_id, seam, body.provider, sealed, api_key[-4:], vendor_plan=plan)
+    store.set_user_key(user_id, seam, body.provider, sealed, api_key[-4:])
     registry.forget_user_keys(user_id)
-    # DECLARING A KEY FREE ALSO REMOVES WHAT IT ALREADY WROTE. Stopping new
-    # writes would leave the breach standing — a reader who upgrades this
-    # instance, or who corrects a wrong declaration, has stories on disk that
-    # the vendor's terms say may not be there. Same call a key removal makes.
-    # ONLY A PLAN-GATED VENDOR (2026-10-02). This ran for every news provider,
-    # so replacing an Alpaca key — which has no such term — silently deleted
-    # every Alpaca story on file. And it ran inside the request, walking the
-    # reader's stories under the store lock, so the dialog hung on "sealing".
-    # It now runs after the response, for Tiingo-style vendors only.
-    from alphadesk.ingest.news import _PLAN_GATED
-    if seam == "news" and plan != "paid" and body.provider in _PLAN_GATED:
-        background.add_task(store.purge_vendor_data, user_id, "news", body.provider)
     # REFILL THE WINDOW (2026-10-02). A new or replaced feed starts with
     # whatever the poll's newest-100 happens to hold; fetch the retention
     # window behind it, after the response, so the reader is not made to
@@ -2072,8 +2040,7 @@ def api_keys_export(body: KeyExportIn, request: Request):
                 raise HTTPException(503, "a stored key cannot be opened — wrong master key or damaged row") from None
             entries.append({"seam": seam, "provider": row["provider"],
                             "api_key": cfg.get("api_key", ""), "api_secret": cfg.get("api_secret", ""),
-                            "base_url": cfg.get("base_url", ""), "model": cfg.get("model", ""),
-                            "plan": row.get("vendor_plan") or "free"})
+                            "base_url": cfg.get("base_url", ""), "model": cfg.get("model", "")})
     if not entries:
         raise HTTPException(404, "no keys are stored to export")
     now = datetime.now(timezone.utc)

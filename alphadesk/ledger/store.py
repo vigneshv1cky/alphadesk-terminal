@@ -323,14 +323,8 @@ CREATE TABLE IF NOT EXISTS user_api_keys (
     key_hint     TEXT NOT NULL,      -- last 4 characters, for display ONLY
     created_at   TEXT NOT NULL,
     last_used_at TEXT,
-    -- WHAT PLAN THE READER SAYS THIS KEY IS ON (2026-09-26, #85). Only
-    -- Tiingo needs it so far, and only because its terms turn on the
-    -- answer: a Starter or trial plan may not have its data written to
-    -- durable storage at all. Tiingo documents no endpoint that reports a
-    -- token's plan, so the account holder declares it — it is their
-    -- agreement with Tiingo, and an unanswered declaration defaults to the
-    -- restrictive reading. Not a secret, so it sits beside the sealed
-    -- config rather than inside it, where the Account page can show it back.
+    -- Unused since Tiingo was removed (2026-10-03); a column cannot be dropped
+    -- portably, so it stays and nothing reads or writes it.
     vendor_plan  TEXT,
     PRIMARY KEY (user_id, seam, provider)
 );

@@ -153,8 +153,7 @@ def restore(user_id: str, payload: dict) -> tuple[list[str], list[str]]:
                                 "api_secret": str(entry.get("api_secret") or "").strip(),
                                 "base_url": str(entry.get("base_url") or "").strip(),
                                 "model": str(entry.get("model") or "").strip()})
-        plan = "paid" if str(entry.get("plan") or "").strip().lower() == "paid" else "free"
-        store.set_user_key(user_id, seam, provider, sealed, api_key[-4:], vendor_plan=plan)
+        store.set_user_key(user_id, seam, provider, sealed, api_key[-4:])
         restored.append(label)
     if restored:
         registry.forget_user_keys(user_id)

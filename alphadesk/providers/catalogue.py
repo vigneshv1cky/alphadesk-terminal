@@ -86,7 +86,6 @@ PROMPT_VENDORS: dict[str, Vendor] = {
         Vendor("news:marketaux", "Marketaux", "https://www.marketaux.com/register", kind="news", note="Free key."),
         Vendor("news:polygon", "Polygon", "https://polygon.io/dashboard/signup", kind="news", note="Free key: ticker news."),
         Vendor("news:alpaca", "Alpaca", "https://app.alpaca.markets/signup", kind="news", needs_secret=True, note="Free key: Benzinga headlines."),
-        Vendor("news:tiingo", "Tiingo", "https://www.tiingo.com/account/api/token", kind="news"),
     )
 }
 
@@ -172,7 +171,7 @@ SURFACES: dict[str, Surface] = {
         # option markets (OPRA on a paid plan, the indicative feed otherwise).
         Surface("option_movers", "Option movers", (("alpaca", FREE), ("polygon", PAID))),
         Surface("news", "News", (("news:alpaca", FREE), ("news:polygon", FREE), ("news:fmp", PAID), ("news:marketaux", FREE),
-                                  ("news:tiingo", PAID), ("news:finnhub", FREE))),
+                                  ("news:finnhub", FREE))),
     )
 }
 

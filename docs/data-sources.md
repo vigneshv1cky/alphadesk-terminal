@@ -52,7 +52,7 @@ naming the vendors (and plans) that would.
 | **Alpha Vantage** | key statistics, analyst ratings and mean target, estimates, earnings calendar, company profile, ETF holdings and sector weights | [Alpha Vantage terms](https://www.alphavantage.co/terms_of_service/) |
 | **Financial Modeling Prep** | key statistics, peers, grades, targets, ETF holdings, dividends and splits, earnings, economic calendar | [FMP terms](https://site.financialmodelingprep.com/terms-of-service) |
 | **CoinGecko** (demo or paid key) | the crypto list (worldwide prices, volume, market caps, names — cut to coins the reader can trade when an Alpaca key is also connected), coin profiles; verified against a live Demo key 2026-09-19 | [CoinGecko terms](https://www.coingecko.com/en/terms) |
-| **News feeds** (Polygon, Finnhub, Alpaca, Marketaux, Tiingo, …) | the reader's news window, merged across the feeds they keyed | each provider's terms |
+| **News feeds** (Polygon, Finnhub, Alpaca, Marketaux, …) | the reader's news window, merged across the feeds they keyed | each provider's terms |
 
 Data fetched on your key is governed by your agreement with that vendor.
 Plans differ in what they allow — personal or commercial use, display to

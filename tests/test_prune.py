@@ -90,10 +90,10 @@ def test_the_key_route_keeps_the_data_unless_purging_is_switched_on(client, stor
         assert conn.execute("SELECT COUNT(*) AS n FROM news_articles WHERE owner=?", (uid,)).fetchone()["n"] == 0
 
 
-def test_replacing_an_ungated_news_key_keeps_its_stories(client, store, monkeypatch):
+def test_replacing_a_news_key_keeps_its_stories(client, store, monkeypatch):
     """Replacing an Alpaca key declared "free" by default and purged every
-    Alpaca story on file (2026-10-02). Only a plan-gated vendor (Tiingo) is
-    purged on a free declaration, and after the response, not inside it."""
+    Alpaca story on file (2026-10-02). The purge belonged to one vendor's
+    plan terms (Tiingo, since removed), so no key save purges anything now."""
     import uuid
 
     from alphadesk.app import auth
@@ -107,13 +107,9 @@ def test_replacing_an_ungated_news_key_keeps_its_stories(client, store, monkeypa
     assert client.post("/api/auth/login", json={"email": "swap@example.com",
                                                 "password": "a-long-password"}).status_code == 200
     with store._lock, store._connect() as conn:
-        for aid, feed in (("a", "alpaca"), ("t", "tiingo")):
-            conn.execute("INSERT INTO news_articles (owner, article_id, title, feeds) VALUES (?, ?, 't', ?)",
-                         (uid, aid, feed))
-    for provider in ("alpaca", "tiingo"):
-        r = client.put("/api/keys/news", json={"provider": provider, "api_key": "k" * 12,
-                                               "api_secret": "s" * 12})
-        assert r.status_code == 200, r.text
+        conn.execute("INSERT INTO news_articles (owner, article_id, title, feeds) VALUES (?, 'a', 't', 'alpaca')", (uid,))
+    r = client.put("/api/keys/news", json={"provider": "alpaca", "api_key": "k" * 12, "api_secret": "s" * 12})
+    assert r.status_code == 200, r.text
     with store._connect() as conn:
         left = {r["article_id"] for r in conn.execute("SELECT article_id FROM news_articles WHERE owner=?", (uid,))}
     assert left == {"a"}

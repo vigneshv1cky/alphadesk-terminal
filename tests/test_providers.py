@@ -297,44 +297,6 @@ class TestFinnhubPrices:
         monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
         with _pytest.raises(ProviderError):
             FinnhubPrices(api_key="").quote("NVDA")
-class TestTiingoNews:
-    def test_fetch_filters_and_authenticates_by_header(self, monkeypatch):
-        from datetime import datetime, timezone
-
-        from alphadesk.providers import news as news_mod
-        seen = {}
-        payload = [
-            {"id": 7, "title": "NVDA ships", "url": "https://t/a",
-             "publishedDate": "2100-01-02T09:00:00Z", "tickers": ["nvda", "amd"],
-             "description": "d", "source": "reuters.com"},
-            {"id": 8, "title": "Untagged musings", "url": "https://t/b",
-             "publishedDate": "2100-01-02T09:00:00Z", "tickers": [],
-             "description": "d", "source": "x.com"},
-            {"id": 9, "title": "Stale", "url": "https://t/c",
-             "publishedDate": "1999-01-01T00:00:00Z", "tickers": ["aapl"],
-             "description": "d", "source": "x.com"},
-        ]
-        def fake_get(url, headers=None, timeout=20.0):
-            seen["url"], seen["headers"] = url, headers or {}
-            return payload
-        monkeypatch.setattr(news_mod, "_get_json", fake_get)
-        arts = news_mod.TiingoNews(api_key="tk").fetch(
-            datetime(2100, 1, 1, tzinfo=timezone.utc))
-        assert [a.id for a in arts] == ["tiingo-7"]
-        assert arts[0].symbols == ["NVDA", "AMD"]
-        assert seen["headers"].get("Authorization") == "Token tk"
-        assert "token=" not in seen["url"]
-
-    def test_missing_key_is_a_provider_error(self, monkeypatch):
-        import pytest as _pytest
-
-        from alphadesk.providers.base import ProviderError
-        from alphadesk.providers.news import TiingoNews
-        monkeypatch.delenv("TIINGO_API_KEY", raising=False)
-        with _pytest.raises(ProviderError):
-            TiingoNews(api_key="").fetch(__import__("datetime").datetime.now())
-
-
 class TestAlphaVantageNews:
     def _feed(self):
         return {"feed": [
