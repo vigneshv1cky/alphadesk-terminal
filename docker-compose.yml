@@ -1,19 +1,39 @@
-# One person, one machine: `docker compose up -d`, then http://127.0.0.1:8000.
+# One person, one machine, on the same database the live server uses:
+# `docker compose up -d`, then http://127.0.0.1:8000.
 #
 # Set your contact address first (the SEC asks for one in every request):
 #   ALPHADESK_CONTACT_EMAIL=you@example.com docker compose up -d
 #
+# Postgres runs beside the app (no published port: only the app can reach it).
 # The first start makes the vault key and settings inside the data volume and
 # keeps them there, so restarts and updates reuse them. Sign-in is off because
-# the port is published to this machine only (127.0.0.1) — do not widen it
-# without putting a password in front.
+# the app's port is published to this machine only (127.0.0.1) — do not widen
+# it without putting a password in front.
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: alphadesk
+      POSTGRES_PASSWORD: alphadesk       # reachable only from the app container
+      POSTGRES_DB: alphadesk
+    volumes:
+      - alphadesk-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alphadesk -d alphadesk"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
   alphadesk:
     build: .
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000"
     environment:
       ALPHADESK_DATA: /data
+      ALPHADESK_DATABASE_URL: postgresql://alphadesk:alphadesk@db:5432/alphadesk
       DASHBOARD_HOST: 0.0.0.0
       # Optional: a shared secret the browser asks for. Set it before widening the port above.
       ALPHADESK_ACCESS_TOKEN: ${ALPHADESK_ACCESS_TOKEN:-}
@@ -26,3 +46,4 @@ services:
     restart: unless-stopped
 volumes:
   alphadesk-data:
+  alphadesk-pg:

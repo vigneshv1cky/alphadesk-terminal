@@ -16,12 +16,15 @@ and `init()` removes them from pre-existing databases.
 """
 
 import json
+import logging
 import os
 from html import unescape
 from datetime import datetime, timedelta, timezone
 
 from alphadesk.config import DATA_DIR
 from alphadesk.ledger import db
+
+log = logging.getLogger("alphadesk.store")
 
 _DB = DATA_DIR / "ledger.db"
 _lock = db.lock
@@ -549,6 +552,45 @@ def vendor_cache_put(owner: str, vendor: str, method: str, argkey: str, payload:
             (owner, vendor, method, argkey, payload, _now()))
 
 
+# WORD SEARCH ON POSTGRES (2026-10-03). The news search matches words with
+# LIKE '%word%' over lower-cased headline, summary, ticker and source text. A
+# trigram index (pg_trgm) answers exactly that LIKE without a scan, so the
+# existing queries get fast on a long history with no change to them: each
+# index below is on the SAME expression the queries use. SQLite has no
+# equivalent that these statements could use, and runs without them.
+_POSTGRES_SEARCH_DDL = (
+    "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+    "CREATE INDEX IF NOT EXISTS idx_news_title_trgm ON news_articles USING gin (lower(title) gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS idx_news_summary_trgm ON news_articles"
+    " USING gin (lower(coalesce(summary, '')) gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS idx_news_tickers_trgm ON news_articles USING gin (lower(tickers) gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS idx_news_tickers_raw_trgm ON news_articles USING gin (tickers gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS idx_news_source_trgm ON news_articles"
+    " USING gin (lower(coalesce(source, '')) gin_trgm_ops)",
+)
+
+
+def ensure_search_indexes() -> int:
+    """On Postgres, make the trigram indexes the word search can use. Each
+    statement runs on its own connection (a failed one aborts its transaction),
+    and a failure — no permission to create the extension, say — only logs: the
+    search still works, just without the index. Returns how many were applied;
+    0 on SQLite."""
+    if db.backend() != "postgres":
+        return 0
+    done = 0
+    for ddl in _POSTGRES_SEARCH_DDL:
+        try:
+            with _lock, _connect() as conn:
+                conn.execute(ddl)
+            done += 1
+        except Exception as exc:                          # noqa: BLE001
+            log.warning("search index not made (%s): %s", ddl.split(" ON ")[0][:60], exc)
+            if "pg_trgm" in ddl:
+                break                                     # no extension, no trigram indexes
+    return done
+
+
 def _backfill_news_tickers(conn) -> None:
     """Fill the ticker side table from stories stored before it existed (once:
     it only runs while the table is empty and stories are not)."""
@@ -711,6 +753,7 @@ def init() -> None:
 
     with _lock, _connect() as conn:
         _backfill_news_tickers(conn)
+    ensure_search_indexes()
 
 
 LOCAL_USER_ID = "local"

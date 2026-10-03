@@ -550,3 +550,29 @@ class TestIntervalCatalogue:
         # An interval the ACTIVE provider lacks is refused with the list.
         r = client.get("/api/chart/NVDA?range=1D&interval=7m")
         assert r.status_code == 400 and "polygon" in r.json()["detail"]
+
+
+def test_a_body_cut_short_is_a_provider_error_not_a_crash(monkeypatch):
+    """A vendor's response that ends early (IncompleteRead) escaped as a 500 with a traceback (2026-10-03)."""
+    import http.client
+
+    import pytest
+
+    from alphadesk.providers import prices
+    from alphadesk.providers.base import ProviderError
+
+    class Cut:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            raise http.client.IncompleteRead(b"abc", 10)
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: Cut())
+    with pytest.raises(ProviderError):
+        prices._get_json("https://example.test/x", {})
+    with pytest.raises(ProviderError):
+        prices._get_text("https://example.test/x")

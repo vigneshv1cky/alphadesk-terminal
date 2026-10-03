@@ -13,6 +13,8 @@ sparse to support an indicator.
 
 from __future__ import annotations
 
+import http.client as _http_client
+
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -81,6 +83,11 @@ def _get_json(url: str, headers: dict[str, str], timeout: float = 20.0):
         raise ProviderError(f"HTTP {exc.code} {exc.reason}") from exc
     except URLError as exc:
         raise ProviderError(f"unreachable: {exc.reason}") from exc
+    except (OSError, _http_client.HTTPException) as exc:
+        # A body cut short (IncompleteRead), a reset or a timeout mid-read is the
+        # vendor's trouble, not a crash: it escaped as a 500 with a traceback
+        # (2026-10-03). Now it is a ProviderError the callers already handle.
+        raise ProviderError(f"connection failed: {type(exc).__name__}") from exc
     except ValueError as exc:
         raise ProviderError("response was not JSON") from exc
 
@@ -99,6 +106,8 @@ def _get_text(url: str, headers: dict[str, str] | None = None, timeout: float = 
         raise ProviderError(f"HTTP {exc.code} {exc.reason}") from exc
     except URLError as exc:
         raise ProviderError(f"unreachable: {exc.reason}") from exc
+    except (OSError, _http_client.HTTPException) as exc:
+        raise ProviderError(f"connection failed: {type(exc).__name__}") from exc
 
 
 def polygon_mover_row(symbol: str, price, change_pct, volume, name: str | None = None) -> dict:

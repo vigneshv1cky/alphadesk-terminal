@@ -270,6 +270,8 @@ def _get_json(url: str, headers: dict[str, str] | None = None, timeout: float = 
         raise ProviderError(f"HTTP {exc.code} {exc.reason}") from exc
     except URLError as exc:
         raise ProviderError(f"unreachable: {exc.reason}") from exc
+    except (OSError, __import__("http.client").client.HTTPException) as exc:
+        raise ProviderError(f"connection failed: {type(exc).__name__}") from exc
     except ValueError as exc:
         raise ProviderError("response was not JSON") from exc
 

@@ -150,3 +150,47 @@ def test_stories_stored_before_the_side_table_are_filled_in_once(store):
     store.init()                                                           # a second start adds nothing
     with store._connect() as conn:
         assert conn.execute("SELECT COUNT(*) AS n FROM news_tickers WHERE owner=?", (uid,)).fetchone()["n"] == 2
+
+
+def test_search_indexes_are_only_made_on_postgres(store, monkeypatch):
+    from alphadesk.ledger import db
+    assert store.ensure_search_indexes() == 0                       # SQLite: nothing to make
+
+    seen = []
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql, *a):
+            seen.append(sql)
+
+    monkeypatch.setattr(db, "backend", lambda: "postgres")
+    monkeypatch.setattr(store, "_connect", lambda: Conn())
+    assert store.ensure_search_indexes() == len(store._POSTGRES_SEARCH_DDL)
+    assert seen[0] == "CREATE EXTENSION IF NOT EXISTS pg_trgm"
+    # each index sits on the same expression the search queries use
+    joined = " ".join(seen)
+    for expr in ("lower(title)", "lower(coalesce(summary, ''))", "lower(tickers)", "lower(coalesce(source, ''))"):
+        assert expr in joined
+
+
+def test_a_missing_extension_does_not_break_start_up(store, monkeypatch):
+    from alphadesk.ledger import db
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, sql, *a):
+            raise RuntimeError("permission denied to create extension")
+
+    monkeypatch.setattr(db, "backend", lambda: "postgres")
+    monkeypatch.setattr(store, "_connect", lambda: Conn())
+    assert store.ensure_search_indexes() == 0                        # logged, not raised

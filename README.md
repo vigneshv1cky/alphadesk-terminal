@@ -75,7 +75,10 @@ With Docker instead:
 ALPHADESK_CONTACT_EMAIL=you@example.com docker compose up -d
 ```
 
-The first start does the same setup inside a data volume and keeps it there.
+The first start does the same setup inside a data volume and keeps it there. It
+also starts Postgres beside the app, the same database the live server runs, so
+what you test locally is what runs in the cloud; the word search uses a Postgres
+index there that SQLite cannot have.
 **Reachable from other machines?** Sign-in is off in this mode, so anyone who
 can reach the port can use it and read your connected vendors. Keep it on
 `127.0.0.1`, or set an access token — the browser then asks for it once, and
@@ -172,7 +175,7 @@ cp alphadesk/deploy/env.example .env
 | `SEC_USER_AGENT` | yes | `AlphaDesk (you@example.com)` — a name and a real email |
 | `ALPHADESK_AUTH` | for one person | `off`: a single local account with no sign-in |
 | `ALPHADESK_ACCESS_TOKEN` | if reachable beyond your machine | with sign-in off, one shared secret (16+ characters) the browser asks for once; see Quick start |
-| `ALPHADESK_DATABASE_URL` | no | a `postgres://` URL; unset, SQLite in `ALPHADESK_DATA` (`~/.alphadesk`) |
+| `ALPHADESK_DATABASE_URL` | no | a `postgres://` URL (recommended: the Docker setup uses one, and it enables the word-search index); unset, SQLite in `ALPHADESK_DATA` (`~/.alphadesk`) |
 | `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys. Found at start, they are sealed into your account — the local one with sign-in off, or the login's — so the settings file is the record: they add or update keys, never delete them, and win over a key changed on the Account page at the next start. You can still connect keys on the Account page instead |
 | `ALPHADESK_SEMANTIC_SEARCH` | no | `off` skips the ~1.2 GB embedding model; search then matches words only. Without the `search` extra installed it is off anyway |
 | `ALPHADESK_LOGIN_EMAIL` + `ALPHADESK_LOGIN_PASSWORD_HASH` | no | with sign-in on: your own sign-in, and the only user the server accepts. With sign-in on it is required; the server will not start without it. At start the account is made, or an existing account with that email gets the password and keeps its data. While set, the password form is the only door. Make the hash with `python -m alphadesk.main hash-password`; `ALPHADESK_LOGIN_PASSWORD` (12+ characters) also works but is readable to anyone who can read the settings. The identifier is an email address |
