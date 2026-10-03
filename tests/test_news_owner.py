@@ -315,6 +315,30 @@ def test_one_symbols_news_is_its_whole_window_not_the_shared_lists_newest(client
     assert [a["article_id"] for a in older] == ["x3"]  # the next page reaches past the window
 
 
+def test_a_quiet_symbol_with_nothing_in_the_window_shows_its_newest_stories(client, store, monkeypatch):
+    """2026-10-03: SVRN's feed answered with fifty stories, all older than the
+    window, and the panel read empty. The window trims a name that has recent
+    stories; a name with none shows its newest."""
+    from datetime import datetime, timedelta, timezone
+
+    from alphadesk import identity as llm
+    from alphadesk.desk import screener
+    monkeypatch.setattr(llm, "request_user", lambda: "u1")
+    store.create_user("u1", "a@b.c", "sso-only")
+    store.set_user_key("u1", "news", "alpaca", vault.encrypt({"api_key": "k", "api_secret": "s"}), "k")
+    now = datetime.now(timezone.utc)
+    at = lambda h: (now - timedelta(hours=h)).isoformat()  # noqa: E731
+    store.save_articles([
+        {**_article("q1", "SVRN story last month", ["SVRN"]), "published_at": at(24 * 30)},
+        {**_article("q2", "SVRN story older", ["SVRN"]), "published_at": at(24 * 90)},
+    ], owner="u1")
+    monkeypatch.setattr(screener, "_since_iso", lambda: at(48))
+    from alphadesk.app import dashboard
+    monkeypatch.setattr(dashboard, "_since_iso", lambda: at(48), raising=False)
+    ids = [a["article_id"] for a in client.get("/api/news?symbol=svrn").json()["articles"]]
+    assert ids == ["q1", "q2"]
+
+
 def test_a_search_word_is_a_whole_word_so_a_ticker_finds_itself():
     """2026-09-18: "ARM" returned an arms sale and Senator Armstrong. A word
     must be whole; only a last word of five or more may stop part-way. The
