@@ -142,12 +142,21 @@ def _get(url: str, timeout: float = 15.0) -> bytes:
         raise
 
 
+_ticker_cik_retry_at = 0.0
+TICKER_MAP_RETRY_S = 60.0
+
+
 def _ticker_cik_map() -> dict[str, str]:
     """ticker -> zero-padded 10-digit CIK. One ~1MB file, cached for the
-    process lifetime — SEC updates it a few times a day at most."""
-    global _ticker_cik_cache
-    if _ticker_cik_cache is not None:
+    process lifetime — SEC updates it a few times a day at most. A FAILED
+    fetch is not remembered for the lifetime: it used to leave the map empty
+    until a restart, so every filings view stayed blank after one bad moment at
+    boot (2026-10-03). It is asked again after a minute."""
+    global _ticker_cik_cache, _ticker_cik_retry_at
+    if _ticker_cik_cache:
         return _ticker_cik_cache
+    if time.monotonic() < _ticker_cik_retry_at:
+        return {}
     import json
     try:
         data = json.loads(_get(_TICKER_MAP_URL))
@@ -157,8 +166,46 @@ def _ticker_cik_map() -> dict[str, str]:
         _ticker_title_cache.update({v["ticker"].upper(): v.get("title") for v in data.values() if v.get("title")})
     except Exception as exc:
         log.warning("EDGAR ticker map fetch failed: %s", exc)
-        _ticker_cik_cache = {}
+        _ticker_cik_retry_at = time.monotonic() + TICKER_MAP_RETRY_S
+        return {}
     return _ticker_cik_cache
+
+
+# ONE COPY OF A REGISTRANT'S DOCUMENTS (2026-10-03). The submissions list was
+# downloaded by four modules (filings, company facts, insider, the filings
+# list) and the company-facts file — megabytes for a large filer — by three,
+# each with its own cache or none, all through the one paced SEC slot. They now
+# share this: fetched once, parsed once, fresh for a few minutes, with
+# concurrent askers sharing one download. A failure is never remembered.
+_JSON_TTL_S = {"submissions": 600.0, "facts": 900.0}
+_JSON_MAX = {"submissions": 128, "facts": 4}          # facts parse to tens of megabytes each
+_json_cache: "dict[str, tuple[float, str, object]]" = {}
+_json_guard = threading.Lock()
+_json_locks: dict[str, threading.Lock] = {}
+
+
+def get_json(url: str, kind: str = "submissions", timeout: float = 15.0):
+    """The parsed JSON at `url` (a data.sec.gov document), shared across callers."""
+    import json
+    ttl = _JSON_TTL_S[kind]
+    now = time.monotonic()
+    with _json_guard:
+        hit = _json_cache.get(url)
+        if hit and now - hit[0] < ttl:
+            return hit[2]
+        lock = _json_locks.setdefault(url, threading.Lock())
+    with lock:                                       # one download for everyone asking at once
+        with _json_guard:
+            hit = _json_cache.get(url)
+            if hit and time.monotonic() - hit[0] < ttl:
+                return hit[2]
+        data = json.loads(_get(url, timeout=timeout))
+        with _json_guard:
+            _json_cache[url] = (time.monotonic(), kind, data)
+            same = [(v[0], k) for k, v in _json_cache.items() if v[1] == kind]
+            for _, k in sorted(same)[:max(0, len(same) - _JSON_MAX[kind])]:
+                _json_cache.pop(k, None)             # the oldest of this kind go first
+        return data
 
 
 def sec_ticker(symbol: str) -> str:
@@ -323,9 +370,8 @@ def filings_for_cik(cik10: str, symbol: str, forms: tuple[str, ...],
                     limit: int = 40) -> list[dict]:
     """recent_filings for a registrant named by CIK rather than ticker —
     a predecessor whose ticker has moved to its successor (below)."""
-    import json
     try:
-        data = json.loads(_get(_SUBMISSIONS_URL.format(cik10=cik10)))
+        data = get_json(_SUBMISSIONS_URL.format(cik10=cik10))
     except Exception as exc:
         log.warning("EDGAR submissions fetch failed for %s: %s", symbol, exc)
         return []
@@ -389,10 +435,9 @@ def quarterly_revenue(symbol: str) -> dict[str, float]:
     out: dict[str, float] = {}
     cik10 = cik_for(sym)
     if cik10:
-        import json
         from datetime import date
         try:
-            gaap = (json.loads(_get(_FACTS_URL.format(cik10=cik10), timeout=30.0))
+            gaap = (get_json(_FACTS_URL.format(cik10=cik10), "facts", timeout=30.0)
                     .get("facts") or {}).get("us-gaap") or {}
         except Exception as exc:
             log.warning("EDGAR company facts fetch failed for %s: %s", sym, exc)

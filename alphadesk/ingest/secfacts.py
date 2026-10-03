@@ -12,7 +12,6 @@ Same User-Agent rule as the rest of EDGAR. Cached a day per CIK.
 """
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import time
@@ -62,8 +61,9 @@ def facts(cik10: str) -> dict | None:
         if hit and time.time() - hit[0] < _TTL_S:
             return hit[1]
     out: dict | None = None
+    failed = False
     try:
-        data = json.loads(edgar._get(_URL.format(cik10=cik10), timeout=30.0))
+        data = edgar.get_json(_URL.format(cik10=cik10), "facts", timeout=30.0)
         gaap = (data.get("facts") or {}).get("us-gaap") or {}
         dei = (data.get("facts") or {}).get("dei") or {}
         items = {label: latest_annual(gaap, cs) for label, cs in CONCEPTS.items()}
@@ -86,6 +86,8 @@ def facts(cik10: str) -> dict | None:
             }
     except Exception as exc:
         log.debug("company facts failed for %s: %s", cik10, exc)
-    with _lock:
-        _cache[cik10] = (time.time(), out)
+        failed = True
+    if not failed:
+        with _lock:
+            _cache[cik10] = (time.time(), out)
     return out

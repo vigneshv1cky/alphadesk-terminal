@@ -17,7 +17,6 @@ company never tags is simply absent — the menu does not offer an empty line.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from datetime import date
@@ -172,18 +171,21 @@ def _facts(symbol: str) -> dict | None:
     if hit and time.monotonic() - hit[0] < _TTL_S:
         return hit[1]
     out: dict | None = None
+    failed = False
     cik10 = edgar.cik_for(sym)
     if cik10:
         try:
-            facts = json.loads(edgar._get(edgar._FACTS_URL.format(cik10=cik10), timeout=30.0)).get("facts") or {}
+            facts = edgar.get_json(edgar._FACTS_URL.format(cik10=cik10), "facts", timeout=30.0).get("facts") or {}
             gaap, ifrs = facts.get("us-gaap") or {}, facts.get("ifrs-full") or {}
             out = {"tags": gaap, "taxonomy": "us-gaap"} if len(gaap) >= len(ifrs) \
                 else {"tags": ifrs, "taxonomy": "ifrs-full"}
         except Exception as exc:
             log.warning("EDGAR company facts failed for %s: %s", sym, exc)
-    if len(_cache) > 512:
-        _cache.clear()
-    _cache[sym] = (time.monotonic(), out)
+            failed = True
+    if not failed:                                  # a failure is not remembered for hours (2026-10-03)
+        if len(_cache) > 512:
+            _cache.clear()
+        _cache[sym] = (time.monotonic(), out)
     return out
 
 

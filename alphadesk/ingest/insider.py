@@ -126,14 +126,13 @@ def get_insider_trades(symbol: str, limit: int = 20) -> list[dict] | None:
 
     out: list[dict] | None = None
     try:
-        import json
 
         from alphadesk.ingest import edgar
         cik10 = edgar.cik_for(sym)
         if not cik10:
             raise ValueError(f"no CIK for {sym}")
         cik_int = str(int(cik10))
-        data = json.loads(edgar._get(edgar._SUBMISSIONS_URL.format(cik10=cik10)))
+        data = edgar.get_json(edgar._SUBMISSIONS_URL.format(cik10=cik10))
         recent = (data.get("filings") or {}).get("recent") or {}
         forms = recent.get("form") or []
 

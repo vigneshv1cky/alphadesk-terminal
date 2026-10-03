@@ -48,11 +48,14 @@ def _reset_providers():
     one test's NEWS_PROVIDER can't leak into the next."""
     from alphadesk.ingest import background_fill
     from alphadesk.providers import registry
+    from alphadesk.ingest import edgar
     registry.reset_cache()
     background_fill._failed.clear()
+    edgar._json_cache.clear()
     yield
     registry.reset_cache()
     background_fill._failed.clear()
+    edgar._json_cache.clear()
 
 
 @pytest.fixture(autouse=True)

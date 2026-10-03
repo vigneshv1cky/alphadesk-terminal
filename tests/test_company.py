@@ -70,6 +70,7 @@ def test_foreign_private_issuer_flag(monkeypatch):
     monkeypatch.setattr(company.edgar, "cik_for", lambda s: "0001046179")
     monkeypatch.setattr(company.edgar, "_get", lambda url, timeout=15.0: json.dumps(payload).encode())
     assert company._edgar_facts("TSM")["foreign_private_issuer"] is True
+    company.edgar._json_cache.clear()                  # the SEC documents are shared now: one URL, one copy
     payload["filings"]["recent"]["form"] = ["10-K", "8-K"]
     assert company._edgar_facts("NVDA")["foreign_private_issuer"] is False
 

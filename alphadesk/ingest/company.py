@@ -19,7 +19,6 @@ Nothing here polls.
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 import threading
@@ -268,7 +267,7 @@ def _edgar_facts_fetch(symbol: str) -> dict | None:
     if not cik10:
         return None
     try:
-        d = json.loads(edgar._get(edgar._SUBMISSIONS_URL.format(cik10=cik10)))
+        d = edgar.get_json(edgar._SUBMISSIONS_URL.format(cik10=cik10))
     except Exception as exc:
         log.warning("EDGAR submissions fetch failed for %s: %s", symbol, exc)
         return None
