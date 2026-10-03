@@ -152,3 +152,20 @@ def test_the_news_scan_groups_by_name_and_skips_list_stories():
     assert [r["symbol"] for r in focus.scan_news(arts, kinds={"offering"})] == ["AAA"]
     assert focus.scan_news(arts, min_stories=3) == []
     assert all(r["symbol"] not in set("CDEFGHIJKL") for r in got)       # the list story names none of them
+
+
+def test_pre_trade_facts_are_plain_arithmetic():
+    from alphadesk.desk import tradecontext as tc
+    assert tc.spread(10.00, 10.10) == {"bid": 10.0, "ask": 10.1, "spread": 0.1, "spread_pct": 0.995}
+    assert tc.spread(10.1, 10.0) is None and tc.spread(None, 10) is None          # crossed or missing: no spread claimed
+    daily = [{"c": 10.0, "v": 100_000}] * 25
+    liq = tc.liquidity(daily, 10.0, today_volume=250_000)
+    assert liq["median_daily_shares"] == 100_000 and liq["median_daily_dollars"] == 1_000_000
+    assert liq["today_vs_median"] == 2.5 and liq["shares_per_1pct_of_median_day"] == 1000
+    bars = [{"c": 10, "h": 10, "l": 10, "v": 100}, {"c": 12, "h": 12, "l": 12, "v": 300}]
+    assert tc.vwap(bars) == 11.5
+    lv = tc.levels(11.0, vwap=10.0, none=None)
+    assert lv == {"vwap": {"price": 10.0, "last_vs_level_pct": 10.0}}
+    assert tc.size_for(20.0, 100, 5) == {"risk_dollars": 100, "stop_distance_pct": 5, "loss_per_share": 1.0,
+                                         "shares": 100, "position_dollars": 2000.0}
+    assert tc.size_for(20.0, 0, 5) is None and tc.size_for(None, 100, 5) is None

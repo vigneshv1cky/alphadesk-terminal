@@ -1262,6 +1262,99 @@ def news_scan(hours: int = 18, kinds: str = "", min_stories: int = 1, limit: int
 
 
 @mcp.tool(annotations=READ_ONLY)
+def entry_facts(symbol: str, risk_dollars: float = 0.0, stop_pct: float = 0.0) -> dict:
+    """THE FACTS BEFORE ENTERING A POSITION, for "can we get in, and what would
+    we be walking into": whether the symbol can be traded or sold short at the
+    reader's broker (where Alpaca is connected), the quoted spread and size,
+    how much really trades (median daily shares and dollars, today against
+    that, the shares that equal 1% of a normal day), the day's levels — previous
+    close, open, high, low, volume-weighted average price, 20-day high and low —
+    with the last price's distance from each, the typical daily range in percent
+    and dollars, halts today, short interest and days to cover, float and shares
+    outstanding, the next report, and offering, stake and material filings in
+    the last seven days. `risks` lists those last items as plain facts.
+
+    `risk_dollars` with `stop_pct` (both yours to choose) returns the share
+    count at which a move of `stop_pct` costs `risk_dollars`, and the position's
+    dollar size — arithmetic on your two numbers, not a suggestion of either.
+
+    READ-ONLY. NO ORDER IS PLACED, no entry, exit or target is proposed, and no
+    verdict is returned. `unavailable` names any source that could not be read;
+    a missing field is null, never guessed. Prices are the reader's vendor's,
+    and a spread outside the regular session is not a spread you could rely on."""
+    from datetime import timedelta
+    from alphadesk.app import dashboard
+    from alphadesk.config import now_et
+    from alphadesk.desk import movestate, sessions as cal, tradecontext as tc
+    from alphadesk.ingest import analysts, edgar, edgar_feed, earnings_record, keystats
+    from alphadesk.providers import get_prices
+    sym = _symbol(symbol)
+    unavailable: dict[str, str] = {}
+
+    def attempt(name, fn, default=None):
+        try:
+            return fn()
+        except Exception as exc:
+            unavailable[name] = str(exc)[:140]
+            return default
+
+    now = now_et()
+    quote = attempt("quote", lambda: _http_errors(dashboard.api_quotes, symbols=sym, fill="range,cap").get("quotes", {}).get(sym)) or {}
+    last = quote.get("price")
+    daily = attempt("daily_bars", lambda: _http_errors(dashboard.api_chart, sym, range="3M").get("bars") or [], [])
+    done = [b for b in daily if str(b["t"])[:10] < now.date().isoformat()] if cal.latest_session(now) == now.date() else daily
+    series = attempt("intraday_bars", lambda: get_prices().chart_series(sym, days=2) or {}, {})
+    _day, session_bars = movestate.latest_session(series.get("bars") or [])
+    ctx = movestate.daily_context(daily, _day)
+    rng_pct = ctx["typical_daily_range_pct"]
+    asset = attempt("broker_asset", lambda: get_prices().get("asset_info", sym))
+    halts = attempt("halts", lambda: get_prices().ask("trading_halts", limit=100, surface="trading_halts") or [], [])
+    halted_today = [h for h in halts if str(h.get("symbol") or "").upper() == sym
+                    and str(h.get("halted_at") or "")[:10] >= cal.latest_session(now).isoformat()]
+    stats = attempt("key_stats", lambda: keystats.key_stats(sym)) or {}
+    short = (attempt("short_interest", lambda: analysts.analyst_view(sym)) or {}).get("short_interest") or {}
+    shares = attempt("shares_outstanding", lambda: edgar.shares_outstanding(sym))
+    reports = (attempt("report_dates", lambda: earnings_record.history(sym)) or {}).get("reports") or []
+    nxt = next((r for r in sorted(reports, key=lambda r: str(r.get("date"))) if r.get("upcoming")), None)
+    feed = attempt("filings", lambda: edgar_feed.recent(groups=["events", "stakes", "offerings"], limit=200, symbol=sym), {}) or {}
+    week = (now - timedelta(days=7)).date().isoformat()
+    recent = [f for f in feed.get("filings") or [] if str(f.get("filed_at") or "")[:10] >= week]
+    risks = []
+    if halted_today:
+        risks.append({"kind": "halted_today", "detail": f"{len(halted_today)} halt(s), code {halted_today[-1].get('reason_code')}"})
+    if nxt:
+        risks.append({"kind": "report_ahead", "detail": f"next report {str(nxt.get('date'))[:10]}"})
+    for f in recent:
+        form = str(f.get("form") or "")
+        kind = ("offering_filing" if form.startswith(("424B", "S-1", "S-3", "F-1", "F-3")) else
+                "stake_filing" if form.startswith(("SCHEDULE 13", "SC 13", "SC TO")) else
+                "material_8k" if form.startswith("8-K") else None)
+        if kind:
+            risks.append({"kind": kind, "detail": f"{form} {str(f.get('filed_at'))[:16]}"})
+    if asset and asset.get("tradable") is False:
+        risks.append({"kind": "not_tradable_at_broker", "detail": "the broker lists it as not tradable"})
+    return {
+        "symbol": sym, "as_of": now.isoformat(timespec="minutes"),
+        "market": {"open_now": bool(cal.is_session(now.date()) and cal.OPEN <= now.time() < cal.CLOSE),
+                   "latest_session": cal.latest_session(now).isoformat(),
+                   "next_session": cal.upcoming_session(now).isoformat()},
+        "broker": asset, "price": last, "quote": tc.spread(quote.get("bid"), quote.get("ask")) and
+        {**tc.spread(quote.get("bid"), quote.get("ask")), "bid_size": quote.get("bid_size"), "ask_size": quote.get("ask_size")},
+        "liquidity": tc.liquidity(done, last, quote.get("volume")),
+        "levels": tc.levels(last, previous_close=quote.get("previous_close") or ctx["prev_close"], day_open=quote.get("open"),
+                            day_high=quote.get("day_high"), day_low=quote.get("day_low"),
+                            vwap=tc.vwap(session_bars), high_20d=ctx["high_20d"], low_20d=ctx["low_20d"]),
+        "typical_daily_range": {"pct": rng_pct, "dollars": round(last * rng_pct / 100, 4) if last and rng_pct else None},
+        "short_interest": {k: short.get(k) for k in ("shares_short", "days_to_cover", "pct_float", "float_shares", "as_of")} if short else None,
+        "shares": {"outstanding_vendor": stats.get("shares_outstanding"), "float": stats.get("float_shares"),
+                   "market_cap": stats.get("market_cap"), "outstanding_sec": shares},
+        "risks": risks,
+        "sizing": tc.size_for(last, float(risk_dollars or 0) or None, float(stop_pct or 0) or None),
+        "unavailable": unavailable,
+    }
+
+
+@mcp.tool(annotations=READ_ONLY)
 def priced_in(symbol: str, since: str = "") -> dict:
     """THE FIGURES BEHIND "IS IT ALREADY PRICED IN" for one symbol. Whether a
     move is priced in is a judgement about expectations that no data feed

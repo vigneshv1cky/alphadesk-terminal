@@ -588,6 +588,20 @@ class AlpacaPrices:
         self._assets[sym] = (time.time(), a)
         return a
 
+    def asset_info(self, symbol: str) -> dict | None:
+        """What the broker says about trading this symbol — a read of its asset
+        record, never an order (2026-10-03)."""
+        a = self.asset(symbol)
+        if a is None:
+            return None
+        exch = getattr(getattr(a, "exchange", None), "value", None) or getattr(a, "exchange", None)
+        status = getattr(getattr(a, "status", None), "value", None) or getattr(a, "status", None)
+        return {"symbol": symbol.upper(), "name": getattr(a, "name", None), "exchange": exch,
+                "status": status, "tradable": getattr(a, "tradable", None),
+                "shortable": getattr(a, "shortable", None), "easy_to_borrow": getattr(a, "easy_to_borrow", None),
+                "marginable": getattr(a, "marginable", None), "fractionable": getattr(a, "fractionable", None),
+                "vendor": self.name}
+
     # ── bars ───────────────────────────────────────────────────────────────
 
     _INTERVALS: dict[str, dict] = {
