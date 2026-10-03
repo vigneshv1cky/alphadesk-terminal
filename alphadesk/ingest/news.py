@@ -354,7 +354,7 @@ def older_articles(user_id: str, before: str, limit: int = 100, query: str = "")
     (Alpaca) are asked for the week before `before`, the answer stored as
     theirs, and the page read again."""
     owner = news_owner(user_id)
-    rows = store.articles_before(owner, before, limit, query)
+    rows = store.articles_before(owner, before, limit, query, body=False)
     if len(rows) >= limit or query:
         return rows
     try:
@@ -379,7 +379,7 @@ def older_articles(user_id: str, before: str, limit: int = 100, query: str = "")
     merged = _merge_feeds(batches)
     if merged:
         store.save_articles(merged, owner=owner)
-        rows = store.articles_before(owner, before, limit, query)
+        rows = store.articles_before(owner, before, limit, query, body=False)
     return rows
 
 
@@ -401,7 +401,7 @@ def symbol_articles(user_id: str, symbol: str, before: str | None, limit: int) -
     made once per ten minutes per symbol and page edge; any failure leaves
     the stored page as it was."""
     owner = news_owner(user_id)
-    rows = store.articles_for_symbol(owner, symbol, before, limit)
+    rows = store.articles_for_symbol(owner, symbol, before, limit, body=False)
     if len(rows) >= limit:
         return rows
     key = (user_id, symbol, before or "")
@@ -436,7 +436,7 @@ def symbol_articles(user_id: str, symbol: str, before: str | None, limit: int) -
     merged = _merge_feeds(batches)
     if merged:
         store.save_articles(merged, owner=owner)
-        rows = store.articles_for_symbol(owner, symbol, before, limit)
+        rows = store.articles_for_symbol(owner, symbol, before, limit, body=False)
     return rows
 
 

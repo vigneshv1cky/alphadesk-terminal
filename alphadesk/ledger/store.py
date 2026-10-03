@@ -807,7 +807,22 @@ def feed_counts(owner: str, since_iso: str) -> dict[str, int]:
     return out
 
 
-def recent_articles(since_iso: str, limit: int = 400, owner: str = "") -> list[dict]:
+def _body_cols(body: bool) -> str:
+    """The article text column — or only whether there IS text. Lists show a
+    headline and a "full text" mark; they never show the text, which is
+    kilobytes a story that were read, sorted, decoded and thrown away on every
+    rail, news list and market-today call (2026-10-03). Only `article` and the
+    story reader need the text."""
+    return "body" if body else "(CASE WHEN body IS NULL OR body = '' THEN 0 ELSE 1 END) AS has_body"
+
+
+def _flag_body(d: dict) -> dict:
+    if "has_body" in d:
+        d["has_body"] = bool(d["has_body"])
+    return d
+
+
+def recent_articles(since_iso: str, limit: int = 400, owner: str = "", body: bool = True) -> list[dict]:
     """The window's articles as ARTICLES — one row per story, newest first,
     with the full ticker list decoded. The per-ticker view below fans a story
     out under every symbol it names, which is right for the screener's context
@@ -816,14 +831,14 @@ def recent_articles(since_iso: str, limit: int = 400, owner: str = "") -> list[d
     with _connect() as conn:
         rows = conn.execute(
             "SELECT article_id, title, summary, source, url, published_at, tickers,"
-            "  image_url, author, body, feeds"
+            f"  image_url, author, {_body_cols(body)}, feeds"
             " FROM news_articles WHERE owner = ? AND published_at >= ?"
             " ORDER BY published_at DESC LIMIT ?",
             (owner, since_iso, int(limit))
         ).fetchall()
     out = []
     for r in rows:
-        d = dict(r)
+        d = _flag_body(dict(r))
         # Stories stored before headlines were decoded at ingest read "&#39;".
         d["title"], d["summary"] = unescape(d.get("title") or ""), unescape(d.get("summary") or "")
         d["tickers"] = sorted({str(t).upper() for t in json.loads(d.pop("tickers") or "[]")})
@@ -877,7 +892,7 @@ def matches_query(query: str, *fields: str | None) -> bool:
     return matches(query, *fields)
 
 
-def articles_before(owner: str, before_iso: str, limit: int = 100, query: str = "") -> list[dict]:
+def articles_before(owner: str, before_iso: str, limit: int = 100, query: str = "", body: bool = True) -> list[dict]:
     """A page of `owner`'s stories published before `before_iso`, newest
     first, in recent_articles' shape; with `query`, only those matching it
     word by word (see matches_query) in headline, summary, tickers or source.
@@ -890,7 +905,7 @@ def articles_before(owner: str, before_iso: str, limit: int = 100, query: str = 
     Doing it in SQL would need a regular expression, which SQLite and
     Postgres spell differently; this store speaks the dialect they share."""
     sql = ("SELECT article_id, title, summary, source, url, published_at, tickers,"
-           "  image_url, author, body, feeds"
+           f"  image_url, author, {_body_cols(body)}, feeds"
            " FROM news_articles WHERE owner = ? AND published_at < ?")
     from alphadesk.newsquery import expand, matches, stem
     q = (query or "").strip()
@@ -927,7 +942,7 @@ def articles_before(owner: str, before_iso: str, limit: int = 100, query: str = 
         if not rows:
             break
         for r in rows:
-            d = dict(r)
+            d = _flag_body(dict(r))
             # Stories stored before headlines were decoded at ingest read "&#39;".
             d["title"], d["summary"] = unescape(d.get("title") or ""), unescape(d.get("summary") or "")
             d["tickers"] = sorted({str(t).upper() for t in json.loads(d.pop("tickers") or "[]")})
@@ -946,7 +961,7 @@ def articles_before(owner: str, before_iso: str, limit: int = 100, query: str = 
 
 
 def articles_for_symbol(owner: str, symbol: str, before_iso: str | None = None,
-                        limit: int = 10) -> list[dict]:
+                        limit: int = 10, body: bool = True) -> list[dict]:
     """One symbol's stored stories, newest first, in recent_articles' shape —
     only those whose ticker list names it, optionally published before
     `before_iso` (the next page). The ticker match is done in SQL for the
@@ -957,7 +972,7 @@ def articles_for_symbol(owner: str, symbol: str, before_iso: str | None = None,
         return []
     pattern = '%"' + sym.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + '"%'
     sql = ("SELECT article_id, title, summary, source, url, published_at, tickers,"
-           "  image_url, author, body, feeds"
+           f"  image_url, author, {_body_cols(body)}, feeds"
            " FROM news_articles WHERE owner = ? AND upper(tickers) LIKE ? ESCAPE '\\'")
     args: list = [owner, pattern]
     if before_iso:
@@ -969,7 +984,7 @@ def articles_for_symbol(owner: str, symbol: str, before_iso: str | None = None,
         rows = conn.execute(sql, args).fetchall()
     out = []
     for r in rows:
-        d = dict(r)
+        d = _flag_body(dict(r))
         tickers = sorted({str(t).upper() for t in json.loads(d.pop("tickers") or "[]")})
         if sym not in tickers:
             continue

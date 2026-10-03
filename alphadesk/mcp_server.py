@@ -480,7 +480,7 @@ def symbol_news(symbol: str, limit: int = 10, before: str = "") -> dict:
     if not uid or not store.get_user_keys(uid, "news"):
         raise NeedsKey("news", [], signed_in=bool(uid))
     size = max(1, min(int(limit), 50))
-    rows = store.articles_for_symbol(news_owner(uid), sym, (before or "").strip() or None, size + 1)
+    rows = store.articles_for_symbol(news_owner(uid), sym, (before or "").strip() or None, size + 1, body=False)
     page = rows[:size]
     articles = []
     for a in page:
@@ -502,7 +502,7 @@ def symbol_news(symbol: str, limit: int = 10, before: str = "") -> dict:
                          "summary": summary, "tickers": a["tickers"],
                          # The reader's feed already has the story's text: read
                          # it with news_story rather than fetching the page.
-                         "full_text": bool(a.get("body"))})
+                         "full_text": bool(a.get("has_body") or a.get("body"))})
     return {
         "symbol": sym,
         # The company's own name, so a subject search is one step away rather
@@ -565,7 +565,7 @@ def news_search(query: str, limit: int = 10, before: str = "") -> dict:
         raise NeedsKey("news", [], signed_in=bool(uid))
     size = max(1, min(int(limit), 50))
     edge = (before or "").strip() or "9999-12-31T00:00:00+00:00"
-    rows = store.articles_before(news_owner(uid), edge, size + 1, q)
+    rows = store.articles_before(news_owner(uid), edge, size + 1, q, body=False)
     more = len(rows) > size
     # And stories related in MEANING, marked match "related" (2026-09-19):
     # the model reads meaning, so "chip export curbs" also finds
@@ -585,7 +585,7 @@ def news_search(query: str, limit: int = 10, before: str = "") -> dict:
                          "kind": newskind.of_article(a),
                          "published_at": a.get("published_at"),
                          "summary": summary, "tickers": a["tickers"],
-                         "full_text": bool(a.get("body")),
+                         "full_text": bool(a.get("has_body") or a.get("body")),
                          "match": a.get("why") or "words"})
     return {
         "query": q,

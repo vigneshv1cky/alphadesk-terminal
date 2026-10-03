@@ -46,3 +46,26 @@ def test_a_repeated_query_is_embedded_once(monkeypatch):
     assert semantic.embed_query("rates") == [1.0, 2.0]
     semantic.embed_query("oil")
     assert calls == ["rates", "oil"]
+
+
+def test_news_lists_can_skip_the_article_text(store):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    uid = uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    store.save_articles([
+        {"id": "with", "title": "has text", "url": "https://x/1", "published_at": now.isoformat(),
+         "tickers": ["AAPL"], "body": "a long story " * 50, "feeds": ["alpaca"]},
+        {"id": "without", "title": "no text", "url": "https://x/2", "published_at": (now - timedelta(minutes=1)).isoformat(),
+         "tickers": ["AAPL"], "feeds": ["alpaca"]},
+    ], owner=uid)
+    since = (now - timedelta(days=1)).isoformat()
+    full = {a["article_id"]: a for a in store.recent_articles(since, owner=uid)}
+    assert full["with"]["body"].startswith("a long story")
+    light = {a["article_id"]: a for a in store.recent_articles(since, owner=uid, body=False)}
+    assert "body" not in light["with"] and light["with"]["has_body"] is True and light["without"]["has_body"] is False
+    sym = {a["article_id"]: a for a in store.articles_for_symbol(uid, "AAPL", limit=10, body=False)}
+    assert sym["with"]["has_body"] is True and "body" not in sym["with"]
+    older = {a["article_id"]: a for a in store.articles_before(uid, (now + timedelta(days=1)).isoformat(), 10, body=False)}
+    assert older["without"]["has_body"] is False

@@ -75,7 +75,7 @@ def _news(top: int, since_iso: str) -> dict:
     uid = request_user()
     if not uid or not store.get_user_keys(uid, "news"):
         raise NeedsKey("news", [], signed_in=bool(uid))
-    articles = store.recent_articles(since_iso, limit=2000, owner=news_owner(uid))
+    articles = store.recent_articles(since_iso, limit=2000, owner=news_owner(uid), body=False)
     counts: Counter[str] = Counter()
     newest: dict[str, dict] = {}
     for a in articles:                       # newest first

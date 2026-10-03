@@ -456,7 +456,7 @@ def api_rail(symbols: str = ""):
             with_news, calls = held[1] if held else (0, None)
     stories = []
     if wanted:
-        for a in store.recent_articles(screener._since_iso(), limit=300, owner=owner):
+        for a in store.recent_articles(screener._since_iso(), limit=300, owner=owner, body=False):
             tickers = [t.upper() for t in (a.get("tickers") or [])]
             if wanted.isdisjoint(tickers):
                 continue
@@ -481,7 +481,7 @@ def api_news_related(q: str = "", limit: int = 60):
     rows = semantic.related_articles(news_owner(uid), (q or "")[:200], since=_since_iso(),
                                      limit=max(1, min(int(limit), semantic.MAX_RELATED)))
     for a in rows:
-        a["has_body"] = bool(a.pop("body", None))
+        a["has_body"] = bool(a.pop("has_body", None) or a.pop("body", None))
     return {"articles": rows, "ready": semantic.ready()}
 
 
@@ -513,9 +513,9 @@ def api_news(limit: int = 300, before: str | None = None, q: str | None = None, 
         # `before` a page of older stories, filtered by that one rule.
         from alphadesk import cryptonews
         if before:
-            pool = store.articles_before(news_owner(uid), before, limit=500)
+            pool = store.articles_before(news_owner(uid), before, limit=500, body=False)
         else:
-            pool = store.recent_articles(_since_iso(), limit=8000, owner=news_owner(uid))
+            pool = store.recent_articles(_since_iso(), limit=8000, owner=news_owner(uid), body=False)
         articles = cryptonews.select(pool, min(limit, 300))
     elif sym and not q:
         # ONE symbol's stories (2026-09-18). The symbol panel used to filter
@@ -564,12 +564,12 @@ def api_news(limit: int = 300, before: str | None = None, q: str | None = None, 
                                             exclude={a["article_id"] for a in articles})
             articles = semantic.merge(articles, rel, size + len(rel))
     else:
-        articles = store.recent_articles(_since_iso(), limit=limit, owner=news_owner(uid))
+        articles = store.recent_articles(_since_iso(), limit=limit, owner=news_owner(uid), body=False)
     for a in articles:
         # The list carries no article text (2026-09-15): with Benzinga's full
         # stories stored, 300 of them ran to ~1.5MB on a poll every minute.
         # The reader fetches a story's text when it opens (/story).
-        a["has_body"] = bool(a.pop("body", None))
+        a["has_body"] = bool(a.pop("has_body", None) or a.pop("body", None))
     return {"articles": articles}
 
 
