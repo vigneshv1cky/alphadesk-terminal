@@ -194,3 +194,27 @@ def test_a_missing_extension_does_not_break_start_up(store, monkeypatch):
     monkeypatch.setattr(db, "backend", lambda: "postgres")
     monkeypatch.setattr(store, "_connect", lambda: Conn())
     assert store.ensure_search_indexes() == 0                        # logged, not raised
+
+
+def test_a_postgres_url_without_a_user_connects_as_the_os_user(monkeypatch):
+    """A Homebrew Postgres has your login as its superuser and no role called postgres."""
+    import sys
+    import types
+
+    from alphadesk.ledger import db
+    seen = {}
+    fake = types.ModuleType("pg8000.dbapi")
+    fake.connect = lambda **kw: seen.update(kw) or object()
+    monkeypatch.setitem(sys.modules, "pg8000.dbapi", fake)
+    monkeypatch.setattr(db, "_PgConn", lambda raw: raw)
+    monkeypatch.setenv("ALPHADESK_DATABASE_URL", "postgresql://localhost:5432/alphadesk")
+    monkeypatch.delenv("PGUSER", raising=False)
+    monkeypatch.setenv("USER", "someone")
+    db._pg_connect()
+    assert seen["user"] == "someone" and seen["database"] == "alphadesk" and seen["port"] == 5432
+    monkeypatch.setenv("PGUSER", "pguser")
+    db._pg_connect()
+    assert seen["user"] == "pguser"
+    monkeypatch.setenv("ALPHADESK_DATABASE_URL", "postgresql://named@localhost/alphadesk")
+    db._pg_connect()
+    assert seen["user"] == "named"                                   # a user in the URL always wins

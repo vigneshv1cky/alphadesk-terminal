@@ -144,8 +144,11 @@ def _pg_connect() -> _PgConn:
     import pg8000.dbapi
     u = urlparse(url() or "")
     kwargs: dict[str, Any] = {
-        "user": u.username or "postgres",
-        "password": u.password,
+        # The role the URL names; else what Postgres's own tools default to — the
+        # PGUSER setting, then the operating-system user (a Homebrew Postgres has
+        # that user as its superuser and NO role called "postgres"; 2026-10-03).
+        "user": u.username or os.environ.get("PGUSER") or os.environ.get("USER") or "postgres",
+        "password": u.password or os.environ.get("PGPASSWORD"),
         "database": (u.path or "/").lstrip("/") or "postgres",
     }
     sock_dir = _qs(u.query, "host")
