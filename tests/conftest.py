@@ -52,7 +52,10 @@ def _reset_providers():
     registry.reset_cache()
     background_fill._failed.clear()
     edgar._json_cache.clear()
+    from alphadesk.desk import memo
+    memo.clear()
     yield
+    memo.clear()
     registry.reset_cache()
     background_fill._failed.clear()
     edgar._json_cache.clear()

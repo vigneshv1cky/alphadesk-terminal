@@ -70,7 +70,16 @@ def _owner() -> str:
     return news_owner(request_user())
 
 
+INVENTORY_KEEP_S = 20.0
+
+
 def inventory() -> list[dict]:
+    """The window's inventory (below), remembered for a few seconds per reader."""
+    from alphadesk.desk import memo
+    return memo.cached(("inventory", _owner()), INVENTORY_KEEP_S, _build_inventory)
+
+
+def _build_inventory() -> list[dict]:
     """Everything in the window, UNRANKED and alphabetical. Each entry:
     {symbol, report_date, session, article_count,
      headlines: [{title, url, source, published_at}]}

@@ -69,3 +69,47 @@ def test_news_lists_can_skip_the_article_text(store):
     assert sym["with"]["has_body"] is True and "body" not in sym["with"]
     older = {a["article_id"]: a for a in store.articles_before(uid, (now + timedelta(days=1)).isoformat(), 10, body=False)}
     assert older["without"]["has_body"] is False
+
+
+def test_a_composite_read_is_remembered_and_shared(monkeypatch):
+    import threading
+    import time
+
+    from alphadesk.desk import memo
+    memo.clear()
+    built = []
+
+    def slow():
+        built.append(1)
+        time.sleep(0.05)
+        return {"n": len(built)}
+
+    out = []
+    ts = [threading.Thread(target=lambda: out.append(memo.cached(("k",), 5.0, slow))) for _ in range(4)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert len(built) == 1 and all(o == {"n": 1} for o in out)
+    assert memo.cached(("k",), 5.0, slow) == {"n": 1}
+    assert memo.cached(("k",), 0.0, slow) == {"n": 2}                  # expired: rebuilt
+    memo.clear()
+
+
+def test_a_failed_rebuild_is_not_remembered():
+    import pytest
+
+    from alphadesk.desk import memo
+    memo.clear()
+    state = {"n": 0}
+
+    def flaky():
+        state["n"] += 1
+        if state["n"] == 1:
+            raise RuntimeError("down")
+        return "fine"
+
+    with pytest.raises(RuntimeError):
+        memo.cached(("f",), 5.0, flaky)
+    assert memo.cached(("f",), 5.0, flaky) == "fine"
+    memo.clear()

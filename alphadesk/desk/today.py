@@ -123,12 +123,23 @@ def _economic(today: str) -> list[dict]:
     return [_pick(r, keys) for r in rows[:MAX_ECONOMIC]]
 
 
+TODAY_KEEP_S = 20.0
+
+
 def market_today(top: int = TOP) -> dict:
-    """Today's market facts for the calling reader. See the module docstring."""
+    """Today's market facts for the calling reader, remembered for a few
+    seconds per reader (the page, an agent and the prewarm replay all ask within
+    the same minute). See the module docstring."""
+    from alphadesk.desk import memo
+    from alphadesk.identity import request_user
+    top = max(1, min(int(top), 25))
+    return memo.cached(("market_today", request_user(), top), TODAY_KEEP_S, lambda: _build_market_today(top))
+
+
+def _build_market_today(top: int) -> dict:
     from alphadesk.config import ET, now_et
     from alphadesk.providers.base import NeedsKey
 
-    top = max(1, min(int(top), 25))
     now = now_et()
     today = now.date().isoformat()
     since = datetime.combine(now.date(), dtime.min, tzinfo=ET).isoformat()
