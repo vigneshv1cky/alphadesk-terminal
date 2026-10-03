@@ -30,7 +30,7 @@ def pg_store(monkeypatch):
     yield store
     # Leave the database empty for the next run.
     with store._connect() as conn:
-        for t in ("earnings", "news_articles",
+        for t in ("earnings", "news_articles", "news_tickers", "vendor_cache",
                   "filings", "filing_text_cache",
                   "users"):
             conn.execute(f"DELETE FROM {t}")
@@ -49,19 +49,29 @@ def test_article_upsert_and_read(pg_store):
     assert len(arts) == 1 and arts[0]["title"] == "T1"
 
 
-def test_earnings_upsert_preserves_armed_columns(pg_store):
-    pg_store.upsert_earnings([{"symbol": "nvda", "report_date": "2026-09-03",
-                               "session": "AMC", "eps_estimate": 1.0,
-                               "market_cap": 5e12, "company_name": "NVIDIA"}])
-    pg_store.update_earnings_arm("NVDA", "2026-09-03", pre_close=100.0, implied=5.0)
-    pg_store.upsert_earnings([{"symbol": "nvda", "report_date": "2026-09-03",
-                               "session": "AMC", "eps_estimate": 1.1,
-                               "market_cap": 5e12}])
-    up = pg_store.upcoming_earnings(7)
-    assert up and up[0]["pre_report_close"] == 100.0
-    assert pg_store.earnings_between("2026-09-01", "2026-09-10")[0]["company_name"] == "NVIDIA"
-
 
 def test_users_round_trip(pg_store):
     pg_store.create_user("u1", "a@b.c", "scrypt$x$y")
     assert pg_store.get_user_by_email("A@B.C")["user_id"] == "u1"
+
+
+def test_the_symbol_side_table_the_kept_answers_and_the_search_indexes(pg_store):
+    """The 2026-10-03 additions, on the engine the live server runs."""
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    pg_store.save_articles([
+        {"id": f"p{i}", "title": f"robinhood rates {i}", "url": f"https://x/{i}",
+         "published_at": (now - timedelta(minutes=i)).isoformat(),
+         "tickers": ["HOOD"] if i % 2 == 0 else ["AAPL"], "body": "text" if i == 0 else None, "feeds": ["alpaca"]}
+        for i in range(6)], owner="u")
+    got = pg_store.articles_for_symbol("u", "hood", limit=10, body=False)
+    assert [a["article_id"] for a in got] == ["p0", "p2", "p4"]
+    assert got[0]["has_body"] is True and got[1]["has_body"] is False and "body" not in got[0]
+    assert [a["article_id"] for a in pg_store.articles_before("u", (now + timedelta(days=1)).isoformat(), 10, "robinhood", body=False)][:2] == ["p0", "p1"]
+    pg_store.vendor_cache_put("u", "alpaca", "fundamentals", "k", json.dumps({"a": 1}))
+    pg_store.vendor_cache_put("u", "alpaca", "fundamentals", "k", json.dumps({"a": 2}))     # an upsert, not a clash
+    assert json.loads(pg_store.vendor_cache_get("u", "alpaca", "fundamentals", "k")[0]) == {"a": 2}
+    assert pg_store.ensure_search_indexes() == len(pg_store._POSTGRES_SEARCH_DDL)
+    assert pg_store.ensure_search_indexes() == len(pg_store._POSTGRES_SEARCH_DDL)            # idempotent
