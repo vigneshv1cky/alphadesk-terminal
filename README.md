@@ -76,6 +76,19 @@ ALPHADESK_CONTACT_EMAIL=you@example.com docker compose up -d
 ```
 
 The first start does the same setup inside a data volume and keeps it there.
+**Reachable from other machines?** Sign-in is off in this mode, so anyone who
+can reach the port can use it and read your connected vendors. Keep it on
+`127.0.0.1`, or set an access token — the browser then asks for it once, and
+agents keep using the tokens you make on **Agent access**:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(24))"
+```
+
+Put the result in `~/.alphadesk/.env` as `ALPHADESK_ACCESS_TOKEN=...` (with
+Docker, pass it as an environment variable) and restart. Over the internet,
+put HTTPS in front of it.
+
 Other ways to run it, serving other people, and every setting are under
 [Two ways to run it](#two-ways-to-run-it) and
 [Configuration reference](#configuration-reference).
@@ -162,6 +175,7 @@ cp alphadesk/deploy/env.example .env
 | `ALPHADESK_VAULT_KEY` | yes | 32 random bytes, base64 — seals stored vendor keys; keep a copy, losing it makes them unreadable |
 | `SEC_USER_AGENT` | yes | `AlphaDesk (you@example.com)` — a name and a real email |
 | `ALPHADESK_AUTH` | for one person | `off`: a single local account with no sign-in |
+| `ALPHADESK_ACCESS_TOKEN` | if reachable beyond your machine | with sign-in off, one shared secret (16+ characters) the browser asks for once; see Quick start |
 | `ALPHADESK_DATABASE_URL` | no | a `postgres://` URL; unset, SQLite in `ALPHADESK_DATA` (`~/.alphadesk`) |
 | `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys; sealed into the local account with `python -m alphadesk.main keys import-env` (or connect them on the Account page instead) |
 | `ALPHADESK_SEMANTIC_SEARCH` | no | `off` skips the ~1.2 GB embedding model; search then matches words only |
@@ -628,6 +642,7 @@ required.
 | `ALPHADESK_DATABASE_URL` | Postgres connection string; unset uses SQLite in `ALPHADESK_DATA` |
 | `ALPHADESK_DATA` | Data directory for SQLite (default `~/.alphadesk`) |
 | `ALPHADESK_AUTH` | `off` for a single local account without sign-in |
+| `ALPHADESK_ACCESS_TOKEN` | with sign-in off, a shared secret (16+ characters) that guards the browser; ignored where accounts gate |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in (likewise `GITHUB_…`, `MICROSOFT_…`) |
 | `ALPHADESK_BASE_URL` | Public URL; OAuth redirects and the agent host allowlist depend on it |
 | `ALPHADESK_SECRET` | Session signing secret |

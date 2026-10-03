@@ -79,7 +79,7 @@ const OAUTH_ERRORS: Record<string, string> = {
 /** The sign-in for an instance with no SSO provider configured — local
  * testing with sign-in on, or the live break-glass when every provider's
  * settings are removed. Accounts there are created by the operator. */
-function PasswordForm({ onSignedIn }: { onSignedIn: () => void }) {
+function PasswordForm({ onSignedIn, tokenMode = false }: { onSignedIn: () => void; tokenMode?: boolean }) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [busy, setBusy] = useState(false)
@@ -90,7 +90,8 @@ function PasswordForm({ onSignedIn }: { onSignedIn: () => void }) {
     setBusy(true)
     setError(null)
     try {
-      await api.login(email, password)
+      if (tokenMode) await api.tokenLogin(password)
+      else await api.login(email, password)
       // The SSO callback redirects server-side; this route answers JSON, so
       // the same landing has to happen here or a password instance would
       // stay on the front page looking at "Open your terminal".
@@ -105,16 +106,23 @@ function PasswordForm({ onSignedIn }: { onSignedIn: () => void }) {
   const field = cn(fieldCls, "h-[44px] w-full rounded-md border-foreground/30 bg-transparent")
   return (
     <form onSubmit={e => void submit(e)} className="flex flex-col gap-3">
-      <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email"
-             aria-label="Email" autoComplete="email" required className={field} />
-      <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password"
-             aria-label="Password" autoComplete="current-password" required className={field} />
+      {!tokenMode && (
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email"
+               aria-label="Email" autoComplete="email" required className={field} />
+      )}
+      <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+             placeholder={tokenMode ? "Access token" : "Password"}
+             aria-label={tokenMode ? "Access token" : "Password"}
+             autoComplete={tokenMode ? "off" : "current-password"} required className={field} />
       {error && <p className="text-caption text-loss">{error}</p>}
       <button type="submit" disabled={busy}
               className={btnCls({ size: "lg" }, "h-[52px] rounded-md border-0 bg-foreground text-body font-extrabold uppercase tracking-caps text-background hover:bg-foreground/85 hover:text-background")}>
         {busy ? "Signing in…" : "Sign in"}
       </button>
-      <p className="text-caption text-muted-foreground">Accounts on this instance are created by its operator.</p>
+      <p className="text-caption text-muted-foreground">
+        {tokenMode ? "This server asks for the access token its operator set."
+          : "Accounts on this instance are created by its operator."}
+      </p>
     </form>
   )
 }
@@ -158,9 +166,11 @@ const Legal = ({ className = "" }: { className?: string }) => (
   </>
 )
 
-export function LandingPage({ providers, signedIn = false, onPasswordSignIn }: {
+export function LandingPage({ providers, signedIn = false, onPasswordSignIn, tokenMode = false }: {
   providers: Provider[]
   signedIn?: boolean
+  /** The instance is guarded by one shared access token: the form asks for it alone. */
+  tokenMode?: boolean
   /** Set when this instance signs in by password (no SSO provider): the
    * hero shows the form, and this runs once it succeeds. */
   onPasswordSignIn?: () => void
@@ -200,7 +210,7 @@ export function LandingPage({ providers, signedIn = false, onPasswordSignIn }: {
           </div>
           <div id="signin" className="w-full shrink-0 lg:w-[360px]">
             {onPasswordSignIn && !signedIn
-              ? <PasswordForm onSignedIn={onPasswordSignIn} />
+              ? <PasswordForm onSignedIn={onPasswordSignIn} tokenMode={tokenMode} />
               : <SignIn providers={providers} signedIn={signedIn} />}
             {error && <p className="mt-3 text-caption text-loss">{error}</p>}
             <p className="mt-3 text-caption leading-[1.5] text-muted-foreground">

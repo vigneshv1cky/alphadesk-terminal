@@ -386,7 +386,7 @@ _PAGE_HEADERS = {
 def _reader(request: Request) -> tuple[str, str] | None:
     """(user id, how to name them) for the browser at the consent page."""
     from alphadesk.app import auth
-    if not auth.auth_required():
+    if not auth.gate_active():
         from alphadesk.app import dashboard
         return dashboard._local_uid(), "this instance's local account"
     claims = auth.current_user(request)

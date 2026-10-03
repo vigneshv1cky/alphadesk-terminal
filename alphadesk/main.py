@@ -322,6 +322,14 @@ def main() -> None:
         import alphadesk.config  # noqa: F401
         log = logging.getLogger("alphadesk")
         from alphadesk.config import env_value
+        from alphadesk.app import auth as _auth
+        problem = _auth.access_token_problem()
+        if problem:
+            sys.exit(problem)
+        host = env_value("DASHBOARD_HOST", "127.0.0.1")
+        if not _auth.auth_required() and not _auth.access_token() and host not in ("127.0.0.1", "localhost", "::1"):
+            log.warning("sign-in is off and the server listens on %s: anyone who can reach it can use it "
+                        "and read your connected vendors. Set ALPHADESK_ACCESS_TOKEN, or listen on 127.0.0.1.", host)
         log.info("Terminal on http://%s:%s",
                  env_value("DASHBOARD_HOST", "127.0.0.1"),
                  env_value("DASHBOARD_PORT", "8000"))
