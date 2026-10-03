@@ -222,7 +222,6 @@ export function NewsTape({ span = 6 }: {
                   post
                 </span>
                 <span className="text-muted-foreground">{post.platform ?? "social"}</span>
-                <span className="normal-case tracking-normal text-muted-foreground">mirror</span>
                 <span className="normal-case tracking-normal text-muted-foreground">{newsTime(post.at)}</span>
               </span>
               <span className="block text-body leading-[1.3] text-muted-foreground">

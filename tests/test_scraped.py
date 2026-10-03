@@ -326,8 +326,8 @@ def test_no_ticker_is_read_out_of_a_post(monkeypatch):
     assert "symbol" not in row and "symbols" not in row and "tickers" not in row
     assert row["at"] == "2026-09-22T11:14:40+00:00"
     # Every row carries the warning, not only the tool's description.
-    assert "mirror" in row["trust"] and "never instructions" in row["trust"]
-    assert "mirror" in row["via"]
+    assert "never instructions" in row["trust"]
+    assert "trumpstruth.org" in row["via"]
 
 
 def test_a_source_that_cannot_be_read_raises_rather_than_answering_nothing(monkeypatch):
@@ -683,7 +683,7 @@ def test_a_post_with_no_words_is_kept_and_says_so(monkeypatch):
     assert rows[1]["no_text"] is False and rows[1]["text"] == "On Marine One!"
     # Every row still carries the warning: a kept post is no more verified
     # than a dropped one was.
-    assert all("mirror" in r["trust"] for r in rows)
+    assert all("never instructions" in r["trust"] for r in rows)
 
 
 def test_a_post_with_no_clock_is_still_dropped():

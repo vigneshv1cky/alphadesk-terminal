@@ -17,7 +17,7 @@ import { matchesQuery } from "@/lib/newsMatch"
  * why it sat there filtering stories nobody could see.
  *
  * A POST IS NOT A STORY AND IS NOT A RECORD. Every card says it is read from
- * a third party's mirror of the account, and NO
+ * a scraped copy of the account, and NO
  * TICKER IS READ OUT OF POST TEXT anywhere in this codebase: a ticker in a
  * post is the author's claim, and tagging it would route an unverified
  * assertion into that symbol's context. That is why this page has no symbol
@@ -69,7 +69,7 @@ export default function PostsPage() {
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <div className="min-w-0">
             <h1 className="text-emph font-extrabold tracking-tight">Posts</h1>
-            <p className="mt-0.5 text-caption text-muted-foreground">a mirror of the account — never read for tickers</p>
+            <p className="mt-0.5 text-caption text-muted-foreground">never read for tickers</p>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -119,9 +119,8 @@ export default function PostsPage() {
                         ? <span className="italic text-muted-foreground">no text — a picture or video, posted without a caption. Open it to see.</span>
                         : post.text}
                     </p>
-                    <div className="mt-3 flex items-center gap-2 text-caption text-muted-foreground"
-                         title="Read from a third party's copy of the account, not the platform itself">
-                      <span>{post.via ? `via ${post.via}` : "mirror"}</span>
+                    <div className="mt-3 flex items-center gap-2 text-caption text-muted-foreground">
+                      {post.via && <span>via {post.via}</span>}
                       <span className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">Open ↗</span>
                     </div>
                   </a>
