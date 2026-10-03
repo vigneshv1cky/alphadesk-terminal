@@ -185,7 +185,11 @@ def provider_enabled(provider: str) -> bool:
 
 
 def enabled_providers() -> list[str]:
-    """In table order, so the login screen's button order is deliberate."""
+    """In table order, so the login screen's button order is deliberate.
+    None at all while a login is set in the settings (below): the password is
+    the door then, and Google and GitHub are not offered."""
+    if login_email():
+        return []
     return [p for p in _SSO_PROVIDERS if provider_enabled(p)]
 
 
@@ -196,6 +200,66 @@ def sso_enabled() -> bool:
 def google_enabled() -> bool:
     """Kept for the frontend's cached bundles; new code reads the list."""
     return provider_enabled("google")
+
+
+# ── a login set in the settings (2026-10-03) ────────────────────────────────
+# ALPHADESK_LOGIN_EMAIL with ALPHADESK_LOGIN_PASSWORD_HASH (or, simpler but
+# readable to anyone who can read the settings, ALPHADESK_LOGIN_PASSWORD): the
+# operator chooses the sign-in instead of borrowing Google's or GitHub's. At
+# start the account is made, or — if that email already has one — given the
+# password, keeping its data. While it is set the password form is the door.
+# Make a hash with:  python -m alphadesk.main hash-password
+
+LOGIN_PASSWORD_MIN = 12
+
+
+def login_email() -> str:
+    return os.environ.get("ALPHADESK_LOGIN_EMAIL", "").strip().lower()
+
+
+def login_problem() -> str | None:
+    """Why the configured login cannot be used, or None."""
+    email = login_email()
+    if not email:
+        return None
+    if "@" not in email or " " in email:
+        return "ALPHADESK_LOGIN_EMAIL must be an email address (the account is keyed by it)"
+    hashed = os.environ.get("ALPHADESK_LOGIN_PASSWORD_HASH", "").strip()
+    plain = os.environ.get("ALPHADESK_LOGIN_PASSWORD", "")
+    if hashed:
+        if not hashed.startswith("scrypt$"):
+            return "ALPHADESK_LOGIN_PASSWORD_HASH is not a hash made by `hash-password`"
+        return None
+    if not plain:
+        return "ALPHADESK_LOGIN_EMAIL needs ALPHADESK_LOGIN_PASSWORD_HASH (or ALPHADESK_LOGIN_PASSWORD)"
+    if len(plain) < LOGIN_PASSWORD_MIN:
+        return f"ALPHADESK_LOGIN_PASSWORD must be at least {LOGIN_PASSWORD_MIN} characters"
+    return None
+
+
+def apply_login_from_settings() -> str | None:
+    """Make the settings' account match them. Returns what was done
+    ("created", "password set", "unchanged") or None when no login is set.
+    Idempotent: a restart changes nothing once they agree."""
+    email = login_email()
+    if not email:
+        return None
+    hashed = os.environ.get("ALPHADESK_LOGIN_PASSWORD_HASH", "").strip()
+    plain = os.environ.get("ALPHADESK_LOGIN_PASSWORD", "")
+    row = store.get_user_by_email(email)
+    if hashed:
+        want_hash = hashed
+        agrees = row is not None and row["password_hash"] == hashed
+    else:
+        want_hash = None
+        agrees = row is not None and verify_password(plain, row["password_hash"])
+    if row is None:
+        store.create_user(uuid.uuid4().hex, email, want_hash or hash_password(plain))
+        return "created"
+    if agrees:
+        return "unchanged"
+    store.set_user_password(email, want_hash or hash_password(plain))
+    return "password set"
 
 
 # ── passwords ──────────────────────────────────────────────────────────────

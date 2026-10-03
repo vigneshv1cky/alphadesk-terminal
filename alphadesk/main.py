@@ -276,6 +276,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="alphadesk")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("dashboard", help="run the terminal")
+    sub.add_parser("hash-password", help="make a hash for ALPHADESK_LOGIN_PASSWORD_HASH (asks for the password)")
     p_init = sub.add_parser("init", help="first-time setup for one person: vault key, SEC contact, no sign-in")
     p_init.add_argument("--email", required=True,
                         help="your real contact email; the SEC asks for one in every request")
@@ -309,6 +310,17 @@ def main() -> None:
         from alphadesk.ledger import keyexport
         sys.exit(keyexport.run_cli(args.action, args.file))
 
+    if args.cmd == "hash-password":
+        import getpass
+        from alphadesk.app import auth as _a
+        pw = getpass.getpass("password: ")
+        if len(pw) < _a.LOGIN_PASSWORD_MIN:
+            sys.exit(f"use at least {_a.LOGIN_PASSWORD_MIN} characters")
+        if pw != getpass.getpass("again: "):
+            sys.exit("the two entries do not match")
+        print(_a.hash_password(pw))
+        sys.exit(0)
+
     if args.cmd == "init":
         from alphadesk.setup_local import run_init
         sys.exit(run_init(args.email, args.quiet))
@@ -323,9 +335,14 @@ def main() -> None:
         log = logging.getLogger("alphadesk")
         from alphadesk.config import env_value
         from alphadesk.app import auth as _auth
-        problem = _auth.access_token_problem()
+        problem = _auth.access_token_problem() or _auth.login_problem()
         if problem:
             sys.exit(problem)
+        if _auth.login_email():
+            from alphadesk.ledger import store as _login_store
+            _login_store.init()
+            logging.getLogger("alphadesk").info(
+                "login from the settings for %s: %s", _auth.login_email(), _auth.apply_login_from_settings())
         if not _auth.auth_required():
             # An instance acting as one existing account (ALPHADESK_LOCAL_USER_
             # EMAIL) must name one that is there, or every request would fail.

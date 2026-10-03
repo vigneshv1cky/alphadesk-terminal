@@ -180,6 +180,7 @@ cp alphadesk/deploy/env.example .env
 | `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys; sealed into the local account with `python -m alphadesk.main keys import-env` (or connect them on the Account page instead) |
 | `ALPHADESK_SEMANTIC_SEARCH` | no | `off` skips the ~1.2 GB embedding model; search then matches words only |
 | `GOOGLE_CLIENT_ID` / `GITHUB_CLIENT_ID` (+ secrets), `ALPHADESK_BASE_URL` | for several people | single sign-on for a shared instance |
+| `ALPHADESK_LOGIN_EMAIL` + `ALPHADESK_LOGIN_PASSWORD_HASH` | no | with sign-in on: choose your own sign-in instead of Google or GitHub. At start the account is made, or an existing account with that email gets the password and keeps its data. While set, the password form is the only door. Make the hash with `python -m alphadesk.main hash-password`; `ALPHADESK_LOGIN_PASSWORD` (12+ characters) also works but is readable to anyone who can read the settings. The identifier is an email address |
 | `ALPHADESK_ALLOWED_EMAILS` | no | with sign-in on: only these addresses (comma- or space-separated) may sign in; others, and any session or agent token of an address taken off the list, are refused. Unset, anyone with a verified account signs up |
 
 Generate the vault key with:
