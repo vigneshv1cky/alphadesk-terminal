@@ -98,26 +98,14 @@ to 120 requests a minute per credential. Two credentials exist:
 The standalone agent server (`python -m alphadesk.main mcp`) has no reader
 identity and is not gated: never expose its HTTP transport publicly.
 
-## Owners and access
-
-- `ALPHADESK_OWNER_EMAILS` names the owner accounts: they reach the Admin
-  page (every account, last seen, sign-in methods; sign out everywhere,
-  disable, delete), are never gated, and have their own panels kept warm
-  (the server replays their recent read requests in the background while
-  they are active).
-- AlphaDesk is **free**. Every account records a trial, but the access gate
-  (`ALPHADESK_BILLING_ENFORCE`) is off and no payment processor is
-  configured, so no plan or subscription screen is shown.
-
 ## Retention and deletion
 
 Vendor data is kept only as long as a feature reads it, pruned hourly
 (stories 7 days, article text 72 hours, and so on — the full table is in
-[data-sources.md](data-sources.md)). A reader can delete their own account
-from the Account page, confirmed by typing its email; every row keyed to it
-is removed in one transaction, and the test suite checks the list of
-per-account tables against the schema. Owners cannot delete their own
-account (it would lock the operator out).
+[data-sources.md](data-sources.md)). Deleting an account removes every row keyed
+to it in one transaction (the maintenance setting
+`ALPHADESK_PURGE_OTHER_ACCOUNTS`), and the test suite checks the list of
+per-account tables against the schema.
 
 ## Storage
 

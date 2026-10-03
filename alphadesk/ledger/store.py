@@ -626,14 +626,6 @@ def init() -> None:
         except db.schema_errors():
             pass  # already migrated
 
-    # An account from before trials existed starts one NOW (2026-09-18), so
-    # switching the access gate on can never lock out a reader who signed
-    # up before there was a trial to count. Idempotent: only empty rows.
-    from alphadesk import billing
-    with _lock, _connect() as conn:
-        conn.execute("UPDATE users SET trial_ends_at=? WHERE trial_ends_at IS NULL",
-                     (billing.trial_end_from_now(),))
-
     # The CoinGecko key moved from its own "crypto" seam into market data
     # (2026-09-13), where every data vendor now lives. Idempotent: once the
     # rows are moved there is nothing left to move.
@@ -1068,91 +1060,16 @@ def save_filing_text(accession: str, text: str) -> None:
 
 
 def create_user(user_id: str, email: str, password_hash: str) -> None:
-    """A new account starts its free trial now (alphadesk/billing.py)."""
-    from alphadesk import billing
     with _lock, _connect() as conn:
         conn.execute(
-            "INSERT INTO users (user_id, email, password_hash, created_at, trial_ends_at)"
-            " VALUES (?,?,?,?,?)",
-            (user_id, email.lower().strip(), password_hash, _now(), billing.trial_end_from_now()))
-
-
-_ACCESS_COLS = ("trial_ends_at, plan_status, plan_provider, plan_customer_id,"
-                " plan_subscription_id, plan_period_end")
-
-
-def user_access_row(user_id: str) -> dict | None:
-    """The facts access is decided from: email, disabled, trial, plan."""
-    with _connect() as conn:
-        row = conn.execute(
-            f"SELECT user_id, email, disabled, {_ACCESS_COLS} FROM users WHERE user_id=?",
-            (user_id,)).fetchone()
-    return dict(row) if row else None
-
-
-def admin_list_users() -> list[dict]:
-    """Every account for the owner's admin page, newest first — never the
-    password hash. Each carries the sign-in methods it has used."""
-    with _connect() as conn:
-        rows = conn.execute(
-            f"SELECT user_id, email, disabled, created_at, last_seen_at, {_ACCESS_COLS}"
-            " FROM users ORDER BY created_at DESC").fetchall()
-        methods = conn.execute("SELECT user_id, method FROM user_sign_ins").fetchall()
-        # What each account holds, for the admin page's detail: one grouped
-        # count per table rather than a query per account.
-        counts: dict[str, dict[str, int]] = {}
-        for kind, sql in (
-            ("keys", "SELECT user_id, COUNT(*) AS n FROM user_api_keys GROUP BY user_id"),
-            ("views", "SELECT user_id, COUNT(*) AS n FROM user_views GROUP BY user_id"),
-            ("baskets", "SELECT user_id, COUNT(*) AS n FROM user_baskets GROUP BY user_id"),
-            ("agent_tokens", "SELECT user_id, COUNT(*) AS n FROM agent_access_tokens"
-                             " WHERE revoked_at IS NULL GROUP BY user_id"),
-            ("agent_apps", "SELECT user_id, COUNT(*) AS n FROM oauth_grants"
-                           " WHERE revoked_at IS NULL GROUP BY user_id"),
-        ):
-            for c in conn.execute(sql).fetchall():
-                counts.setdefault(c["user_id"], {})[kind] = c["n"]
-    by_user: dict[str, list[str]] = {}
-    for m in methods:
-        by_user.setdefault(m["user_id"], []).append(m["method"])
-    out = []
-    for r in rows:
-        d = dict(r)
-        d["sign_ins"] = sorted(by_user.get(d["user_id"], []))
-        held = counts.get(d["user_id"], {})
-        d["counts"] = {k: held.get(k, 0) for k in ("keys", "views", "baskets", "agent_tokens", "agent_apps")}
-        out.append(d)
-    return out
+            "INSERT INTO users (user_id, email, password_hash, created_at) VALUES (?,?,?,?)",
+            (user_id, email.lower().strip(), password_hash, _now()))
 
 
 def set_user_disabled(user_id: str, disabled: bool) -> bool:
     with _lock, _connect() as conn:
         cur = conn.execute("UPDATE users SET disabled=? WHERE user_id=?", (1 if disabled else 0, user_id))
     return cur.rowcount > 0
-
-
-def set_trial_end(user_id: str, iso: str) -> bool:
-    with _lock, _connect() as conn:
-        cur = conn.execute("UPDATE users SET trial_ends_at=? WHERE user_id=?", (iso, user_id))
-    return cur.rowcount > 0
-
-
-def set_plan(user_id: str, *, provider: str, status: str | None, customer_id: str | None = None,
-             subscription_id: str | None = None, period_end: str | None = None) -> bool:
-    """Record the subscription as the payment processor reported it."""
-    with _lock, _connect() as conn:
-        cur = conn.execute(
-            "UPDATE users SET plan_provider=?, plan_status=?, plan_customer_id=COALESCE(?, plan_customer_id),"
-            " plan_subscription_id=COALESCE(?, plan_subscription_id), plan_period_end=? WHERE user_id=?",
-            (provider, status, customer_id, subscription_id, period_end, user_id))
-    return cur.rowcount > 0
-
-
-def user_by_plan_customer(provider: str, customer_id: str) -> dict | None:
-    with _connect() as conn:
-        row = conn.execute("SELECT user_id, email FROM users WHERE plan_provider=? AND plan_customer_id=?",
-                           (provider, customer_id)).fetchone()
-    return dict(row) if row else None
 
 
 def get_user_by_email(email: str) -> dict | None:

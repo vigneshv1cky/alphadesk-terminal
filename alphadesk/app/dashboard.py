@@ -48,8 +48,6 @@ async def _lifespan(_app):
 
 app = FastAPI(title="AlphaDesk", lifespan=_lifespan)
 app.include_router(auth_router)
-from alphadesk.app.admin import router as admin_router  # noqa: E402
-app.include_router(admin_router)
 # Mounted before every other route, so the SPA's catch-all can never answer
 # a tool call with the page shell.
 app.mount(agent_tools.MOUNT, _agent_tools_app)
@@ -108,11 +106,11 @@ async def _note_for_prewarm(request: Request, call_next):
     if (request.method == "GET" and response.status_code == 200
             and request.url.path.startswith("/api/") and not request.url.path.startswith(rest_data.PREFIX)
             and not request.headers.get("x-alphadesk-prewarm")):
-        from alphadesk import billing, prewarm
+        from alphadesk import prewarm
         from alphadesk.app import auth
         claims = auth.current_user(request)
         uid = (claims or {}).get("uid") or (None if auth.auth_required() else _local_uid())
-        if uid and (not auth.auth_required() or billing.is_owner((claims or {}).get("email"))):
+        if uid:
             path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
             prewarm.note(uid, path)
     return response
@@ -158,16 +156,6 @@ async def _login_gate(request: Request, call_next):
         uid = _local_uid()
     if uid:
         _touch_seen(uid)
-    # The access gate (alphadesk/billing.py): off unless ALPHADESK_BILLING_
-    # ENFORCE is set. On, an account past its trial with no subscription gets
-    # 402 on data routes — never on its own plan, keys or agent access — and
-    # the app shows the subscribe screen. Only signed-in accounts on a gated
-    # instance; an open instance's local account is never stopped.
-    if claims and claims.get("uid") and auth.auth_required() and auth.is_gated(request.url.path):
-        from alphadesk import billing
-        if not billing.exempt(request.url.path) and billing.blocked_user(claims["uid"]):
-            return Response('{"detail": {"subscribe": "your free trial has ended"}}', status_code=402,
-                            media_type="application/json")
     token = ai_llm.set_request_user(uid)
     try:
         return await call_next(request)

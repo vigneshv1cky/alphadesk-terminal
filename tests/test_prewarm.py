@@ -8,7 +8,7 @@ from alphadesk import prewarm
 def test_only_market_data_reads_are_kept():
     assert prewarm.worth_keeping("/api/movers/stocks?top=50")
     assert prewarm.worth_keeping("/api/insider/AAPL")
-    for p in ("/api/stream?trades=AAPL", "/api/auth/me", "/api/admin/users", "/api/agent/tools/mcp",
+    for p in ("/api/stream?trades=AAPL", "/api/auth/me", "/api/agent/tools/mcp",
               "/api/keys", "/api/account/delete", "/api/board", "/api/news?q=tariffs",
               "/api/news?before=2026-09-18", "/api/news/related?q=chips", "/healthz"):
         assert not prewarm.worth_keeping(p), p

@@ -2,10 +2,9 @@ import { LogOut } from "lucide-react"
 import { useState } from "react"
 import { Link } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { on, api, type Access } from "@/lib/api"
+import { on, api } from "@/lib/api"
 import { useAuthMe, useSystem, useUserKeys } from "@/lib/queries"
 import { Dialog, Empty, fieldCls, Table, TD, TH, THead, TR, Widget, btnCls } from "@/components/terminal"
-import { DeleteAccountDialog } from "@/components/DeleteAccountDialog"
 import { KeysExportDialog } from "@/components/KeysExportDialog"
 import { BTN, BTN_DANGER, BTN_PRIMARY, Caption, Heading, Pill, ROOMY, Row } from "@/components/accountParts"
 import { connectionGroups } from "@/lib/agentConnections"
@@ -623,14 +622,11 @@ function StatStrip({ open }: { open: boolean }) {
 
 /** How the reader signs in, and the session that results — the two used to
  * be separate panels of two rows each. */
-function SecurityPanel({ signIns, onSignOutEverywhere, email, owner }: {
-  email?: string
-  owner?: boolean
+function SecurityPanel({ signIns, onSignOutEverywhere }: {
   /** The methods THIS account has signed in with (recorded from 2026-09-18). */
   signIns: { method: string; last_at: string | null }[]
   onSignOutEverywhere: () => void
 }) {
-  const [deleting, setDeleting] = useState(false)
   const used = new Map(signIns.map(s => [s.method, s.last_at]))
   const when = (iso: string | null | undefined) =>
     iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""
@@ -645,18 +641,6 @@ function SecurityPanel({ signIns, onSignOutEverywhere, email, owner }: {
         <button type="button" onClick={onSignOutEverywhere} className={BTN_DANGER}>Sign out everywhere</button>}>
         HMAC-signed cookie · 14-day lifetime · other devices stay signed in until you sign them out
       </Row>
-      {/* Deleting the account (2026-09-18): everything in it, at once. An
-          owner is refused by the server, so the row is not offered. */}
-      {!owner && email && (
-        <Row label="Account" actions={
-          <button type="button" onClick={() => setDeleting(true)} className={BTN_DANGER}>Delete account</button>}>
-          delete this account and everything in it — keys, views, baskets, stored data, agent access
-        </Row>
-      )}
-      {deleting && email && (
-        <DeleteAccountDialog email={email} own onClose={() => setDeleting(false)}
-          onConfirm={typed => api.deleteMyAccount(typed).then(() => { window.location.href = "/" })} />
-      )}
     </Widget>
   )
 }
@@ -667,46 +651,6 @@ function SecurityPanel({ signIns, onSignOutEverywhere, email, owner }: {
  * 1160px wide rather than 920 — the single column left a third of a desktop
  * screen empty. Below 900px the grid collapses to one column as every board
  * does, and the tables scroll sideways inside their panels. */
-/** The reader's plan (2026-09-18): trial days left, or the subscription,
- * with the door to the payment processor. With no processor configured the
- * buttons say payments are not open yet rather than pretending to charge. */
-function PlanPanel({ access }: { access: Access }) {
-  const [note, setNote] = useState<string | null>(null)
-  const go = (call: () => Promise<{ url: string }>) =>
-    call().then(r => window.location.assign(r.url)).catch(e => setNote(String(e.message ?? e)))
-  const until = (iso: string | null) => iso
-    ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"
-  const line =
-    access.state === "owner" ? "Owner — full access, never billed"
-    : access.state === "subscribed" ? (access.plan_status === "canceled"
-      ? `Subscription canceled — access until ${until(access.plan_period_end)}`
-      : `Subscribed${access.plan_period_end ? ` — renews ${until(access.plan_period_end)}` : ""}`)
-    : access.state === "trialing" ? `Free trial — ${access.days_left ?? 0} day${access.days_left === 1 ? "" : "s"} left, ends ${until(access.trial_ends_at)}`
-    : "Free trial ended"
-  return (
-    <Widget span={12} title="Plan" subtitle={access.enforced ? undefined : "subscriptions are not required yet"}>
-      <div className="flex flex-wrap items-center gap-3 px-3 py-3">
-        <span className="min-w-0 flex-1 text-body font-semibold">{line}</span>
-        {access.state === "subscribed" ? (
-          <button type="button" disabled={!access.can_subscribe} onClick={() => go(api.billingPortal)}
-                  className={btnCls({ variant: "strong", size: "lg" }, "rounded-md")}>Manage billing</button>
-        ) : access.state !== "owner" && (
-          <>
-            <button type="button" disabled={!access.can_subscribe} onClick={() => go(() => api.billingCheckout("monthly"))}
-                    className={btnCls({ variant: "accent", size: "lg" }, "rounded-md px-4 uppercase tracking-caps")}>Subscribe monthly</button>
-            <button type="button" disabled={!access.can_subscribe} onClick={() => go(() => api.billingCheckout("yearly"))}
-                    className={btnCls({ variant: "strong", size: "lg" }, "rounded-md")}>Yearly</button>
-          </>
-        )}
-      </div>
-      {!access.can_subscribe && access.state !== "owner" && (
-        <div className="border-t border-row-rule px-3 py-2 text-caption text-muted-foreground">Payments are not open yet.</div>
-      )}
-      {note && <div className="border-t border-row-rule px-3 py-2 text-caption text-loss">{note}</div>}
-    </Widget>
-  )
-}
-
 export default function AccountPage() {
   const { data: me } = useAuthMe()
   const { data: sys } = useSystem()
@@ -767,13 +711,8 @@ export default function AccountPage() {
       )}
 
       <StatStrip open={open} />
-      {/* Only once there is a plan to speak of: AlphaDesk is free for now
-          (2026-09-18, "no payments"), so with the gate off and no payment
-          processor there is nothing to show. */}
-      {!open && me.user?.access && (me.user.access.enforced || me.user.access.can_subscribe) && <PlanPanel access={me.user.access} />}
       <KeysPanel newsProviders={newsProviders} transcriptProviders={transcriptProviders} />
-      {!open && <SecurityPanel signIns={me.user?.sign_ins ?? []} onSignOutEverywhere={signOutEverywhere}
-                                email={me.user?.email} owner={!!me.user?.owner} />}
+      {!open && <SecurityPanel signIns={me.user?.sign_ins ?? []} onSignOutEverywhere={signOutEverywhere} />}
 
     </div>
       <footer className="mx-auto mt-auto w-full max-w-[1160px] px-4 pb-4 max-sm:px-2">

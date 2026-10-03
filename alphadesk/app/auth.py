@@ -40,7 +40,6 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from alphadesk import billing
 from alphadesk.ledger import store
 
 log = logging.getLogger("alphadesk.auth")
@@ -384,16 +383,9 @@ def me(request: Request, response: Response):
         # from 2026-09-18, so an older sign-in is not in it (2026-09-18).
         "user": {"email": claims["email"],
                  "sign_ins": store.list_sign_ins(claims["uid"]) if claims.get("uid") else [],
-                 # Trial or subscription, and whether the gate applies
-                 # (alphadesk/billing.py); `owner` shows the admin page.
-                 "access": _access(claims),
-                 "owner": billing.is_owner(claims.get("email"))}
+                 }
                 if claims else None,
     }
-
-
-def _access(claims: dict) -> dict | None:
-    return billing.access(store.user_access_row(claims["uid"])) if claims.get("uid") else None
 
 
 @router.post("/login")
@@ -490,10 +482,6 @@ def is_gated(path: str) -> bool:
     # agent calls it from outside, with no browser session to present. The
     # plain-HTTP data API (/api/v1, app/rest_data.py) carries the same one,
     # for the programs that read AlphaDesk without being agents.
-    # The payment processor's webhook likewise: the processor calls it with
-    # no session, and the route verifies the processor's signature instead —
-    # gated, every Stripe event was refused with 401 (2026-09-19).
     return path.startswith("/api") and not path.startswith("/api/auth") \
         and not path.startswith("/api/agent/tools") and not path.startswith("/api/v1") \
-        and not (path == "/api/billing/webhook" or path.startswith("/api/billing/webhook/")) \
         and path != "/api/healthz" and path != "/healthz"

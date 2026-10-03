@@ -96,7 +96,6 @@ sample, so history has its own endpoint:
 |---|---|
 | 400 | A range, interval or time the chart does not accept (`bars`) |
 | 401 | No token, or an invalid or revoked one |
-| 402 | The reader's free trial ended |
 | 403 | The token is tied to addresses and this is not one of them |
 | 404 | No such endpoint, or no bars at all for a symbol |
 | 422 | The inputs were refused (named in `detail`), or the tool found nothing to return |

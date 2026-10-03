@@ -3,9 +3,7 @@ import { Menu, Monitor, Moon, Sun } from "lucide-react"
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom"
 import { api } from "@/lib/api"
 import { useTheme } from "@/lib/theme"
-import { SubscribePage } from "@/components/SubscribePage"
 import { LandingPage } from "@/components/LandingPage"
-import type { Access } from "@/lib/api"
 import { OPEN_MENU_EVENT, Sidebar } from "@/components/Sidebar"
 import { SymbolStrip } from "@/components/SymbolStrip"
 import { HeaderTips, btnCls } from "@/components/terminal"
@@ -33,7 +31,6 @@ const PAGE_IMPORTS = {
   CalendarsPage: () => import("@/pages/CalendarsPage"),
   AccountPage: () => import("@/pages/AccountPage"),
   AgentAccessPage: () => import("@/pages/AgentAccessPage"),
-  AdminPage: () => import("@/pages/AdminPage"),
   ThemePage: () => import("@/pages/ThemePage"),
   OptionsPage: () => import("@/pages/OptionsPage"),
   CustomViewPage: () => import("@/pages/CustomViewPage"),
@@ -46,7 +43,7 @@ const PAGE_IMPORTS = {
 }
 
 /** Fetched ahead in this order: the pages a reader moves between first. */
-const WARM_ORDER: (keyof typeof PAGE_IMPORTS)[] = ["DashboardPage", "NewsPage", "FilingsPage", "PostsPage", "AnalysisPage", "SectorsPage", "ChartPage", "CompanyPage", "OptionsPage", "EarningsPage", "CalendarsPage", "PortfolioPage", "CustomViewPage", "AccountPage", "AgentAccessPage", "AdminPage", "ThemePage", "TermsPage", "PrivacyPage", "DisclaimerPage", "AboutPage"]
+const WARM_ORDER: (keyof typeof PAGE_IMPORTS)[] = ["DashboardPage", "NewsPage", "FilingsPage", "PostsPage", "AnalysisPage", "SectorsPage", "ChartPage", "CompanyPage", "OptionsPage", "EarningsPage", "CalendarsPage", "PortfolioPage", "CustomViewPage", "AccountPage", "AgentAccessPage", "ThemePage", "TermsPage", "PrivacyPage", "DisclaimerPage", "AboutPage"]
 
 const DashboardPage = lazy(PAGE_IMPORTS.DashboardPage)
 const NewsPage = lazy(PAGE_IMPORTS.NewsPage)
@@ -59,7 +56,6 @@ const EarningsPage = lazy(PAGE_IMPORTS.EarningsPage)
 const CalendarsPage = lazy(PAGE_IMPORTS.CalendarsPage)
 const AccountPage = lazy(PAGE_IMPORTS.AccountPage)
 const AgentAccessPage = lazy(PAGE_IMPORTS.AgentAccessPage)
-const AdminPage = lazy(PAGE_IMPORTS.AdminPage)
 const ThemePage = lazy(PAGE_IMPORTS.ThemePage)
 const OptionsPage = lazy(PAGE_IMPORTS.OptionsPage)
 const CustomViewPage = lazy(PAGE_IMPORTS.CustomViewPage)
@@ -113,7 +109,6 @@ const TITLES: Record<string, string> = {
   "/earnings": "Earnings · AlphaDesk",
   "/calendars": "Calendars · AlphaDesk",
   "/account": "Account · AlphaDesk",
-  "/admin": "Admin · AlphaDesk",
   "/terms": "Terms · AlphaDesk",
   "/privacy": "Privacy · AlphaDesk",
   "/disclaimer": "Not investment advice · AlphaDesk",
@@ -297,7 +292,6 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
               <Route path="/about" element={<AboutPage />} />
               <Route path="/account" element={<AccountPage />} />
               <Route path="/agent-access" element={<AgentAccessPage />} />
-              <Route path="/admin" element={<AdminPage />} />
               {/* Old paths, kept as redirects so links and bookmarks still
                   land somewhere. /filings merged into Analysis and
                   carries its ?symbol= across; /research was only ever an ask
@@ -372,9 +366,8 @@ function PublicHeader({ here }: { here: string }) {
 
 function Gate() {
   const { pathname } = useLocation()
-  const [state, setState] = useState<"checking" | "open" | "login" | "subscribe">("checking")
+  const [state, setState] = useState<"checking" | "open" | "login">("checking")
   const [email, setEmail] = useState<string | null>(null)
-  const [access, setAccess] = useState<Access | null>(null)
   const [tokenLogin, setTokenLogin] = useState(false)
 
   const check = useCallback(() => {
@@ -388,11 +381,7 @@ function Gate() {
         }
         setEmail(me.user?.email ?? null)
         setTokenLogin(!!me.token_login)
-        setAccess(me.user?.access ?? null)
-        // The access gate (alphadesk/billing.py): only when it is ON and this
-        // account's trial has ended with no subscription.
-        const stopped = !!me.user?.access?.enforced && me.user.access.state === "expired"
-        setState(!me.auth_required || me.user ? (stopped ? "subscribe" : "open") : "login")
+        setState(!me.auth_required || me.user ? "open" : "login")
       })
       .catch(() => setState("open"))   // an unreachable check must not lock out a dev server
   }, [])
@@ -401,12 +390,8 @@ function Gate() {
   useEffect(() => {
     const onExpired = () => setState("login")
     window.addEventListener("alphadesk:unauthorized", onExpired)
-    // A trial that ends mid-session: the next data request answers 402, and
-    // a fresh check shows the subscribe screen.
-    window.addEventListener("alphadesk:payment-required", check)
     return () => {
       window.removeEventListener("alphadesk:unauthorized", onExpired)
-      window.removeEventListener("alphadesk:payment-required", check)
     }
   }, [check])
 
@@ -420,7 +405,7 @@ function Gate() {
   }
   // Public pages: what the thing is, and what you agree to, are readable
   // before there is an account to read them with.
-  if ((state === "login" || state === "subscribe") && PUBLIC_PAGES.includes(pathname)) {
+  if (state === "login" && PUBLIC_PAGES.includes(pathname)) {
     return (
       <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
         <PublicHeader here={pathname} />
@@ -433,12 +418,10 @@ function Gate() {
       </div>
     )
   }
-  // Signed out: the landing page IS the sign-in — provider buttons on an
-  // password form.
+  // Signed out: the landing page IS the sign-in, a password form.
   if (state === "login") {
     return <LandingPage tokenMode={tokenLogin} onPasswordSignIn={check} />
   }
-  if (state === "subscribe") return <SubscribePage email={email} access={access} onRecheck={check} />
   return <Shell userEmail={email} />
 }
 
