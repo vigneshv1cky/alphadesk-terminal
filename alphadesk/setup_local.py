@@ -40,6 +40,10 @@ def run_init(email: str, quiet: bool = False) -> int:
         "# One person, no sign-in. Keep DASHBOARD_HOST on 127.0.0.1 unless something\n"
         "# else in front of the server asks for a password.\n"
         "ALPHADESK_AUTH=off\n"
+        "# Keep what the server fetches (stories, the forecast log, scraped pages) instead of the\n"
+        "# short defaults, and reach further back when it has less. A vendor's terms about\n"
+        "# storing its data still apply to you.\n"
+        "ALPHADESK_KEEP_DATA=forever\n"
     )
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as fh:

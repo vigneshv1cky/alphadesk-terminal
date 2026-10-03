@@ -1723,6 +1723,8 @@ def api_keys_list(request: Request):
                 # How its stories arrive: over a held socket in seconds, or on
                 # the poll. The page says so per feed (2026-09-18).
                 k["delivery"] = "stream" if k["provider"] in STREAMING_NEWS else "poll"
+                from alphadesk.ingest.news import feed_problem
+                k["problem"] = feed_problem(user_id, k["provider"])
     # STORIES FROM A FEED THE READER NO LONGER HAS (2026-09-22). Removing a
     # key purges what it delivered, but that purge only landed on 2026-09-18,
     # so a feed removed before it left its stories behind — and they show up
@@ -1743,7 +1745,7 @@ def api_keys_list(request: Request):
     except Exception as exc:                      # the page stands without it
         log.debug("orphan feed count: %s", exc)
     return {"vault": vault.enabled(), "keys": keys, "orphan_feeds": orphans,
-            "news_keep_days": NEWS_KEEP_DAYS, "news_poll_minutes": NEWS_REFRESH_MINUTES}
+            "news_keep_days": None if NEWS_KEEP_DAYS >= 36500 else NEWS_KEEP_DAYS, "news_poll_minutes": NEWS_REFRESH_MINUTES}
 
 
 @app.get("/api/data/vendors")
@@ -1918,6 +1920,13 @@ def api_keys_set(seam: str, body: KeyIn, request: Request, background: Backgroun
                            api_secret=(body.api_secret or "").strip() or None)
         except ProviderError as exc:
             raise HTTPException(422, str(exc)) from exc
+    if seam == "news":
+        # A refused key is refused here, not discovered half a day later as an
+        # empty news window (2026-10-03).
+        from alphadesk.ingest.news import check_news_key
+        refusal = check_news_key(body.provider, api_key, (body.api_secret or "").strip() or None)
+        if refusal:
+            raise HTTPException(422, refusal)
     sealed = vault.encrypt({"api_key": api_key,
                             "api_secret": (body.api_secret or "").strip(),
                             "base_url": (body.base_url or "").strip(),

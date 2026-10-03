@@ -328,3 +328,48 @@ def test_a_search_word_is_a_whole_word_so_a_ticker_finds_itself():
     assert matches_query("jobless claims", "US Weekly Jobless Claims Fall")
     assert not matches_query("claims jobless", "US Weekly Jobless Claims Fall")
     assert matches_query("", "anything")
+
+
+def test_a_refused_news_key_is_named_and_a_working_one_clears_it(monkeypatch):
+    """A rejected key used to fail the poll silently for hours behind an empty
+    window (2026-10-03); the last failure is kept per reader and feed."""
+    from datetime import datetime, timezone
+
+    from alphadesk.ingest import news
+    from alphadesk.providers import ProviderError
+
+    class Feed:
+        name = "alpaca"
+        fail = True
+
+        def fetch(self, since, limit=200):
+            if self.fail:
+                raise ProviderError("alpaca news fetch failed: <html><title>401 Authorization Required</title>")
+            return []
+
+    feed = Feed()
+    news._feed_errors.clear()
+    assert news.fetch_articles(datetime.now(timezone.utc), provider=feed, owner="u1") == []
+    assert "rejected this key" in news.feed_problem("u1", "alpaca")
+    assert news.feed_problem("u2", "alpaca") is None
+    feed.fail = False
+    news.fetch_articles(datetime.now(timezone.utc), provider=feed, owner="u1")
+    assert news.feed_problem("u1", "alpaca") is None
+
+
+def test_only_a_certain_refusal_blocks_a_news_key(monkeypatch):
+    from alphadesk.ingest import news
+    from alphadesk.providers import ProviderError, registry
+
+    class Feed:
+        def __init__(self, text):
+            self.text = text
+
+        def fetch(self, since, limit=200):
+            raise ProviderError(self.text)
+
+    monkeypatch.delenv("ALPHADESK_SKIP_KEY_CHECK", raising=False)
+    monkeypatch.setattr(registry, "build", lambda *a, **k: Feed("alpaca news fetch failed: 401 Authorization Required"))
+    assert "rejected" in news.check_news_key("alpaca", "k", "s")
+    monkeypatch.setattr(registry, "build", lambda *a, **k: Feed("alpaca news fetch failed: timed out"))
+    assert news.check_news_key("alpaca", "k", "s") is None

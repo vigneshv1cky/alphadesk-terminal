@@ -437,7 +437,9 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                       {row.stories_24h == null ? "—" : row.stories_24h.toLocaleString()}
                     </TD>
                     <TD>
-                      {row.delivery === "stream"
+                      {row.problem
+                        ? <span title={row.problem}><Pill tone="warn">Key rejected</Pill></span>
+                        : row.delivery === "stream"
                         ? <Pill tone="gain">Stream · seconds</Pill>
                         : <Pill tone="muted">Poll{pollMinutes ? ` · every ${pollMinutes} min` : ""}</Pill>}
                     </TD>
@@ -498,6 +500,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
               </>}>
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="num text-foreground">····{row.key_hint}</span>
+                  {row.problem && <span className="text-warn">{row.problem}</span>}
                   {row.stories_24h != null && <span>{row.stories_24h.toLocaleString()} stories · 24h</span>}
                   {row.delivery === "stream"
                     ? <Pill tone="gain">Stream · seconds</Pill>

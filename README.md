@@ -626,6 +626,9 @@ required.
 | `ALPHADESK_AUTH` | `off` for a single local account without sign-in |
 | `ALPHADESK_ACCESS_TOKEN` | with sign-in off, a shared secret (16+ characters) that guards the browser; ignored where accounts gate |
 | `ALPHADESK_LOCAL_USER_EMAIL` | with sign-in off, act as this existing account instead of a fresh local one — for a server that began with accounts and became one person's own; nothing is moved |
+| `ALPHADESK_KEEP_DATA` | `forever` or a number of days: keeps the records (stories and their text, announcements, the forecast log, scraped pages) that long instead of the defaults of 3 to 120 days, and reaches further when the store has less (a key save refills 30 days, "Load older" looks 30 days back, a symbol's own ask a year). It only lengthens a default. A vendor's own terms about storing its data still apply to you; this setting does not change them |
+| `NEWS_BACKFILL_DAYS` | how many days a key save refills (default: the retention window, 30 with `ALPHADESK_KEEP_DATA`, never over 365) |
+| `ALPHADESK_SKIP_KEY_CHECK` | `1` saves a news key without trying it at the vendor first (offline) |
 | `ALPHADESK_PURGE_OTHER_ACCOUNTS` | maintenance: `count` logs how many accounts besides the login exist; `delete` removes them, whole, at the next start (unset it afterwards) |
 | `ALPHADESK_PURGE_ON_KEY_REMOVAL` | `1` deletes a vendor's stored data when its key is removed (for an instance serving other people whose vendor terms require it); off by default |
 | `ALPHADESK_BASE_URL` | Public URL; OAuth redirects and the agent host allowlist depend on it |

@@ -131,18 +131,52 @@ NEWS_LOOKBACK_HOURS = float(env_value("NEWS_LOOKBACK_HOURS", "72"))
 # A story is kept while it is inside the news window plus a margin for
 # paging and search; one fetched for an OLDER page (published before that)
 # lives a day after it was fetched — paging back asks the reader's feed.
-NEWS_KEEP_DAYS = float(env_value("NEWS_KEEP_DAYS", "7"))
-NEWS_OLDER_PAGE_KEEP_HOURS = 24
+#
+# KEEPING MORE ON A PERSONAL SERVER (2026-10-03). ALPHADESK_KEEP_DATA makes the
+# retention below a longer one for the records a reader may want to look back
+# on: `forever`, or a number of days. It only ever lengthens a default (a
+# smaller number changes nothing), and it leaves the derived caches alone —
+# release habits, press checks and the dollar-volume pool are recomputed
+# anyway. A vendor's own terms about storing its data still apply to you; this
+# setting does not change them.
+_KEEP_RAW = env_value("ALPHADESK_KEEP_DATA", "").strip().lower()
+FOREVER_DAYS = 36500.0            # a hundred years: "forever" without a special case anywhere
+if _KEEP_RAW in ("forever", "always", "indefinitely"):
+    KEEP_DATA_DAYS: float | None = FOREVER_DAYS
+else:
+    try:
+        KEEP_DATA_DAYS = float(_KEEP_RAW) if _KEEP_RAW else None
+    except ValueError:
+        log.warning("ALPHADESK_KEEP_DATA=%r is not 'forever' or a number of days: ignored", _KEEP_RAW)
+        KEEP_DATA_DAYS = None
+
+
+def keep_days(default_days: float) -> float:
+    """A record's retention in days: its default, or the longer keep-data setting."""
+    return max(default_days, KEEP_DATA_DAYS) if KEEP_DATA_DAYS else default_days
+
+
+NEWS_KEEP_DAYS = keep_days(float(env_value("NEWS_KEEP_DAYS", "7")))
+NEWS_OLDER_PAGE_KEEP_HOURS = keep_days(1.0) * 24
+# REACHING FURTHER WHEN THE STORE HAS LESS (2026-10-03). With a longer
+# keep-data setting the feed is also asked for more than the default: a key
+# save refills NEWS_BACKFILL_DAYS back (the retention window by default, never
+# more than a year, and 30 days when keeping more), "Load older" looks 30 days
+# before the oldest story instead of 7, and a symbol's own ask looks a year back.
+NEWS_BACKFILL_DAYS = min(365.0, float(env_value("NEWS_BACKFILL_DAYS", "") or
+                                      (min(NEWS_KEEP_DAYS, 30.0) if KEEP_DATA_DAYS else NEWS_KEEP_DAYS)))
+NEWS_OLDER_PAGE_DAYS = 30 if KEEP_DATA_DAYS else 7
+SYMBOL_NEWS_LOOKBACK_DAYS = 365 if KEEP_DATA_DAYS else 30
 # A story's FULL TEXT only while it is inside the news window; after that
 # the row keeps its headline and summary, and opening it asks the reader's
 # feed for the text again.
-NEWS_BODY_KEEP_HOURS = NEWS_LOOKBACK_HOURS
+NEWS_BODY_KEEP_HOURS = keep_days(NEWS_LOOKBACK_HOURS / 24) * 24
 # A company's own "will report on" announcement moves a calendar row within
 # 14 days of its date; a month past the report date it has no use.
-ANNOUNCEMENT_KEEP_DAYS = 30
+ANNOUNCEMENT_KEEP_DAYS = keep_days(30)
 # The forecast log is scored against EDGAR at 1/3/7 days ahead and read back
 # up to 30 days; 120 days covers any reasonable re-check.
-FORECAST_KEEP_DAYS = 120
+FORECAST_KEEP_DAYS = keep_days(120)
 # Release-habit (3 days) and press-release (6 hours) results are re-derived
 # past their freshness; the dollar-volume pool is rebuilt daily.
 HABIT_KEEP_DAYS = 3
@@ -152,8 +186,8 @@ POOL_KEEP_DAYS = 7
 # useful while the earnings window still reaches it; halts and posts are
 # about right now and are worthless the next day. Kept only as long as a
 # feature reads them, like every other vendor table.
-SCRAPED_KEEP_DAYS = float(env_value("SCRAPED_KEEP_DAYS", "21"))
-SCRAPED_LIVE_KEEP_HOURS = float(env_value("SCRAPED_LIVE_KEEP_HOURS", "24"))
+SCRAPED_KEEP_DAYS = keep_days(float(env_value("SCRAPED_KEEP_DAYS", "21")))
+SCRAPED_LIVE_KEEP_HOURS = keep_days(float(env_value("SCRAPED_LIVE_KEEP_HOURS", "24")) / 24) * 24
 # Per-user feeds (phase 3). A reader's own key is polled only while they have
 # been seen within the activity window, and each cycle is capped, so a
 # sleeping reader's vendor quota is not spent. Both caps are visible here,

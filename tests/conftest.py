@@ -55,6 +55,13 @@ def _reset_providers():
     background_fill._failed.clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_vendor_key_check(monkeypatch):
+    """Saving a news key tries it once at the vendor (ingest/news.check_news_key);
+    no test may reach a real vendor, so the check is off unless a test turns it on."""
+    monkeypatch.setenv("ALPHADESK_SKIP_KEY_CHECK", "1")
+
+
 @pytest.fixture()
 def vendors(monkeypatch):
     """Install a signed-in user's connected vendors for one test:

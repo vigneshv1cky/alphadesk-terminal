@@ -18,6 +18,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from alphadesk.config import NEWS_OLDER_PAGE_DAYS as OLDER_PAGE_DAYS
+from alphadesk.config import SYMBOL_NEWS_LOOKBACK_DAYS as SYMBOL_LOOKBACK_DAYS
 from alphadesk.ledger import store
 
 log = logging.getLogger("alphadesk.news")
@@ -138,6 +140,42 @@ def _merge_feeds(batches: list[list[dict]]) -> list[dict]:
     return merged
 
 
+# WHAT EACH FEED LAST SAID (2026-10-03). A rejected key made the poll fail
+# quietly every five minutes for half a day while the news window read "no
+# news" — nothing on the page said why. The last failure per reader and feed is
+# kept so the Account page can say it, and cleared by the next good answer.
+_feed_errors: dict[tuple[str, str], str] = {}
+
+
+def feed_problem(user_id: str, provider_name: str) -> str | None:
+    """Why this feed last failed, in words, or None when its last ask worked."""
+    msg = _feed_errors.get((user_id, provider_name))
+    if not msg:
+        return None
+    if "401" in msg or "403" in msg or "Authorization" in msg or "Forbidden" in msg:
+        return "the vendor rejected this key — replace it with a current key and secret"
+    return msg.strip().splitlines()[0][:160]
+
+
+def check_news_key(provider_name: str, api_key: str, api_secret: str | None) -> str | None:
+    """Try a freshly typed news key once and say if the vendor REFUSES it
+    (401 or 403). Any other trouble — a timeout, an outage, a vendor with no
+    cheap test — never blocks a save: only a refusal is certain."""
+    from alphadesk.providers import ProviderError, registry
+    if os.environ.get("ALPHADESK_SKIP_KEY_CHECK", "").strip() == "1":
+        return None                                   # offline, or a test: save without trying
+    try:
+        provider = registry.build("news", provider_name, api_key=api_key, api_secret=api_secret or None)
+        provider.fetch(datetime.now(timezone.utc) - timedelta(hours=6), limit=1)
+    except ProviderError as exc:
+        text = str(exc)
+        if "401" in text or "403" in text or "Authorization" in text or "Forbidden" in text:
+            return f"{provider_name} rejected that key and secret — check them and try again"
+    except Exception as exc:                          # noqa: BLE001 — never block a save on our own trouble
+        log.debug("news key check for %s: %s", provider_name, exc)
+    return None
+
+
 def fetch_articles(since: datetime, limit: int = 200, provider=None,
                    owner: str = "") -> list[dict]:
     """Ticker-tagged articles since `since`, NEWEST first, from `provider`
@@ -150,10 +188,13 @@ def fetch_articles(since: datetime, limit: int = 200, provider=None,
     from alphadesk.providers import ProviderError
     if provider is None:
         return []                                  # no server feed: a user's own key fetches
+    name = getattr(provider, "name", "")
     try:
         articles = provider.fetch(since, limit=limit)
+        _feed_errors.pop((owner, name), None)
     except ProviderError as exc:
         log.warning("news provider unavailable: %s", exc)
+        _feed_errors[(owner, name)] = str(exc)
         return []
     except Exception as exc:                      # a broken plugin is not fatal
         log.error("news provider raised unexpectedly: %s", exc)
@@ -304,8 +345,8 @@ def fetch_articles_from(articles, owner: str) -> list[dict]:
 
 # ── older stories (2026-09-15) ─────────────────────────────────────────────
 
-# How far back one page of older news may reach at the vendor.
-OLDER_PAGE_DAYS = 7
+# How far back one page of older news may reach at the vendor (30 days when
+# a longer keep-data setting is on; config.py): OLDER_PAGE_DAYS, imported above.
 
 
 def older_articles(user_id: str, before: str, limit: int = 100, query: str = "") -> list[dict]:
@@ -348,7 +389,7 @@ def older_articles(user_id: str, before: str, limit: int = 100, query: str = "")
 # A symbol's own ask at the vendor, remembered so a panel that refreshes every
 # minute does not repeat it. Keyed by reader, symbol and page edge.
 SYMBOL_ASK_TTL_S = 600.0
-SYMBOL_LOOKBACK_DAYS = 30
+# A symbol's own ask looks SYMBOL_LOOKBACK_DAYS back (config.py, imported above).
 _symbol_asked: dict[tuple, float] = {}
 _symbol_asked_lock = threading.Lock()
 
@@ -414,8 +455,8 @@ def backfill_user(user_id: str, provider_name: str, days: float | None = None) -
     feed) and stores the answer as that feed's. A feed that cannot page
     backwards is skipped. Any failure is logged and ends the backfill; the
     poll carries on regardless. Returns the stories stored."""
-    from alphadesk.config import NEWS_KEEP_DAYS
-    days = NEWS_KEEP_DAYS if days is None else days
+    from alphadesk.config import NEWS_BACKFILL_DAYS
+    days = NEWS_BACKFILL_DAYS if days is None else days
     row = next((r for r in store.get_user_keys(user_id, "news") if r["provider"] == provider_name), None)
     if row is None:
         return 0

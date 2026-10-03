@@ -1370,6 +1370,8 @@ export interface UserKeyRow {
   stories_24h?: number
   /** News feeds only: over a held real-time socket, or on the poll. */
   delivery?: "stream" | "poll"
+  /** Why this feed last failed (a rejected key, usually), or null when it is working. */
+  problem?: string | null
 }
 
 /** A token a reader issued so their own agent can call AlphaDesk's tools. */

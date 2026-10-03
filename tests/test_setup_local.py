@@ -15,7 +15,7 @@ def test_init_writes_a_private_file_once(tmp_path, monkeypatch, capsys):
     lines = dict(l.split("=", 1) for l in path.read_text().splitlines() if "=" in l and not l.startswith("#"))
     assert len(base64.b64decode(lines["ALPHADESK_VAULT_KEY"])) == 32
     assert lines["SEC_USER_AGENT"] == "AlphaDesk (me@example.com)"
-    assert lines["ALPHADESK_AUTH"] == "off"
+    assert lines["ALPHADESK_AUTH"] == "off" and lines["ALPHADESK_KEEP_DATA"] == "forever"
     before = path.read_text()
     assert setup_local.run_init("other@example.com", quiet=True) == 0      # a second run changes nothing
     assert path.read_text() == before
