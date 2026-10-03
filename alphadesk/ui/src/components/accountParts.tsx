@@ -44,12 +44,12 @@ export function Row({ label, children, actions }: {
 
 /* The shared small button, 20px caps (2026-09-18, the owner's call): at 22px
    and 12px a row of Replace / Remove outweighed the vendor name it acts on. */
-export const BTN = btnCls({ size: "sm" })
-export const BTN_DANGER = btnCls({ variant: "danger", size: "sm" })
+export const BTN = btnCls({ size: "sm" }, "rounded-md")
+export const BTN_DANGER = btnCls({ variant: "danger", size: "sm" }, "rounded-md")
 /* The way forward on a row (Connect, Add key, Create) differs from Replace
    only in full-strength text: a red outline on every unconnected vendor made
    the table shout at the reader to click (2026-09-18, the owner's call). */
-export const BTN_PRIMARY = btnCls({ variant: "strong", size: "sm" })
+export const BTN_PRIMARY = btnCls({ variant: "strong", size: "sm" }, "rounded-md")
 
 /* Taller rows for the Account tables only (2026-09-18, the owner's call): a
    row carries a key, a status pill and two buttons, and 30px read cramped.

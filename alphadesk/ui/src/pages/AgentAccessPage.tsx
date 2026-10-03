@@ -189,7 +189,7 @@ export default function AgentAccessPage() {
               <button key={c.id} type="button" role="tab" aria-selected={tab === c.id}
                       onClick={() => { setTab(c.id); setCopied(null) }}
                       // Selected by a soft fill, not a red outline (2026-09-18, the owner's call).
-                      className={btnCls({ size: "sm", active: tab === c.id }, "normal-case tracking-normal")}>
+                      className={btnCls({ size: "sm", active: tab === c.id }, "rounded-md normal-case tracking-normal")}>
                 {c.label}
               </button>
             ))}
