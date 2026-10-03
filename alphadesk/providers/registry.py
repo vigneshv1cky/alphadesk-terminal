@@ -166,6 +166,49 @@ _METHOD_TTL_S: dict[str, float] = {
     "press_releases": 21600.0, "dividend_calendar": 1800.0, "split_calendar": 3600.0, "ipo_calendar": 1800.0, "market_caps": 3600.0,
     "company_profile": 86400.0, "option_movers": 120.0, "crypto_bars": 30.0, "daily_history": 900.0, "crypto_daily_history": 900.0, "fx_daily_history": 3600.0,
 }
+# KEPT ANSWERS (2026-10-03). The memo above forgets at every restart and re-asks
+# the vendor every few minutes for answers that change daily. The methods below
+# have a copy kept in the store: read back while younger than the number given
+# (so a restart is warm and a quiet panel does not spend the reader's rate
+# limit), and used however old it is when the vendor itself fails. Live
+# answers — quotes, movers, the tape, option chains — are NOT kept: a stale
+# price is worse than none.
+_KEEP_FRESH_S: dict[str, float] = {
+    "fundamentals": 21600.0, "key_stats": 3600.0, "company_profile": 604800.0, "peers": 604800.0,
+    "analyst_ratings": 21600.0, "price_targets": 21600.0, "rating_changes": 21600.0,
+    "short_interest": 21600.0, "fund_holdings": 43200.0, "corporate_actions": 43200.0,
+    "earnings_history": 21600.0, "institutional_ownership": 21600.0, "compare_metrics": 21600.0,
+    "earnings_context": 21600.0, "earnings_insights": 21600.0, "press_releases": 43200.0,
+    "split_calendar": 7200.0, "dividend_calendar": 7200.0, "ipo_calendar": 7200.0, "market_caps": 7200.0,
+    "macro": 3600.0, "earnings_calendar": 3600.0, "economic_calendar": 7200.0,
+    "daily_history": 3600.0, "crypto_daily_history": 3600.0, "fx_daily_history": 10800.0,
+}
+_HISTORY_RANGES = {"1M", "3M", "6M", "YTD", "1Y", "5Y", "MAX"}
+_DAILY_OR_LONGER = {"1d", "1wk", "1mo"}
+_KEEP_STALE_S = 14 * 86400.0
+
+
+def _keep_fresh_s(method: str, kwargs: dict) -> float | None:
+    """How long a kept copy of this call counts as current, or None when it is
+    not kept. A chart is kept only when it is history: a page before an instant
+    never changes (a day), a daily-or-longer series changes once a day (an hour);
+    the intraday tail is live and is not kept."""
+    if method == "chart_series":
+        if kwargs.get("before") is not None:
+            return 86400.0
+        if kwargs.get("interval") in _DAILY_OR_LONGER or kwargs.get("range_key") in _HISTORY_RANGES:
+            return 3600.0
+        return None
+    return _KEEP_FRESH_S.get(method)
+
+
+def _arg_key(method: str, args: tuple, kwargs: dict) -> str:
+    import hashlib
+    import json
+    raw = json.dumps([method, args, sorted(kwargs.items())], default=str, sort_keys=True)
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 #: How long an answer that says it is still filling in is held: the rest of
 #: it lands within seconds, so it must not be held for the method's TTL.
 _FILLING_TTL_S = 2.0
@@ -184,10 +227,45 @@ class _CachedPrices:
     Attributes outside the TTL table (name, api_key) pass straight through.
     """
 
-    def __init__(self, inner: Any) -> None:
+    def __init__(self, inner: Any, owner: str = "", vendor: str = "") -> None:
         self._inner = inner
         self._memo: dict[tuple, tuple[float, float, Any]] = {}
         self._memo_lock = threading.Lock()
+        self._owner, self._vendor = owner, vendor            # whose kept answers these are, and from whom
+        self._flight: dict[tuple, threading.Lock] = {}       # one vendor call per identical request at a time
+
+    # -- kept answers -------------------------------------------------------
+    def _kept_get(self, attr: str, args: tuple, kwargs: dict) -> tuple[Any, float] | None:
+        """(the kept answer, its age in seconds), or None."""
+        if not (self._owner and self._vendor) or _keep_fresh_s(attr, kwargs) is None:
+            return None
+        try:
+            import json
+            from datetime import datetime, timezone
+
+            from alphadesk.ledger import store
+            got = store.vendor_cache_get(self._owner, self._vendor, attr, _arg_key(attr, args, kwargs))
+            if got is None:
+                return None
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(got[1])).total_seconds()
+            return json.loads(got[0]), age
+        except Exception as exc:                          # a kept copy is a convenience, never an error
+            log.debug("kept answer for %s unreadable: %s", attr, exc)
+            return None
+
+    def _kept_put(self, attr: str, args: tuple, kwargs: dict, val: Any) -> None:
+        if val is None or not (self._owner and self._vendor) or _keep_fresh_s(attr, kwargs) is None:
+            return
+        try:
+            import json
+
+            from alphadesk.ledger import store
+            payload = json.dumps(val)
+            if json.loads(payload) != val:                # tuples, sets, objects: not kept, rather than altered
+                return
+            store.vendor_cache_put(self._owner, self._vendor, attr, _arg_key(attr, args, kwargs), payload)
+        except Exception as exc:
+            log.debug("answer for %s not kept: %s", attr, exc)
 
     def __getattr__(self, attr: str) -> Any:
         target = getattr(self._inner, attr)
@@ -206,40 +284,78 @@ class _CachedPrices:
                     if isinstance(hit[2], EntitlementError):
                         raise hit[2]
                     return hit[2]
-            try:
-                val = target(*args, **kwargs)
-            except EntitlementError as exc:
-                # A plan refusal does not change minute to minute: held for
-                # an hour, so a polling panel does not spend the user's rate
-                # limit being refused again.
+                if len(self._flight) > 1024:
+                    self._flight.clear()
+                flight = self._flight.setdefault(key, threading.Lock())
+            # One vendor call per identical request at a time: a page and a
+            # prewarm replay asking together shared nothing before, and both
+            # rode the reader's rate limit (2026-10-03).
+            with flight:
                 with self._memo_lock:
-                    self._memo[key] = (now, _REFUSAL_TTL_S, exc)
-                raise
-            # AN ANSWER THAT IS STILL COMING IS NOT AN ANSWER (2026-09-24,
-            # #67). A dict marked `filling` was already held briefly. A
-            # provider that DEFERS its first read needs the same treatment
-            # for None: the scraped calendars answer None while a background
-            # fill runs, and the full hold meant the fill's answer, stored
-            # seconds later, went unread until the memo expired — the source
-            # looked permanently empty on a page that had already fetched it.
-            #
-            # ONLY FOR PROVIDERS THAT SAY SO (`DEFERS_FIRST_READ`), never for
-            # None in general: None normally means "I do not carry this",
-            # which is static, and several providers only discover it AFTER
-            # an HTTP call. Shortening the hold for all of them would turn
-            # every not-found lookup on a polling panel into a fresh vendor
-            # request every couple of seconds, spending the reader's rate
-            # limit to re-learn the same nothing.
-            deferring = val is None and getattr(self._inner, "DEFERS_FIRST_READ", False)
-            filling = deferring or (isinstance(val, dict) and val.get("filling"))
-            hold = min(ttl, _FILLING_TTL_S) if filling else ttl
-            with self._memo_lock:
-                if len(self._memo) >= _CACHE_MAX_ENTRIES:
-                    live = {k: v for k, v in self._memo.items() if now - v[0] < v[1]}
-                    self._memo = live if len(live) < _CACHE_MAX_ENTRIES else {}
-                self._memo[key] = (now, hold, val)
-            return val
+                    hit = self._memo.get(key)
+                    if hit and time.monotonic() - hit[0] < hit[1]:
+                        if isinstance(hit[2], EntitlementError):
+                            raise hit[2]
+                        return hit[2]
+                kept = self._kept_get(attr, args, kwargs)
+                fresh_for = _keep_fresh_s(attr, kwargs)
+                if kept is not None and fresh_for is not None and kept[1] < fresh_for:
+                    with self._memo_lock:
+                        self._memo[key] = (time.monotonic(), ttl, kept[0])
+                    return kept[0]
+                return self._ask_vendor(attr, target, args, kwargs, key, ttl, kept)
+
         return call
+
+    def _ask_vendor(self, attr: str, target: Any, args: tuple, kwargs: dict, key: tuple,
+                    ttl: float, kept: tuple[Any, float] | None) -> Any:
+        now = time.monotonic()
+        try:
+            val = target(*args, **kwargs)
+        except EntitlementError as exc:
+            # A plan refusal does not change minute to minute: held for
+            # an hour, so a polling panel does not spend the user's rate
+            # limit being refused again.
+            with self._memo_lock:
+                self._memo[key] = (now, _REFUSAL_TTL_S, exc)
+            raise
+        except Exception as exc:
+            # A vendor that is down answers from the kept copy, however old —
+            # for history and profiles an old answer beats an empty panel.
+            # Held briefly so a failing vendor is not asked on every poll.
+            if kept is not None and kept[1] < _KEEP_STALE_S:
+                log.warning("%s failed %s (%s): serving the copy kept %d min ago",
+                            self._vendor, attr, exc, int(kept[1] / 60))
+                with self._memo_lock:
+                    self._memo[key] = (time.monotonic(), min(ttl, 60.0), kept[0])
+                return kept[0]
+            raise
+        # AN ANSWER THAT IS STILL COMING IS NOT AN ANSWER (2026-09-24,
+        # #67). A dict marked `filling` was already held briefly. A
+        # provider that DEFERS its first read needs the same treatment
+        # for None: the scraped calendars answer None while a background
+        # fill runs, and the full hold meant the fill's answer, stored
+        # seconds later, went unread until the memo expired — the source
+        # looked permanently empty on a page that had already fetched it.
+        #
+        # ONLY FOR PROVIDERS THAT SAY SO (`DEFERS_FIRST_READ`), never for
+        # None in general: None normally means "I do not carry this",
+        # which is static, and several providers only discover it AFTER
+        # an HTTP call. Shortening the hold for all of them would turn
+        # every not-found lookup on a polling panel into a fresh vendor
+        # request every couple of seconds, spending the reader's rate
+        # limit to re-learn the same nothing.
+        deferring = val is None and getattr(self._inner, "DEFERS_FIRST_READ", False)
+        filling = deferring or (isinstance(val, dict) and val.get("filling"))
+        hold = min(ttl, _FILLING_TTL_S) if filling else ttl
+        with self._memo_lock:
+            if len(self._memo) >= _CACHE_MAX_ENTRIES:
+                live = {k: v for k, v in self._memo.items() if now - v[0] < v[1]}
+                self._memo = live if len(live) < _CACHE_MAX_ENTRIES else {}
+            self._memo[key] = (now, hold, val)
+        if not filling:
+            self._kept_put(attr, args, kwargs, val)
+        return val
 
 
 @functools.lru_cache(maxsize=32)
@@ -261,7 +377,7 @@ def _user_prices_provider(user_id: str, created_at: str, provider_name: str, sea
         provider.reader_id = user_id
     except AttributeError:                        # a plugin that forbids it
         pass
-    return _CachedPrices(provider)
+    return _CachedPrices(provider, owner=user_id, vendor=provider_name)
 
 
 _STAMP_EVERY_S = 300.0

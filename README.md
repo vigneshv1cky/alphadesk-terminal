@@ -459,11 +459,16 @@ and polling rather than streaming: see **[docs/rest-api.md](docs/rest-api.md)**.
   and AES-256-GCM, at least 12 characters).
 - **Agent credentials**: tokens and OAuth codes stored as SHA-256 hashes;
   OAuth clients sealed; consent page signed, same-site and unframeable.
-- **Retention — vendor data is kept only as long as a feature reads it**:
+- **Retention — the defaults, all lengthened by `ALPHADESK_KEEP_DATA`**:
   stories 7 days, full article text 72 hours, meaning vectors with their
   stories, company announcements 30 days past the report, the forecast log
-  120 days, release habits 3 days, press-release checks 24 hours. Removing a
-  key deletes what that key fetched.
+  120 days, release habits 3 days, press-release checks 24 hours, and the
+  kept copies of slow-changing vendor answers (history, fundamentals,
+  profiles, ratings, calendars) 14 days. Those copies make a restart warm,
+  spare your vendor rate limit, and answer for a vendor that is down; live
+  answers (quotes, movers, the tape, the intraday chart tail) are never kept.
+  Removing a key keeps what it fetched unless `ALPHADESK_PURGE_ON_KEY_REMOVAL`
+  is set.
 - **Deletion**: a reader can delete their account, confirmed by typing its
   email; every row keyed to it is removed in one transaction. The table
   list is checked against the schema by the test suite.

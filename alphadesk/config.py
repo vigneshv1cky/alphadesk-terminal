@@ -208,6 +208,9 @@ FORECAST_KEEP_DAYS = keep_days(120)
 HABIT_KEEP_DAYS = 3
 PRESS_CHECK_KEEP_HOURS = 24
 POOL_KEEP_DAYS = 7
+# The kept copies of vendor answers (providers/registry.py): a vendor that is down
+# is answered from here however old the copy is, so a copy is kept this long.
+VENDOR_CACHE_KEEP_DAYS = keep_days(14)
 # Scraped pages, held once for everyone (2026-09-25, #71). A calendar day is
 # useful while the earnings window still reaches it; halts and posts are
 # about right now and are worthless the next day. Kept only as long as a

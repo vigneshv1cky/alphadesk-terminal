@@ -215,6 +215,21 @@ CREATE TABLE IF NOT EXISTS scraped_data (
 );
 CREATE INDEX IF NOT EXISTS idx_scraped_at ON scraped_data (fetched_at);
 
+-- WHAT A VENDOR LAST ANSWERED (2026-10-03). The price cache lived in memory
+-- only, so every restart began cold and the slow-changing answers (history,
+-- fundamentals, profiles, ratings) were asked of the vendor again every few
+-- minutes. A copy is kept here per reader, vendor, method and arguments, and
+-- read back while fresh — or, when the vendor fails, however old it is.
+CREATE TABLE IF NOT EXISTS vendor_cache (
+    owner      TEXT NOT NULL,
+    vendor     TEXT NOT NULL,
+    method     TEXT NOT NULL,
+    argkey     TEXT NOT NULL,      -- a hash of the call's arguments
+    payload    TEXT NOT NULL,      -- the answer as JSON
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (owner, vendor, method, argkey)
+);
+
 -- A story's tickers as ROWS (2026-10-03), so a symbol's own news is an index
 -- lookup instead of a LIKE over every story's JSON ticker text. Written with the
 -- story, deleted with it, and filled once from existing rows at start.
@@ -514,6 +529,24 @@ def _key_table_needs_rebuild(conn) -> bool:
     if "provider" not in (row["sql"].rsplit("PRIMARY KEY", 1)[-1]):
         return True
     return "CHECK" in row["sql"] and "'prices'" not in row["sql"]
+
+
+def vendor_cache_get(owner: str, vendor: str, method: str, argkey: str) -> tuple[str, str] | None:
+    """(payload JSON, fetched_at ISO) of the last answer kept for this call."""
+    with _connect() as conn:
+        row = conn.execute("SELECT payload, fetched_at FROM vendor_cache"
+                           " WHERE owner = ? AND vendor = ? AND method = ? AND argkey = ?",
+                           (owner, vendor, method, argkey)).fetchone()
+    return (row["payload"], row["fetched_at"]) if row else None
+
+
+def vendor_cache_put(owner: str, vendor: str, method: str, argkey: str, payload: str) -> None:
+    with _lock, _connect() as conn:
+        conn.execute(
+            "INSERT INTO vendor_cache (owner, vendor, method, argkey, payload, fetched_at) VALUES (?,?,?,?,?,?)"
+            " ON CONFLICT (owner, vendor, method, argkey) DO UPDATE SET"
+            " payload = excluded.payload, fetched_at = excluded.fetched_at",
+            (owner, vendor, method, argkey, payload, _now()))
 
 
 def _backfill_news_tickers(conn) -> None:
@@ -1915,6 +1948,7 @@ def prune_vendor_data(now: datetime | None = None) -> dict[str, int]:
         run("scraped_days", "DELETE FROM scraped_data WHERE fetched_at < ?",
             (ago(days=cfg.SCRAPED_KEEP_DAYS),))
         run("nasdaq_earnings", "DELETE FROM earnings")
+        run("vendor_cache", "DELETE FROM vendor_cache WHERE fetched_at < ?", (ago(days=cfg.VENDOR_CACHE_KEEP_DAYS),))
         run("news_vectors", _ORPHAN_VECTORS)
         run("news_tickers", _ORPHAN_TICKERS)
     return out
@@ -2229,7 +2263,7 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
 _ACCOUNT_TABLES_BY_USER = ("user_sign_ins", "user_api_keys", "user_views", "user_baskets",
                            "user_boards", "user_layouts", "agent_access_tokens", "oauth_codes",
                            "oauth_grants", "user_chart_state", "warm_paths")
-_ACCOUNT_TABLES_BY_OWNER = ("news_articles", "news_tickers", "news_vectors", "earnings_announcements", "release_habits",
+_ACCOUNT_TABLES_BY_OWNER = ("news_articles", "news_tickers", "vendor_cache", "news_vectors", "earnings_announcements", "release_habits",
                             "press_release_checks", "earnings_forecasts", "reader_dollar_pools")
 
 
