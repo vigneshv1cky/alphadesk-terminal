@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 import os
-import uuid
 
 log = logging.getLogger("alphadesk.envkeys")
 
@@ -37,21 +36,14 @@ NEWS = {"polygon": ("POLYGON_API_KEY", None), "alpaca": ("ALPACA_API_KEY", "ALPA
 
 
 def target_account() -> str | None:
-    """The account the settings' keys belong to, or None when there is no one
-    account to give them to (sign-in on with no single allowed address)."""
+    """The account the settings' keys belong to, or None when there is none to
+    give them to: the one local account with sign-in off, or the login's."""
     from alphadesk.app import auth
     from alphadesk.ledger import store
     if not auth.auth_required():
         return store.ensure_local_user()
-    allowed = auth.allowed_emails()
-    if allowed and len(allowed) == 1:
-        email = next(iter(allowed))
-        row = store.get_user_by_email(email)
-        if row is None:
-            store.create_user(uuid.uuid4().hex, email, "sso-only")
-            row = store.get_user_by_email(email)
-        return row["user_id"] if row else None
-    return None
+    row = store.get_user_by_email(auth.login_email()) if auth.login_email() else None
+    return row["user_id"] if row else None
 
 
 def _setting(name: str | None) -> str:

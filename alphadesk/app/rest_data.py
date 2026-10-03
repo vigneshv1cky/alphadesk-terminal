@@ -63,7 +63,10 @@ def call(tool, query: dict):
     missing = [n for n in tool.parameters.get("required", []) if n not in query]
     if missing:
         raise BadRequest(f"missing parameter: {', '.join(missing)}")
-    return tool.fn(**{n: _coerce(n, props[n], v) for n, v in query.items()})
+    # The plain function: this runs in a worker thread already (a sync route), and
+    # the MCP door's copy is an async wrapper around it (mcp_server._run_tools_in_threads).
+    fn = getattr(tool.fn, "__wrapped__", tool.fn)
+    return fn(**{n: _coerce(n, props[n], v) for n, v in query.items()})
 
 
 _BARS_DOC = (

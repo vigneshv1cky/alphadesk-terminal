@@ -283,9 +283,8 @@ CREATE TABLE IF NOT EXISTS users (
     -- Stamped into every session cookie at issue; a cookie whose stamp
     -- trails the row is dead. Bumping this is "sign out everywhere".
     session_version INTEGER NOT NULL DEFAULT 1,
-    -- Access (2026-09-18): the free trial's end, and the subscription as the
-    -- payment processor last reported it. alphadesk/billing.py reads these;
-    -- nothing here decides access on its own.
+    -- UNUSED since billing was removed (2026-10-03). A column cannot be dropped
+    -- portably, so these stay and nothing reads or writes them.
     trial_ends_at       TEXT,
     plan_status         TEXT,   -- the processor's word: active, past_due, canceled...
     plan_provider       TEXT,
@@ -295,7 +294,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- How each account has signed in (2026-09-18): one row per method used —
--- google, github, microsoft, password — with the first and latest time. The
+-- password now, and earlier google, github and microsoft — with the first and latest time. The
 -- Account page's Security panel showed every method the SERVER offers as
 -- "Active" for everyone; a reader who only ever used GitHub saw Google
 -- active too. Recorded from this date on; earlier sign-ins are not known.
@@ -610,6 +609,10 @@ def init() -> None:
         "ALTER TABLE news_articles ADD COLUMN author TEXT",
         "ALTER TABLE news_articles ADD COLUMN body TEXT",
         "ALTER TABLE news_articles ADD COLUMN feeds TEXT",
+        # The news lists read one owner's stories newest first. The only index was
+        # on published_at alone, so SQLite scanned the owner's whole history and
+        # sorted it for every list, search and symbol read (2026-10-03).
+        "CREATE INDEX IF NOT EXISTS idx_news_owner_published ON news_articles (owner, published_at)",
         "ALTER TABLE exhibit_checks ADD COLUMN reader INTEGER NOT NULL DEFAULT 0",  # which rule decided it
         "ALTER TABLE earnings_releases ADD COLUMN event_date TEXT",  # the release day an 8-K reports
         "ALTER TABLE earnings_releases ADD COLUMN accepted_source TEXT",  # 'index' once read from the filing index          # which reader feeds delivered it
@@ -727,12 +730,16 @@ def save_articles(articles: list[dict], owner: str = "") -> list[str]:
         # window, never weeks later — matched on the normalised URL below
         # (a stored "…/a?utm=1" is the same story as an incoming "…/a/").
         dates = sorted(a.get("published_at") or "" for a in articles if a.get("published_at"))
-        floor = ""
+        floor = ceiling = ""
         if dates:
             try:
                 floor = (datetime.fromisoformat(dates[0].replace("Z", "+00:00")) - timedelta(days=2)).isoformat()
+                # BOUNDED ABOVE TOO (2026-10-03): a batch from a year-long ask
+                # (a symbol's own, a backfill) made this read the owner's whole
+                # table while holding the write lock.
+                ceiling = (datetime.fromisoformat(dates[-1].replace("Z", "+00:00")) + timedelta(days=2)).isoformat()
             except ValueError:
-                floor = ""
+                floor = ceiling = ""
         existing: list[dict] = []
         for i in range(0, len(ids), 200):
             chunk = ids[i:i + 200]
@@ -743,8 +750,8 @@ def save_articles(articles: list[dict], owner: str = "") -> list[str]:
         if floor:
             existing += [dict(r) for r in conn.execute(
                 "SELECT article_id, url, feeds, coalesce(length(body), 0) AS body_len FROM news_articles"
-                " WHERE owner = ? AND published_at >= ?",
-                (owner, floor)).fetchall()]
+                " WHERE owner = ? AND published_at >= ? AND published_at <= ?",
+                (owner, floor, ceiling)).fetchall()]
         by_id = {r["article_id"]: r for r in existing}
         by_url = {article_url_key(r["url"]): r for r in existing if article_url_key(r["url"])}
         inserts, feed_updates, body_updates = [], {}, {}
@@ -1066,26 +1073,12 @@ def create_user(user_id: str, email: str, password_hash: str) -> None:
             (user_id, email.lower().strip(), password_hash, _now()))
 
 
-def set_user_disabled(user_id: str, disabled: bool) -> bool:
-    with _lock, _connect() as conn:
-        cur = conn.execute("UPDATE users SET disabled=? WHERE user_id=?", (1 if disabled else 0, user_id))
-    return cur.rowcount > 0
-
-
 def get_user_by_email(email: str) -> dict | None:
     with _connect() as conn:
         row = conn.execute(
             "SELECT user_id, email, password_hash, disabled, created_at, session_version"
             " FROM users WHERE email=?", (email.lower().strip(),)).fetchone()
     return dict(row) if row else None
-
-
-def account_email(user_id: str) -> str | None:
-    """An account's address, for the allow-list's check on credentials that
-    carry only the account id."""
-    with _connect() as conn:
-        row = conn.execute("SELECT email FROM users WHERE user_id=?", (user_id,)).fetchone()
-    return row["email"] if row else None
 
 
 def user_session_state(user_id: str) -> dict | None:
@@ -1122,12 +1115,6 @@ def set_user_password(email: str, password_hash: str) -> bool:
     with _lock, _connect() as conn:
         cur = conn.execute("UPDATE users SET password_hash=? WHERE email=?",
                            (password_hash, email.lower().strip()))
-    return cur.rowcount > 0
-
-
-def remove_user(email: str) -> bool:
-    with _lock, _connect() as conn:
-        cur = conn.execute("DELETE FROM users WHERE email=?", (email.lower().strip(),))
     return cur.rowcount > 0
 
 

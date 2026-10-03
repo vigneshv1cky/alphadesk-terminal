@@ -215,7 +215,28 @@ def embed_stories(texts: list[str]) -> list[str] | None:
     return [o for o in out if o is not None]
 
 
+_QUERY_MEMO: "OrderedDict[str, Any]" = OrderedDict()
+_QUERY_MEMO_MAX = 512
+_query_memo_lock = threading.Lock()
+
+
 def embed_query(query: str):
+    """The query's vector, remembered: a repeated or refined search used to
+    encode the same text again on the CPU under the one encoder lock."""
+    with _query_memo_lock:
+        if query in _QUERY_MEMO:
+            _QUERY_MEMO.move_to_end(query)
+            return _QUERY_MEMO[query]
+    vec = _embed_query_uncached(query)
+    if vec is not None:
+        with _query_memo_lock:
+            _QUERY_MEMO[query] = vec
+            while len(_QUERY_MEMO) > _QUERY_MEMO_MAX:
+                _QUERY_MEMO.popitem(last=False)
+    return vec
+
+
+def _embed_query_uncached(query: str):
     m = model()
     if m is None:
         return None

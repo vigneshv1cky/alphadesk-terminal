@@ -15,7 +15,6 @@ def settings(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("ALPHADESK_VAULT_KEY", base64.b64encode(b"\x07" * 32).decode())
     monkeypatch.setenv("ALPHADESK_AUTH", "off")
-    monkeypatch.delenv("ALPHADESK_ALLOWED_EMAILS", raising=False)
     monkeypatch.delenv("ALPHADESK_LOCAL_USER_EMAIL", raising=False)
     return monkeypatch
 
@@ -51,16 +50,15 @@ def test_a_key_removed_from_the_settings_is_kept(store, settings):
     assert [r["provider"] for r in store.get_user_keys(uid, "prices")] == ["fmp"]
 
 
-def test_the_account_is_the_local_one_or_the_single_allowed_address(store, settings):
+def test_the_account_is_the_local_one_or_the_logins(store, settings):
     assert envkeys.target_account() == store.ensure_local_user()
     settings.setenv("ALPHADESK_AUTH", "required")
-    assert envkeys.target_account() is None                          # accounts, no single address
-    settings.setenv("ALPHADESK_ALLOWED_EMAILS", "a@example.com b@example.com")
-    assert envkeys.target_account() is None
-    settings.setenv("ALPHADESK_ALLOWED_EMAILS", "me@example.com")
-    uid = envkeys.target_account()                                   # made if missing, found after
-    assert uid and store.get_user_by_email("me@example.com")["user_id"] == uid
-    assert envkeys.target_account() == uid
+    settings.delenv("ALPHADESK_LOGIN_EMAIL", raising=False)
+    assert envkeys.target_account() is None                          # no login to give them to
+    settings.setenv("ALPHADESK_LOGIN_EMAIL", "me@example.com")
+    assert envkeys.target_account() is None                          # not made yet
+    store.create_user("me", "me@example.com", "x")
+    assert envkeys.target_account() == "me"
 
 
 def test_without_a_vault_key_nothing_is_loaded(store, settings):

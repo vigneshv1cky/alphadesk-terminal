@@ -1542,6 +1542,42 @@ def data_sources() -> dict:
             "connected": connected}
 
 
+def _run_tools_in_threads() -> int:
+    """Run every plain (sync) tool on a worker thread instead of the event loop.
+
+    The SDK calls a sync tool directly on the loop, so one tool waiting on a
+    vendor, EDGAR or the database stalled the WHOLE server — the web pages, the
+    health probe and every other agent — for as long as it waited (2026-10-03).
+    A worker thread keeps the loop free; anyio copies the request's context
+    across, so the reader identity the token gate set still applies. Idempotent:
+    a tool already async is left alone. Returns how many were moved."""
+    import functools
+
+    import anyio
+
+    def threaded(fn):
+        @functools.wraps(fn)
+        async def run(**kwargs):
+            return await anyio.to_thread.run_sync(functools.partial(fn, **kwargs))
+        return run
+
+    moved = 0
+    try:
+        tools = list(mcp._tool_manager._tools.values())
+    except AttributeError:                         # an SDK that keeps them elsewhere: leave them as they are
+        log.warning("MCP tools were not moved off the event loop: this SDK keeps them elsewhere")
+        return 0
+    for tool in tools:
+        if not tool.is_async:
+            tool.fn = threaded(tool.fn)
+            tool.is_async = True
+            moved += 1
+    return moved
+
+
+_run_tools_in_threads()
+
+
 def stdio_main() -> None:
     """Console-script entry point (`alphadesk-mcp`), for MCP clients that
     start a server by command. stdio carries the protocol on stdout, so

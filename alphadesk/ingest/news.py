@@ -1,11 +1,8 @@
-"""News ingestion — poll the configured provider, enrich, persist.
+"""News ingestion — poll each reader's own feeds, merge, persist.
 
-Recovered and adapted from the v1 multi-agent system (removed 11263ae,
-2026-08-07): same Polygon fetch and the same enrichment_cache-backed
-amortization, with the LLM call swapped from the old committee's call_role()
-(claude_sdk/kimi/deepseek, multi-role) to this repo's single-purpose
-ai/llm.py client. The enrichment prompt (category/sentiment/relations) is
-unchanged — it was already tuned and working.
+No model touches a story: nothing is labelled, scored or summarised. A feed
+that fails is logged and remembered (feed_problem) so the Account page can say
+why, and the window keeps what it already has.
 """
 
 import functools
@@ -13,6 +10,7 @@ import inspect
 import logging
 import math
 import os
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -28,36 +26,6 @@ _BATCH = 30               # articles per enrichment call — fewer calls, less o
 _seen_ids: set[str] = set()
 _SEEN_CAP = 100_000       # bound memory in a 24/7 process; clearing only risks
                           # re-fetching an old article, absorbed by enrichment_cache
-
-_ENRICH_SYSTEM = (
-    "You are a financial news enrichment engine. For each numbered article you "
-    "receive, produce a substance category, sentiment, and any explicit "
-    "inter-company relations stated in the text.\n"
-    "category — what KIND of information this is:\n"
-    "  BUSINESS_EVENT: something happened at the company — earnings/guidance, "
-    "M&A, contracts, products, leadership, legal/regulatory action against it\n"
-    "  SUPPLY_DEMAND: supply-chain, production, capacity, shortages, pricing "
-    "power, demand signals, orders, inventory\n"
-    "  MACRO_POLICY: rates, regulation, tariffs, geopolitics affecting sectors\n"
-    "  PRICE_COMMENTARY: the article mainly narrates stock-price action "
-    "('X soared/plunged/hit a high', 'why X stock moved', weekly recaps)\n"
-    "  OPINION: listicles, 'top N stocks to buy', 'should you buy X', "
-    "evergreen takes with no new information\n"
-    "sentiment: -1.0 (very negative) to 1.0 (very positive) — the OVERALL tone. "
-    "label: negative|neutral|positive.\n"
-    "ticker_sentiment: when the article names MULTIPLE companies and the news is "
-    "NOT symmetric across them, give the per-company sentiment (e.g. 'X sues Y' is "
-    "negative for Y but neutral/positive for X). List ONLY tickers whose sentiment "
-    "differs from the overall — any ticker you omit inherits the article sentiment. "
-    "Skip this entirely for single-company or uniformly-toned articles.\n"
-    "relations: ONLY relations explicitly stated or strongly implied by the "
-    "article text itself (e.g. 'X supplies chips to Y', 'X competes with Y').\n"
-    "Return ONLY JSON: {\"items\": [{\"i\": <1-based index>, \"category\": ..., "
-    "\"sentiment\": ..., \"label\": ..., "
-    "\"ticker_sentiment\": [{\"t\": \"TICK\", \"sentiment\": ..., \"label\": ...}], "
-    "\"relations\": [{\"a\": \"TICK\", \"rel\": \"...\", \"b\": \"TICK\"}]}]}"
-)
-
 
 @functools.lru_cache(maxsize=32)
 def _user_news_provider(user_id: str, created_at: str, provider_name: str, sealed: str):
@@ -147,12 +115,30 @@ def _merge_feeds(batches: list[list[dict]]) -> list[dict]:
 _feed_errors: dict[tuple[str, str], str] = {}
 
 
+_REFUSAL = re.compile(r"\b(401|403)\b|unauthori[sz]ed|not authori[sz]ed|authorization required|forbidden"
+                      r"|unknown api key|invalid api key|invalid key|api key (is )?(missing|invalid)", re.I)
+
+
+def _refused(text: str) -> bool:
+    """Whether a vendor's error text is a REFUSAL of the credentials. The
+    status code does not survive the providers' re-wrap of the vendor's
+    exception, so the wording is read too (Alpaca answers "request is not
+    authorized", Polygon "Unknown API Key", a gateway "401 Authorization
+    Required"). Matched without regard to case, and a number only as a word."""
+    return bool(_REFUSAL.search(text or ""))
+
+
+def has_feed_problem(user_id: str) -> bool:
+    """Whether any of this reader's feeds failed its last ask."""
+    return any(owner == user_id for owner, _ in list(_feed_errors))
+
+
 def feed_problem(user_id: str, provider_name: str) -> str | None:
     """Why this feed last failed, in words, or None when its last ask worked."""
     msg = _feed_errors.get((user_id, provider_name))
     if not msg:
         return None
-    if "401" in msg or "403" in msg or "Authorization" in msg or "Forbidden" in msg:
+    if _refused(msg):
         return "the vendor rejected this key — replace it with a current key and secret"
     return msg.strip().splitlines()[0][:160]
 
@@ -168,8 +154,7 @@ def check_news_key(provider_name: str, api_key: str, api_secret: str | None) -> 
         provider = registry.build("news", provider_name, api_key=api_key, api_secret=api_secret or None)
         provider.fetch(datetime.now(timezone.utc) - timedelta(hours=6), limit=1)
     except ProviderError as exc:
-        text = str(exc)
-        if "401" in text or "403" in text or "Authorization" in text or "Forbidden" in text:
+        if _refused(str(exc)):
             return f"{provider_name} rejected that key and secret — check them and try again"
     except Exception as exc:                          # noqa: BLE001 — never block a save on our own trouble
         log.debug("news key check for %s: %s", provider_name, exc)
@@ -349,6 +334,18 @@ def fetch_articles_from(articles, owner: str) -> list[dict]:
 # a longer keep-data setting is on; config.py): OLDER_PAGE_DAYS, imported above.
 
 
+def _article_dicts(got, feed: str) -> list[dict]:
+    """A feed's answer in the stored shape, WITHOUT the process-wide seen-id
+    set the poll uses: that set exists so a poll does not re-scan its own
+    window, and on a page, a backfill or a symbol's ask it hid stories that had
+    since been pruned from the store, so the page stayed short until a
+    restart (2026-10-03)."""
+    return [{"id": a.id, "title": a.title, "summary": a.summary, "source": a.source,
+             "url": a.url, "published_at": a.published_at, "tickers": a.symbols,
+             "image_url": a.image_url, "author": a.author, "body": a.body,
+             "feeds": [feed]} for a in got if a.id]
+
+
 def older_articles(user_id: str, before: str, limit: int = 100, query: str = "") -> list[dict]:
     """A page of the reader's stories published before `before` (ISO), newest
     first; with `query`, only those whose headline, summary or tickers
@@ -378,7 +375,7 @@ def older_articles(user_id: str, before: str, limit: int = 100, query: str = "")
         except Exception as exc:
             log.info("older news from %s: %s", row["provider"], exc)
             continue
-        batches.append([{**d, "feeds": [row["provider"]]} for d in fetch_articles_from(got, owner="older:" + user_id)])
+        batches.append(_article_dicts(got, row["provider"]))
     merged = _merge_feeds(batches)
     if merged:
         store.save_articles(merged, owner=owner)
@@ -435,15 +432,17 @@ def symbol_articles(user_id: str, symbol: str, before: str | None, limit: int) -
         except Exception as exc:
             log.info("%s news from %s: %s", symbol, row["provider"], exc)
             continue
-        batches.append([{"id": a.id, "title": a.title, "summary": a.summary, "source": a.source,
-                         "url": a.url, "published_at": a.published_at, "tickers": a.symbols,
-                         "image_url": a.image_url, "author": a.author, "body": a.body,
-                         "feeds": [row["provider"]]} for a in got if a.id])
+        batches.append(_article_dicts(got, row["provider"]))
     merged = _merge_feeds(batches)
     if merged:
         store.save_articles(merged, owner=owner)
         rows = store.articles_for_symbol(owner, symbol, before, limit)
     return rows
+
+
+# One ask returns at most this many stories; a day is walked in up to this many.
+BACKFILL_PAGE = 400
+BACKFILL_PAGES_PER_DAY = 8
 
 
 def backfill_user(user_id: str, provider_name: str, days: float | None = None) -> int:
@@ -470,21 +469,32 @@ def backfill_user(user_id: str, provider_name: str, days: float | None = None) -
     now = datetime.now(timezone.utc)
     stored = 0
     for day in range(max(1, math.ceil(days))):
-        until = now - timedelta(days=day)
-        since = max(until - timedelta(days=1), now - timedelta(days=days))
-        try:
-            got = provider.fetch(since, limit=400, until=until)
-        except Exception as exc:
-            log.info("backfill %s for %s: %s", provider_name, user_id[:8], exc)
-            break
-        batch = [{"id": a.id, "title": a.title, "summary": a.summary, "source": a.source,
-                  "url": a.url, "published_at": a.published_at, "tickers": a.symbols,
-                  "image_url": a.image_url, "author": a.author, "body": a.body,
-                  "feeds": [provider_name]} for a in got if a.id]
-        batch = _merge_feeds([batch])
-        if batch:
-            store.save_articles(batch, owner=news_owner(user_id))
-            stored += len(batch)
+        day_until = now - timedelta(days=day)
+        since = max(day_until - timedelta(days=1), now - timedelta(days=days))
+        cursor = day_until
+        # A day of an all-symbol feed is far more than one ask returns (the
+        # newest BACKFILL_PAGE stories), so walk the day backwards: each ask
+        # ends where the last one's oldest story began, until the day is
+        # covered, the feed has no more, or a page makes no progress.
+        for _page in range(BACKFILL_PAGES_PER_DAY):
+            try:
+                got = provider.fetch(since, limit=BACKFILL_PAGE, until=cursor)
+            except Exception as exc:
+                log.info("backfill %s for %s: %s", provider_name, user_id[:8], exc)
+                return stored
+            batch = _merge_feeds([_article_dicts(got, provider_name)])
+            if batch:
+                store.save_articles(batch, owner=news_owner(user_id))
+                stored += len(batch)
+            if len(got) < BACKFILL_PAGE:
+                break
+            try:
+                oldest = min(datetime.fromisoformat(a.published_at.replace("Z", "+00:00")) for a in got if a.published_at)
+            except ValueError:
+                break
+            if oldest >= cursor or oldest <= since:
+                break
+            cursor = oldest
     return stored
 
 

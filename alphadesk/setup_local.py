@@ -28,7 +28,7 @@ def run_init(email: str, quiet: bool = False) -> int:
         if not quiet:
             print(f"already set up: {path} exists and was left as it is")
         return 0
-    if not _EMAIL.match(email or ""):
+    if not _EMAIL.fullmatch(email or ""):
         print("--email must be a real address, such as you@example.com", file=sys.stderr)
         return 1
     key = base64.b64encode(os.urandom(32)).decode()

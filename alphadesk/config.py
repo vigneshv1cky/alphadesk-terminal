@@ -169,7 +169,9 @@ if _KEEP_RAW in ("forever", "always", "indefinitely"):
     KEEP_DATA_DAYS: float | None = FOREVER_DAYS
 else:
     try:
-        KEEP_DATA_DAYS = float(_KEEP_RAW) if _KEEP_RAW else None
+        KEEP_DATA_DAYS = min(float(_KEEP_RAW), FOREVER_DAYS) if _KEEP_RAW else None
+        if KEEP_DATA_DAYS is not None and not (KEEP_DATA_DAYS > 0):     # nan, zero, negative
+            raise ValueError(_KEEP_RAW)
     except ValueError:
         log.warning("ALPHADESK_KEEP_DATA=%r is not 'forever' or a number of days: ignored", _KEEP_RAW)
         KEEP_DATA_DAYS = None

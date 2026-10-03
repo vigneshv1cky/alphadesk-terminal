@@ -90,7 +90,7 @@ class TokenGate:
             await _forbidden(send)
             return
         # The allow-list reaches the agent too: a token made by an account no
-        # longer on it stops working (app/auth.py, ALPHADESK_ALLOWED_EMAILS).
+        # longer the login stops working (app/auth.py, allowed_emails).
         from alphadesk.app import auth as _auth
         if not await anyio.to_thread.run_sync(_auth.uid_allowed, uid):
             await _forbidden_account(send)

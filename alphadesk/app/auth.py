@@ -2,8 +2,7 @@
 
 COMPULSORY BY DEFAULT (an instance is gated unless the operator sets
 `ALPHADESK_AUTH=off`). The only door is an email and password the operator
-makes: set in the settings (ALPHADESK_LOGIN_EMAIL with a password hash), or
-added from the command line (`python -m alphadesk.main user add`). There is no
+makes, set in the settings (ALPHADESK_LOGIN_EMAIL with a password hash). There is no
 sign-up and no third-party sign-in: Google, GitHub and Microsoft sign-in were
 removed on 2026-10-03.
 
@@ -102,22 +101,15 @@ def auth_required() -> bool:
     return os.environ.get("ALPHADESK_AUTH", "required").strip().lower() != "off"
 
 
-# ── the allow-list (2026-10-03) ─────────────────────────────────────────────
-# ALPHADESK_ALLOWED_EMAILS limits the accounts that may be used to the people
-# the operator names: a comma- or space-separated list, compared without case.
-# Unset or empty, nothing changes. It applies wherever accounts gate — to
-# sign-ins, to sessions already open, and (in the agent door) to tokens made by
-# an account no longer on the list — and not to an instance with sign-in off,
-# which has one account and no addresses.
+# ── who may use the server ──────────────────────────────────────────────────
+# One user: where accounts gate, the only address that may sign in, keep a
+# session or own an agent token is the login set in the settings. (An earlier
+# list setting, ALPHADESK_ALLOWED_EMAILS, was removed on 2026-10-03: with one
+# login it could say nothing the login does not.) An instance with sign-in off
+# has one account and no addresses.
 
 def allowed_emails() -> set[str] | None:
-    # ONE USER (2026-10-03): where a login is set it is the only address that
-    # may be used, whatever else the list says.
-    if login_email():
-        return {login_email()}
-    raw = os.environ.get("ALPHADESK_ALLOWED_EMAILS", "")
-    names = {e.strip().lower() for e in raw.replace(",", " ").split() if e.strip()}
-    return names or None
+    return {login_email()} if login_email() else None
 
 
 def email_allowed(email: str | None) -> bool:
@@ -131,7 +123,7 @@ def uid_allowed(user_id: str) -> bool:
     """For credentials that carry only an account id (agent tokens)."""
     if allowed_emails() is None or not auth_required():
         return True
-    return email_allowed(store.account_email(user_id))
+    return email_allowed(store.user_email(user_id))
 
 
 # ── the access token (2026-10-03) ──────────────────────────────────────────

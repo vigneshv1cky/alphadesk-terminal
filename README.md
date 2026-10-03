@@ -173,7 +173,7 @@ cp alphadesk/deploy/env.example .env
 | `ALPHADESK_AUTH` | for one person | `off`: a single local account with no sign-in |
 | `ALPHADESK_ACCESS_TOKEN` | if reachable beyond your machine | with sign-in off, one shared secret (16+ characters) the browser asks for once; see Quick start |
 | `ALPHADESK_DATABASE_URL` | no | a `postgres://` URL; unset, SQLite in `ALPHADESK_DATA` (`~/.alphadesk`) |
-| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys. Found at start, they are sealed into your account — the local one with sign-in off, or the one allowed address's — so the settings file is the record: they add or update keys, never delete them, and win over a key changed on the Account page at the next start. You can still connect keys on the Account page instead |
+| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys. Found at start, they are sealed into your account — the local one with sign-in off, or the login's — so the settings file is the record: they add or update keys, never delete them, and win over a key changed on the Account page at the next start. You can still connect keys on the Account page instead |
 | `ALPHADESK_SEMANTIC_SEARCH` | no | `off` skips the ~1.2 GB embedding model; search then matches words only. Without the `search` extra installed it is off anyway |
 | `ALPHADESK_LOGIN_EMAIL` + `ALPHADESK_LOGIN_PASSWORD_HASH` | no | with sign-in on: your own sign-in, and the only user the server accepts. With sign-in on it is required; the server will not start without it. At start the account is made, or an existing account with that email gets the password and keeps its data. While set, the password form is the only door. Make the hash with `python -m alphadesk.main hash-password`; `ALPHADESK_LOGIN_PASSWORD` (12+ characters) also works but is readable to anyone who can read the settings. The identifier is an email address |
 
@@ -270,7 +270,7 @@ and why. Bring evidence and open an issue.
 
 | Page | What it shows |
 |---|---|
-| **Landing** (`/`) | Product overview with blurred screenshots; sign-in and sign-up |
+| **Landing** (`/`) | Product overview with blurred screenshots; sign-in |
 | **Markets** | A composable board: chart, equity overview, funds built on the stock, stock/ETF/crypto/currency/option movers, Treasury yields, heatmap, news. Stock and ETF movers **step back to a past session**, computed from the whole market that day against the session before it |
 | **Chart** | Full workspace: candles, line, area, step and other styles; 1-minute to multi-year intervals; indicators and templates; drawing tools (desktop, per visit); multi-chart layouts; overnight, pre-market, after-hours and weekend session shading |
 | **Analysis** | One name end to end: chart, filings, price performance, key statistics, earnings history and consensus, analysts, rating changes, financials as filed, splits, dividends, institutional and insider ownership, news. Funds add holdings and breakdown; coins get their CoinGecko record instead of stock-only panels |
@@ -282,7 +282,7 @@ and why. Bring evidence and open an issue.
 | **Sectors** | Sector funds by weight and dollars traded, with breadth |
 | **Baskets** | 36 curated baskets grouped by the *news* that moves them (rates, oil, tariffs, chip export rules, bitcoin, …), plus the reader's own |
 | **Portfolio / custom views** | The reader's saved boards |
-| **Account** | Coverage matrix of connected vendors and feeds (with the sealed **Export keys** download), sign-in methods and sessions |
+| **Account** | Coverage matrix of connected vendors and feeds (with the plain-text **Export keys** download) and sessions |
 | **Agent access** | Its own page: connect an AI assistant (Claude.ai, ChatGPT) by address, make tokens for programs — each optionally tied to the addresses it may be used from — and ready-to-paste setup for Claude Code, Codex, Cursor, opencode or your own program over the data API |
 | **Terms, Privacy, Disclaimer** | Public drafts pending legal review |
 
@@ -627,6 +627,7 @@ required.
 | `ALPHADESK_AUTH` | `off` for a single local account without sign-in |
 | `ALPHADESK_ACCESS_TOKEN` | with sign-in off, a shared secret (16+ characters) that guards the browser; ignored where accounts gate |
 | `ALPHADESK_LOCAL_USER_EMAIL` | with sign-in off, act as this existing account instead of a fresh local one — for a server that began with accounts and became one person's own; nothing is moved |
+| `ALPHADESK_ALLOWED_HOSTS` | with sign-in off and no access token, the server answers only to `localhost`, `127.0.0.1` and `[::1]` (so a web page cannot reach it by rebinding its own name); list any other name you reach it by, comma-separated. `ALPHADESK_BASE_URL`'s host is allowed too |
 | `ALPHADESK_KEEP_DATA` | `forever` or a number of days: keeps the records (stories and their text, announcements, the forecast log, scraped pages) that long instead of the defaults of 3 to 120 days, and reaches further when the store has less (a key save refills 30 days, "Load older" looks 30 days back, a symbol's own ask a year). It only lengthens a default. A vendor's own terms about storing its data still apply to you; this setting does not change them |
 | `NEWS_BACKFILL_DAYS` | how many days a key save refills (default: the retention window, 30 with `ALPHADESK_KEEP_DATA`, never over 365) |
 | `ALPHADESK_SKIP_KEY_CHECK` | `1` saves a news key without trying it at the vendor first (offline) |

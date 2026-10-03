@@ -109,6 +109,14 @@ def _load(user_id: str) -> dict[str, float]:
     from alphadesk.ledger import store
     cutoff = datetime.now(timezone.utc) - timedelta(hours=KEEP_HOURS)
     with _lock:
+        # Forget what has aged out: paths with ever-changing query strings
+        # (chart ranges, symbol lists) otherwise pile up for the process's life.
+        stale = cutoff.timestamp()
+        for table in (_replayed, _persisted):
+            for k in [k for k, at in table.items() if at < stale]:
+                table.pop(k, None)
+        if user_id in _seen:
+            _seen[user_id] = {p: at for p, at in _seen[user_id].items() if at >= stale}
         mine = dict(_seen.get(user_id, {}))
     for row in store.warm_paths(user_id, cutoff.isoformat()):
         try:
@@ -133,7 +141,7 @@ def _replay(user_id: str, email: str, path: str) -> None:
     from alphadesk.ledger import store
     port = os.environ.get("DASHBOARD_PORT", "8000")
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers={HEADER: "1"})
-    if auth.auth_required():
+    if auth.gate_active():
         state = store.user_session_state(user_id) or {}
         cookie = auth.issue_session(user_id, email, state.get("session_version", 1))
         req.add_header("Cookie", f"{auth.SESSION_COOKIE}={cookie}")

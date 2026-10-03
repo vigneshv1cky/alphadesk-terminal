@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import time
 import logging
+import math
 import sys
 
 
@@ -144,8 +145,13 @@ async def _serve() -> None:
                     log.warning("news stream holds: %s", exc)
                 for uid in active:
                     u_since = user_last.get(uid) or (now_et() - timedelta(hours=NEWS_LOOKBACK_HOURS))
-                    user_last[uid] = now_et()
+                    asked_at = now_et()
                     un = await loop.run_in_executor(None, news.poll_user, uid, u_since)
+                    # The cursor moves on only when the feeds answered: after a
+                    # rejected key or an outage the next poll still reaches back
+                    # over what was missed (2026-10-03).
+                    if not news.has_feed_problem(uid):
+                        user_last[uid] = asked_at
                     if un:
                         log.info("Ingested %d articles for reader %s", un, uid[:8])
                 for gone in set(user_last) - set(active):
@@ -347,9 +353,6 @@ def main() -> None:
                 _store.ensure_local_user()
             except RuntimeError as exc:
                 sys.exit(str(exc))
-        _allowed = _auth.allowed_emails()
-        if _allowed and _auth.auth_required():
-            log.info("sign-in is limited to %d allowed address%s", len(_allowed), "" if len(_allowed) == 1 else "es")
         from alphadesk.ledger import envkeys as _envkeys
         _envkeys.load_at_start()
         host = env_value("DASHBOARD_HOST", "127.0.0.1")
@@ -364,7 +367,7 @@ def main() -> None:
         from alphadesk.ingest import edgar_releases
         from alphadesk.ledger import store
         store.init()
-        n = edgar_releases.backfill(days=max(1, int(args.hours / 24) or 7))
+        n = edgar_releases.backfill(days=max(1, math.ceil(args.hours / 24)))
         print(f"EDGAR results releases stamped: {n}")
     elif args.cmd == "mcp":
         # stdio is the transport most clients use, and it carries the protocol

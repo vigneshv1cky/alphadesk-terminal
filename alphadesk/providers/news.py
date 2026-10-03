@@ -34,6 +34,13 @@ log = logging.getLogger("alphadesk.providers.news")
 # on USABLE ones. Without it a wide window on a busy day pages forever.
 _MAX_SCAN = int(os.environ.get("NEWS_MAX_SCAN", "400"))
 
+
+def _utc(when):
+    """A moment in UTC: the polls pass Eastern time, and a literal "Z" after an
+    Eastern clock reading put Polygon's window hours early."""
+    from datetime import timezone
+    return when.astimezone(timezone.utc) if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
 # Storage bound on a full article body — generous for prose, a guard against
 # a feed shipping a novel.
 _BODY_CHARS = 20_000
@@ -90,7 +97,7 @@ class PolygonNews:
         scanned = 0
         try:
             for art in client.list_ticker_news(
-                published_utc_gte=since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                published_utc_gte=_utc(since).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 limit=min(limit, 1000), sort="published_utc", order="desc",
             ):
                 scanned += 1

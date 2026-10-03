@@ -207,7 +207,10 @@ async def _login_gate(request: Request, call_next):
         # An open instance acts as its one local account, so keys and every
         # keyed surface work there as for a signed-in user.
         uid = _local_uid()
-    if uid:
+    # Only a person's own request counts as being seen: a prewarm replay or a
+    # health probe stamping the account would keep it "active" for ever, and
+    # the news poll, held socket and replays with it (2026-10-03).
+    if uid and not request.headers.get("x-alphadesk-prewarm") and request.url.path.startswith("/api/"):
         _touch_seen(uid)
     token = ai_llm.set_request_user(uid)
     try:
