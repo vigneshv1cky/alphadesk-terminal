@@ -436,7 +436,13 @@ def symbol_articles(user_id: str, symbol: str, before: str | None, limit: int) -
         # told apart from "the ask never ran" (2026-10-03).
         log.info("%s news from %s: %d stories since %s", symbol, row["provider"], len(got),
                  since.date().isoformat())
-        batches.append(_article_dicts(got, row["provider"]))
+        dicts = _article_dicts(got, row["provider"])
+        # The vendor matched the symbol, but keeps only a story's first few
+        # tickers, so a many-name story can arrive without it; it is about it.
+        for d in dicts:
+            if symbol.upper() not in {str(t).upper() for t in d["tickers"] or []}:
+                d["tickers"] = [symbol.upper(), *(d["tickers"] or [])]
+        batches.append(dicts)
     if not batches:
         log.info("%s news: no feed answered the symbol ask", symbol)
     merged = _merge_feeds(batches)

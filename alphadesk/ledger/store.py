@@ -859,17 +859,17 @@ def save_articles(articles: list[dict], owner: str = "") -> list[str]:
         for i in range(0, len(ids), 200):
             chunk = ids[i:i + 200]
             existing += [dict(r) for r in conn.execute(
-                f"SELECT article_id, url, feeds, coalesce(length(body), 0) AS body_len FROM news_articles"
+                f"SELECT article_id, url, feeds, tickers, published_at, coalesce(length(body), 0) AS body_len FROM news_articles"
                 f" WHERE owner = ? AND article_id IN ({','.join('?' * len(chunk))})",
                 [owner, *chunk]).fetchall()]
         if floor:
             existing += [dict(r) for r in conn.execute(
-                "SELECT article_id, url, feeds, coalesce(length(body), 0) AS body_len FROM news_articles"
+                "SELECT article_id, url, feeds, tickers, published_at, coalesce(length(body), 0) AS body_len FROM news_articles"
                 " WHERE owner = ? AND published_at >= ? AND published_at <= ?",
                 (owner, floor, ceiling)).fetchall()]
         by_id = {r["article_id"]: r for r in existing}
         by_url = {article_url_key(r["url"]): r for r in existing if article_url_key(r["url"])}
-        inserts, feed_updates, body_updates, ticker_rows = [], {}, {}, []
+        inserts, feed_updates, body_updates, ticker_updates, ticker_rows = [], {}, {}, {}, []
         for a in articles:
             feeds = _feed_list(",".join(a.get("feeds") or []))
             hit = by_id.get(a["id"]) or by_url.get(article_url_key(a.get("url")))
@@ -881,6 +881,22 @@ def save_articles(articles: list[dict], owner: str = "") -> list[str]:
                 if a.get("body") and not hit.get("body_len"):
                     hit["body_len"] = len(a["body"])
                     body_updates[hit["article_id"]] = a["body"]
+                # A later delivery may name a ticker the stored copy lacks — the
+                # feed keeps only a story's first few, so a symbol's own ask
+                # (SVRN, 2026-10-03) can find a story stored without it. The
+                # story's tickers grow; they never shrink.
+                try:
+                    had = [str(t) for t in json.loads(hit.get("tickers") or "[]")]
+                except ValueError:
+                    had = []
+                known = {t.upper() for t in had}
+                extra = [str(t) for t in (a.get("tickers") or []) if t and str(t).upper() not in known]
+                if extra:
+                    extra = list(dict.fromkeys(extra))
+                    hit["tickers"] = json.dumps(had + extra)
+                    ticker_updates[hit["article_id"]] = hit["tickers"]
+                    ticker_rows.extend((owner, t.upper(), hit.get("published_at") or "", hit["article_id"])
+                                       for t in extra)
                 merged = _feed_list(",".join([hit.get("feeds") or "", *feeds]))
                 if merged != _feed_list(hit.get("feeds")):
                     hit["feeds"] = ",".join(merged)
@@ -908,6 +924,8 @@ def save_articles(articles: list[dict], owner: str = "") -> list[str]:
                 " ON CONFLICT (owner, ticker, article_id) DO NOTHING", ticker_rows)
         for aid, feeds in feed_updates.items():
             conn.execute("UPDATE news_articles SET feeds = ? WHERE owner = ? AND article_id = ?", (feeds, owner, aid))
+        for aid, tickers in ticker_updates.items():
+            conn.execute("UPDATE news_articles SET tickers = ? WHERE owner = ? AND article_id = ?", (tickers, owner, aid))
         for aid, body in body_updates.items():
             conn.execute("UPDATE news_articles SET body = ? WHERE owner = ? AND article_id = ?", (body, owner, aid))
     return folded

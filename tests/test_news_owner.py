@@ -339,6 +339,22 @@ def test_a_quiet_symbol_with_nothing_in_the_window_shows_its_newest_stories(clie
     assert ids == ["q1", "q2"]
 
 
+def test_a_story_stored_without_a_ticker_gains_it_when_a_later_ask_names_it(store):
+    """2026-10-03: the vendor keeps only a story's first eight tickers, so a
+    movers story naming SVRN ninth was stored without it and the SVRN panel
+    dropped it. A later delivery that names the ticker adds it."""
+    from datetime import datetime, timedelta, timezone
+    at = (datetime.now(timezone.utc) - timedelta(days=9)).isoformat()
+    first = ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG", "HHH"]
+    story = {**_article("m1", "12 Industrials Stocks Moving", first), "published_at": at}
+    store.save_articles([story], owner="u1")
+    assert store.articles_for_symbol("u1", "SVRN", None, 10) == []
+    store.save_articles([{**story, "tickers": ["SVRN", *first]}], owner="u1")
+    got = store.articles_for_symbol("u1", "SVRN", None, 10)
+    assert [a["article_id"] for a in got] == ["m1"]
+    assert "SVRN" in got[0]["tickers"] and "AAA" in got[0]["tickers"]
+
+
 def test_a_search_word_is_a_whole_word_so_a_ticker_finds_itself():
     """2026-09-18: "ARM" returned an arms sale and Senator Armstrong. A word
     must be whole; only a last word of five or more may stop part-way. The
