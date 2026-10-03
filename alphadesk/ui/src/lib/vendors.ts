@@ -4,7 +4,7 @@
 export const VENDOR_LABELS: Record<string, string> = {
   alpaca: "Alpaca", finnhub: "Finnhub", polygon: "Polygon", alphavantage: "Alpha Vantage",
   fmp: "Financial Modeling Prep", coingecko: "CoinGecko", "sec-edgar": "SEC EDGAR", edgar: "SEC EDGAR",
-  treasury: "US Treasury", benzinga: "Benzinga", tiingo: "Tiingo", marketaux: "Marketaux",
+  treasury: "US Treasury", benzinga: "Benzinga", marketaux: "Marketaux",
 }
 
 /** "via Alpaca and Polygon" — the reader's feeds that delivered a story. */

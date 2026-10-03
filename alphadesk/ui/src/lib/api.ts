@@ -1417,14 +1417,6 @@ export interface UserKeyRow {
   stories_24h?: number
   /** News feeds only: over a held real-time socket, or on the poll. */
   delivery?: "stream" | "poll"
-  /** Whether this feed's stories are kept at all. False when the vendor's
-   * terms forbid storing data from the plan the reader declared — the feed
-   * then contributes nothing, because the window is built from stored
-   * stories and only Alpaca streams. */
-  stores?: boolean
-  not_stored_reason?: string
-  /** What the reader declared their plan to be: "paid" or "free". */
-  vendor_plan?: string
 }
 
 /** A token a reader issued so their own agent can call AlphaDesk's tools. */
@@ -1552,7 +1544,7 @@ export const api = {
    * connecting one; switching off is the ordinary key removal. */
   enableSource: (name: string) =>
     put<{ ok: boolean }>(`/api/sources/${encodeURIComponent(name)}`, {}),
-  setKey: (seam: KeySeam, body: { provider: string; api_key: string; api_secret?: string; base_url?: string; model?: string; plan?: string }) =>
+  setKey: (seam: KeySeam, body: { provider: string; api_key: string; api_secret?: string; base_url?: string; model?: string }) =>
     put<{ ok: boolean; key_hint: string }>(`/api/keys/${seam}`, body),
   /** The reader's vendor keys as a file sealed under a passphrase they chose
    * (2026-10-02). The one place a key leaves the vault, so it asks for a fresh

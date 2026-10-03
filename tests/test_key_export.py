@@ -143,7 +143,7 @@ class TestExportEndpoint:
         assert "no-store" in r.headers["cache-control"]
         keys = keyexport.open_file(r.text, PASSPHRASE)["keys"]
         assert keys == [{"seam": "prices", "provider": "alpaca", "api_key": "AK-super-secret-1111",
-                         "api_secret": "AS-super-secret-2222", "base_url": "", "model": "", "plan": "free"}]
+                         "api_secret": "AS-super-secret-2222", "base_url": "", "model": ""}]
 
     def test_a_short_passphrase_is_refused(self, client, store, monkeypatch):
         _sign_in(client, store, monkeypatch)
@@ -229,18 +229,17 @@ class TestRestore:
 
     def _entry(self, **over):
         base = {"seam": "prices", "provider": "alpaca", "api_key": "AK-super-secret-1111",
-                "api_secret": "AS-super-secret-2222", "base_url": "", "model": "", "plan": "free"}
+                "api_secret": "AS-super-secret-2222", "base_url": "", "model": ""}
         return {**base, **over}
 
-    def test_keys_go_back_in_sealed_with_their_plan_and_hint(self, store):
+    def test_keys_go_back_in_sealed_with_their_hint(self, store):
         from alphadesk.ledger import vault
         store.create_user("u2", "other@example.com", "sso-only")
         restored, skipped = keyexport.restore("u2", self._payload(
-            self._entry(), self._entry(seam="news", provider="polygon", api_key="PK-9999-aaaa", api_secret="", plan="paid")))
+            self._entry(), self._entry(seam="news", provider="polygon", api_key="PK-9999-aaaa", api_secret="")))
         assert sorted(restored) == ["news:polygon", "prices:alpaca"] and skipped == []
         listing = {(k["seam"], k["provider"]): k for k in store.list_user_keys("u2")}
         assert listing[("prices", "alpaca")]["key_hint"] == "1111"
-        assert listing[("news", "polygon")]["vendor_plan"] == "paid"
         sealed = store.get_user_keys("u2", "prices")[0]["config"]
         assert "super-secret" not in sealed
         assert vault.decrypt(sealed)["api_secret"] == "AS-super-secret-2222"

@@ -148,7 +148,7 @@ see [Accounts](#accounts-security-and-privacy)).
    and sign in with GitHub — the account is created on first sign-in. (Google
    sign-in admits invited accounts only until Google approves the app.)
 2. On the **Account** page, connect the market-data and news providers you
-   already use (Alpaca, FMP, Finnhub, Polygon, CoinGecko, Tiingo, …). SEC
+   already use (Alpaca, FMP, Finnhub, Polygon, CoinGecko, …). SEC
    EDGAR and the US Treasury need no key.
 3. **It is free during early access** — there is no plan to choose and no
    card to enter. Paid plans ($19 a month or $190 a year, each after a
@@ -330,15 +330,10 @@ option chains are pinned to **one** vendor, never stitched across tapes.
 
 ### News — the reader's own feeds
 
-Alpaca (Benzinga), Polygon, Finnhub, Benzinga, Tiingo, Alpha Vantage,
+Alpaca (Benzinga), Polygon, Finnhub, Benzinga, Alpha Vantage,
 Marketaux and FMP. Several feeds merge into one window per reader,
 de-duplicated by URL. Alpaca's news streams live; the rest poll every five
 minutes.
-
-A feed whose terms forbid keeping what it sends is not kept: Tiingo's Starter
-and trial plans may not have their data written to durable storage, so a key
-declared as one has its stories fetched and dropped, and the Account page
-says "Not kept" rather than showing a feed that polls and produces nothing.
 
 ### Sources with no key — read, not licensed
 

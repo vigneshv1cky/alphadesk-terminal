@@ -2,7 +2,7 @@
 
 Eight implementations, because one implementation never proves an interface.
 All return the same `Article` shape, so switching feeds is keying another
-one on the Account page and nothing else — every feed is a user's own key. Polygon and Alpaca ride their existing SDKs; Finnhub, Benzinga, Tiingo,
+one on the Account page and nothing else — every feed is a user's own key. Polygon and Alpaca ride their existing SDKs; Finnhub, Benzinga,
 Alpha Vantage, Marketaux and FMP are plain urllib against their REST
 endpoints — the LLM
 seam's no-vendor-SDK rule, applied here because none needs more than one
@@ -398,63 +398,6 @@ class BenzingaNews:
         return out
 
 
-class TiingoNews:
-    """Tiingo's news feed. Config: the user's Tiingo key.
-
-    Ticker-tagged at the source — the `tickers` array is Tiingo's own, so
-    every article lands in the window under symbols the FEED asserted, not
-    ones we guessed. Access to this endpoint depends on the reader's Tiingo
-    plan; a plan without it surfaces as a logged provider error and an
-    intact window, like every other dead feed. Token in the Authorization
-    header, never the URL.
-    """
-
-    name = "tiingo"
-    capabilities = ("summaries",)
-
-    def __init__(self, *, api_key: str | None = None, api_secret: str | None = None) -> None:
-        self.api_key = (api_key or "").strip()
-
-    def fetch(self, since: datetime, limit: int = 200) -> list[Article]:
-        if not self.api_key:
-            raise ProviderError("no Tiingo key")
-        url = (f"https://api.tiingo.com/tiingo/news"
-               f"?startDate={since.strftime('%Y-%m-%d')}&limit={min(_MAX_SCAN, 1000)}")
-        try:
-            items = _get_json(url, headers={"Authorization": f"Token {self.api_key}"})
-        except ProviderError as exc:
-            raise ProviderError(f"tiingo fetch failed: {exc}") from exc
-        if not isinstance(items, list):
-            raise ProviderError("tiingo fetch failed: unexpected payload shape")
-
-        floor = since.isoformat()
-        out: list[Article] = []
-        for a in items:
-            if not isinstance(a, dict):
-                continue
-            published = str(a.get("publishedDate") or "")
-            # startDate is day-granular upstream; the real cut happens here.
-            if published and published < floor:
-                continue
-            symbols = [str(t).strip().upper() for t in (a.get("tickers") or []) if t]
-            title = (a.get("title") or "").strip()
-            art_id = str(a.get("id") or "")
-            if not (art_id and title and symbols):
-                continue
-            out.append(Article(
-                id=f"tiingo-{art_id}",
-                title=title,
-                url=a.get("url") or "",
-                published_at=published or datetime.now(timezone.utc).isoformat(),
-                symbols=symbols[:8],
-                summary=(a.get("description") or "")[:4000],
-                source=a.get("source") or "Tiingo",
-            ))
-            if len(out) >= limit:
-                break
-        return out
-
-
 class AlphaVantageNews:
     """Alpha Vantage NEWS_SENTIMENT. Config: the user's Alpha Vantage key.
 
@@ -682,7 +625,6 @@ register("news", PolygonNews.name, PolygonNews)
 register("news", AlpacaNews.name, AlpacaNews)
 register("news", FinnhubNews.name, FinnhubNews)
 register("news", BenzingaNews.name, BenzingaNews)
-register("news", TiingoNews.name, TiingoNews)
 register("news", AlphaVantageNews.name, AlphaVantageNews)
 register("news", MarketauxNews.name, MarketauxNews)
 register("news", FMPNews.name, FMPNews)
