@@ -78,7 +78,7 @@ class TestGate:
     def test_opted_out_instance_is_open(self, client):
         assert client.get("/api/system").status_code == 200
         assert client.get("/api/auth/me").json() == {
-            "auth_required": False, "providers": [], "google": False, "user": None}
+            "auth_required": False, "token_login": False, "providers": [], "google": False, "user": None}
 
     def test_login_on_an_open_instance_is_a_400(self, client):
         r = client.post("/api/auth/login", json={"email": "a@b.c", "password": "x"})

@@ -1349,6 +1349,9 @@ export interface AdminUsers {
 
 export interface AuthMe {
   auth_required: boolean
+  /** The instance is guarded by one shared access token, not accounts: the
+   * login screen asks for it alone. */
+  token_login?: boolean
   /** The configured identity providers, in the order the login screen
    * should offer them. Empty means the password gate (self-host, dev). */
   providers: { id: string; label: string }[]
@@ -1572,6 +1575,8 @@ export const api = {
     del<{ ok: boolean }>(provider
       ? `/api/keys/${seam}/${encodeURIComponent(provider)}`
       : `/api/keys/${seam}`),
+  tokenLogin: (token: string) =>
+    post<{ user: { email: string } }>("/api/auth/token-login", { token }),
   login: (email: string, password: string) =>
     post<{ user: { email: string } }>("/api/auth/login", { email, password }),
   logout: () => post<{ ok: boolean }>("/api/auth/logout", {}),

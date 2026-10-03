@@ -65,6 +65,43 @@ def auth_required() -> bool:
     return os.environ.get("ALPHADESK_AUTH", "required").strip().lower() != "off"
 
 
+# ── the access token (2026-10-03) ──────────────────────────────────────────
+# One person's own server that is reachable beyond their machine. With sign-in
+# off it acts as a single local account and would answer anyone who finds it,
+# so ALPHADESK_ACCESS_TOKEN puts one shared secret in front of it: the browser
+# types it once (a normal session cookie follows) and the agent door is
+# unchanged — it already carries its own tokens, made on the Agent access page
+# behind this gate.
+
+ACCESS_TOKEN_MIN = 16
+
+
+def access_token() -> str:
+    return os.environ.get("ALPHADESK_ACCESS_TOKEN", "").strip()
+
+
+def token_gate() -> bool:
+    """Whether the shared access token is in force: set, on an instance that
+    has no accounts of its own. Where sign-in is required the accounts are the
+    gate and the token is ignored."""
+    return not auth_required() and bool(access_token())
+
+
+def gate_active() -> bool:
+    """Whether a data route needs a session: accounts, or the access token."""
+    return auth_required() or token_gate()
+
+
+def access_token_problem() -> str | None:
+    """Why the configured token cannot be used, or None. A short token is
+    refused at start rather than quietly guarding nothing."""
+    tok = access_token()
+    if tok and len(tok) < ACCESS_TOKEN_MIN:
+        return (f"ALPHADESK_ACCESS_TOKEN must be at least {ACCESS_TOKEN_MIN} characters "
+                "(generate one with: python -c \"import secrets; print(secrets.token_urlsafe(24))\")")
+    return None
+
+
 # ── SSO providers ──────────────────────────────────────────────────────────
 # One table, one flow. Each entry is a standard authorization-code client:
 # the identity claim always comes from calling the provider's own API over
@@ -313,7 +350,8 @@ def me(request: Request, response: Response):
         response.delete_cookie(RETURN_COOKIE)
     return {
         **({"next": back} if back else {}),
-        "auth_required": auth_required(),
+        "auth_required": gate_active(),
+        "token_login": token_gate(),
         # The list drives the login screen's buttons; the bare google flag
         # survives for cached bundles of the older frontend.
         "providers": [{"id": p, "label": _SSO_PROVIDERS[p]["label"]}
@@ -532,6 +570,38 @@ def login(body: LoginBody, response: Response):
         secure=os.environ.get("ALPHADESK_COOKIE_SECURE", "").strip() == "1",
     )
     return {"user": {"email": user["email"]}}
+
+
+class TokenBody(BaseModel):
+    token: str
+
+
+@router.post("/token-login")
+def token_login(body: TokenBody, response: Response):
+    """Trade the instance's access token for a session cookie, as the one
+    local account. Compared in constant time and rate limited like a password
+    (the same five-misses-a-minute lock, shared across callers because there
+    is only one secret to guess)."""
+    if not token_gate():
+        raise HTTPException(400, "this instance has no access token")
+    fails, lock_until = _attempts.get("\x00token", (0, 0.0))
+    if time.time() < lock_until:
+        raise HTTPException(429, "too many attempts — wait a minute and try again")
+    if not hmac.compare_digest(body.token.strip().encode(), access_token().encode()):
+        fails += 1
+        _attempts["\x00token"] = (fails, time.time() + _LOCK_S if fails >= _LOCK_AFTER else 0.0)
+        raise HTTPException(401, "that is not this instance's access token")
+    _attempts.pop("\x00token", None)
+    from alphadesk.app import dashboard
+    uid = dashboard._local_uid()
+    state = store.user_session_state(uid)
+    response.set_cookie(
+        SESSION_COOKIE,
+        issue_session(uid, "local@alphadesk.invalid", (state or {}).get("session_version") or 1),
+        max_age=SESSION_TTL_S, httponly=True, samesite="strict",
+        secure=os.environ.get("ALPHADESK_COOKIE_SECURE", "").strip() == "1",
+    )
+    return {"user": {"email": "this instance"}}
 
 
 @router.post("/logout")

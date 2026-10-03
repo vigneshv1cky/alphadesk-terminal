@@ -142,7 +142,7 @@ async def _login_gate(request: Request, call_next):
     link has to be able to load the page that shows the login screen."""
     from alphadesk.app import auth
     claims = auth.current_user(request)
-    if auth.auth_required() and auth.is_gated(request.url.path) and claims is None:
+    if auth.gate_active() and auth.is_gated(request.url.path) and claims is None:
         return Response('{"detail": "sign in required"}', status_code=401,
                         media_type="application/json")
     # Stamp the signed-in reader onto the request's context so the AI layer
@@ -2050,7 +2050,7 @@ def api_keys_export(body: KeyExportIn, request: Request):
     origin = request.headers.get("origin")
     if origin and origin.rstrip("/") not in (agent_oauth.base_url(), f"{request.url.scheme}://{request.url.netloc}"):
         raise HTTPException(403, "that request did not come from this page")
-    if auth.auth_required():
+    if auth.gate_active():
         claims = auth.current_user(request)
         if claims is None or auth.session_age_s(claims) > EXPORT_FRESH_SIGN_IN_S:
             return JSONResponse({"detail": "sign in again to export your keys", "reauth": True}, status_code=403)
