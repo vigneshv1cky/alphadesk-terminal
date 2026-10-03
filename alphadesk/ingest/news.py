@@ -432,7 +432,13 @@ def symbol_articles(user_id: str, symbol: str, before: str | None, limit: int) -
         except Exception as exc:
             log.info("%s news from %s: %s", symbol, row["provider"], exc)
             continue
+        # Said even when empty, so "the vendor has nothing for this name" can be
+        # told apart from "the ask never ran" (2026-10-03).
+        log.info("%s news from %s: %d stories since %s", symbol, row["provider"], len(got),
+                 since.date().isoformat())
         batches.append(_article_dicts(got, row["provider"]))
+    if not batches:
+        log.info("%s news: no feed answered the symbol ask", symbol)
     merged = _merge_feeds(batches)
     if merged:
         store.save_articles(merged, owner=owner)
