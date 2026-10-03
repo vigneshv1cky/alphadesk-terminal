@@ -1,0 +1,26 @@
+# One person, one machine: `docker compose up -d`, then http://127.0.0.1:8000.
+#
+# Set your contact address first (the SEC asks for one in every request):
+#   ALPHADESK_CONTACT_EMAIL=you@example.com docker compose up -d
+#
+# The first start makes the vault key and settings inside the data volume and
+# keeps them there, so restarts and updates reuse them. Sign-in is off because
+# the port is published to this machine only (127.0.0.1) — do not widen it
+# without putting a password in front.
+services:
+  alphadesk:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      ALPHADESK_DATA: /data
+      DASHBOARD_HOST: 0.0.0.0
+    volumes:
+      - alphadesk-data:/data
+    command: >
+      sh -c "python -m alphadesk.main init --quiet
+      --email '${ALPHADESK_CONTACT_EMAIL:?set ALPHADESK_CONTACT_EMAIL to your email}'
+      && exec python -m alphadesk.main dashboard"
+    restart: unless-stopped
+volumes:
+  alphadesk-data:

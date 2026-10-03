@@ -73,6 +73,10 @@ def env_value(name: str, default: str = "") -> str:
 ET = ZoneInfo("America/New_York")
 DATA_DIR = Path(env_value("ALPHADESK_DATA", "~/.alphadesk")).expanduser()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+# The settings `alphadesk init` writes live beside the data, so they are found
+# wherever the server is started from (a pip install has no repo-root .env).
+# Anything already in the environment, or in a .env found above, wins.
+load_dotenv(DATA_DIR / ".env")
 
 # ── Liquidity ────────────────────────────────────────────────────────────────
 # 20-day average dollar volume below which a name is flagged thin. Surfaced as
