@@ -219,3 +219,12 @@ def test_price_history_asks_for_daily_bars(monkeypatch):
     monkeypatch.setattr(dashboard, "api_chart", fake_chart)
     got = mcp_server.price_history("SVRN", "1M")
     assert seen["interval"] == "1d" and got["sessions"] == 7
+
+
+def test_the_agent_door_answers_to_every_name_the_server_is_given(monkeypatch):
+    from alphadesk.app import agent_access
+    monkeypatch.setenv("ALPHADESK_BASE_URL", "https://one.example.app")
+    monkeypatch.setenv("ALPHADESK_ALLOWED_HOSTS", "two.example.app, three.example.app:8443")
+    hosts, origins = agent_access.allowed_hosts()
+    assert {"one.example.app", "two.example.app", "two.example.app:*", "three.example.app:8443"} <= set(hosts)
+    assert "https://two.example.app" in origins and "https://one.example.app" in origins

@@ -187,4 +187,13 @@ def allowed_hosts() -> tuple[list[str], list[str]]:
             if ":" not in parts.netloc:
                 hosts.append(parts.netloc + ":*")
             origins.append(f"{parts.scheme}://{parts.netloc}")
+    # Other names the same server answers to (ALPHADESK_ALLOWED_HOSTS, the list
+    # the browser guard reads): Cloud Run serves one service under two
+    # addresses, and an agent should not fail with a 421 on the one that is
+    # not the base URL (2026-10-03).
+    for name in os.environ.get("ALPHADESK_ALLOWED_HOSTS", "").replace(",", " ").split():
+        name = name.strip().lower()
+        if name and name not in hosts:
+            hosts += [name, name + ":*"] if ":" not in name else [name]
+            origins.append(f"https://{name}")
     return hosts, origins
