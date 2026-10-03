@@ -191,3 +191,29 @@ def test_parallel_calls_keep_the_calling_readers_identity_and_the_order():
         assert bad[0] == 1.0 and isinstance(bad[1], ZeroDivisionError) and bad[2] == 0.5   # one failure does not stop the rest
     finally:
         reset_request_user(held)
+
+
+def test_every_daily_history_request_asks_for_daily_bars():
+    """2026-10-03: a chart range opens on its FINEST bar (5-minute for a month,
+    hourly for a quarter), so tools that treated the answer as daily sessions
+    computed ranges, volumes and "sessions" from intraday bars (SVRN's 90 days
+    read as 1,171 sessions). Each daily-history request must say interval 1d."""
+    import re
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "alphadesk" / "mcp_server.py").read_text()
+    calls = re.findall(r"dashboard\.api_chart,[^\n]*", src)
+    assert calls and all('interval="1d"' in c for c in calls), calls
+
+
+def test_price_history_asks_for_daily_bars(monkeypatch):
+    from alphadesk import mcp_server
+    from alphadesk.app import dashboard
+    seen = {}
+
+    def fake_chart(symbol, days=2, range=None, interval=None, **kw):
+        seen["interval"] = interval
+        return {"bars": [{"t": f"2026-09-{d:02d}T00:00:00+00:00", "c": 10.0 + d, "h": 11.0 + d, "l": 9.0 + d, "v": 1000}
+                         for d in (1, 2, 3, 4, 5, 6, 7)], "vendor": "fake"}
+    monkeypatch.setattr(dashboard, "api_chart", fake_chart)
+    got = mcp_server.price_history("SVRN", "1M")
+    assert seen["interval"] == "1d" and got["sessions"] == 7

@@ -709,7 +709,7 @@ def price_history(symbol: str, range: str = "1Y") -> dict:
     if key not in ("1M", "3M", "6M", "YTD", "1Y", "5Y", "MAX"):
         raise ValueError("range must be one of 1M, 3M, 6M, YTD, 1Y, 5Y, MAX")
     sym = _symbol(symbol)
-    series = _http_errors(dashboard.api_chart, sym, range=key)
+    series = _http_errors(dashboard.api_chart, sym, range=key, interval="1d")
     bars = [b for b in (series.get("bars") or []) if b.get("c") is not None]
     if not bars:
         raise ValueError(f"no daily bars for {sym}")
@@ -1039,7 +1039,7 @@ def what_moved(symbol: str, days: int = 90, min_move_pct: float = 10.0) -> dict:
     sym = _symbol(symbol)
     days = max(5, min(int(days), 365))
     key = "1M" if days <= 31 else "3M" if days <= 93 else "6M" if days <= 186 else "1Y"
-    series = _http_errors(dashboard.api_chart, sym, range=key)
+    series = _http_errors(dashboard.api_chart, sym, range=key, interval="1d")
     bars = [b for b in (series.get("bars") or []) if b.get("c") is not None]
     if not bars:
         raise ValueError(f"no daily bars for {sym}")
@@ -1091,7 +1091,7 @@ def move_state(symbols: list[str] | str) -> dict:
         raise ValueError("at least one symbol is required")
     def one(sym):
         series = get_prices().chart_series(sym, days=5) or {}
-        daily = _http_errors(dashboard.api_chart, sym, range="3M").get("bars") or []
+        daily = _http_errors(dashboard.api_chart, sym, range="3M", interval="1d").get("bars") or []
         return movestate.move_state(series.get("bars") or [], daily)
 
     out, failed = {}, {}
@@ -1255,7 +1255,7 @@ def movers_in_context(direction: str = "gainers", category: str = "stocks", top:
         unavailable["halts"] = str(exc)[:160]
     def shape_of(sym):
         series = get_prices().chart_series(sym, days=5) or {}
-        daily = _http_errors(dashboard.api_chart, sym, range="3M").get("bars") or []
+        daily = _http_errors(dashboard.api_chart, sym, range="3M", interval="1d").get("bars") or []
         return movestate.move_state(series.get("bars") or [], daily)
 
     symbols = [str(m.get("symbol") or "").upper() for m in rows]
@@ -1372,7 +1372,7 @@ def entry_facts(symbol: str, risk_dollars: float = 0.0, stop_pct: float = 0.0) -
     now = now_et()
     quote = attempt("quote", lambda: _http_errors(dashboard.api_quotes, symbols=sym, fill="range,cap").get("quotes", {}).get(sym)) or {}
     last = quote.get("price")
-    daily = attempt("daily_bars", lambda: _http_errors(dashboard.api_chart, sym, range="3M").get("bars") or [], [])
+    daily = attempt("daily_bars", lambda: _http_errors(dashboard.api_chart, sym, range="3M", interval="1d").get("bars") or [], [])
     done = [b for b in daily if str(b["t"])[:10] < now.date().isoformat()] if cal.latest_session(now) == now.date() else daily
     series = attempt("intraday_bars", lambda: get_prices().chart_series(sym, days=2) or {}, {})
     _day, session_bars = movestate.latest_session(series.get("bars") or [])
@@ -1446,7 +1446,7 @@ def priced_in(symbol: str, since: str = "") -> dict:
     from alphadesk.ingest import analysts, earnings_record, keystats
     sym = _symbol(symbol)
     notes = []
-    daily = _http_errors(dashboard.api_chart, sym, range="5Y").get("bars") or []
+    daily = _http_errors(dashboard.api_chart, sym, range="5Y", interval="1d").get("bars") or []
     if not daily:
         raise ValueError(f"no daily bars for {sym}")
     try:
