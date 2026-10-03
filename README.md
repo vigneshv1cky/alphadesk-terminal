@@ -46,7 +46,8 @@ data. The layout is the real thing.</sub>
 
 ## Quick start — run it yourself, for one person
 
-You need Python 3.11+ (or Docker), and your own market-data and news keys for
+You need Python 3.11+ (or Docker; where a command below says `python` and your shell
+only knows `python3`, use that, or the virtual environment's own `python`), and your own market-data and news keys for
 anything beyond SEC EDGAR and Treasury data. No account, no sign-in, no
 database to set up.
 
