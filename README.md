@@ -177,7 +177,7 @@ cp alphadesk/deploy/env.example .env
 | `ALPHADESK_AUTH` | for one person | `off`: a single local account with no sign-in |
 | `ALPHADESK_ACCESS_TOKEN` | if reachable beyond your machine | with sign-in off, one shared secret (16+ characters) the browser asks for once; see Quick start |
 | `ALPHADESK_DATABASE_URL` | no | a `postgres://` URL; unset, SQLite in `ALPHADESK_DATA` (`~/.alphadesk`) |
-| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys; sealed into the local account with `python -m alphadesk.main keys import-env` (or connect them on the Account page instead) |
+| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys. Found at start, they are sealed into your account — the local one with sign-in off, or the one allowed address's — so the settings file is the record: they add or update keys, never delete them, and win over a key changed on the Account page at the next start. You can still connect keys on the Account page instead |
 | `ALPHADESK_SEMANTIC_SEARCH` | no | `off` skips the ~1.2 GB embedding model; search then matches words only |
 | `GOOGLE_CLIENT_ID` / `GITHUB_CLIENT_ID` (+ secrets), `ALPHADESK_BASE_URL` | for several people | single sign-on for a shared instance |
 | `ALPHADESK_ALLOWED_EMAILS` | no | with sign-in on: only these addresses (comma- or space-separated) may sign in; others, and any session or agent token of an address taken off the list, are refused. Unset, anyone with a verified account signs up |

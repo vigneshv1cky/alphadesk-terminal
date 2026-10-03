@@ -338,6 +338,8 @@ def main() -> None:
         _allowed = _auth.allowed_emails()
         if _allowed and _auth.auth_required():
             log.info("sign-in is limited to %d allowed address%s", len(_allowed), "" if len(_allowed) == 1 else "es")
+        from alphadesk.ledger import envkeys as _envkeys
+        _envkeys.load_at_start()
         host = env_value("DASHBOARD_HOST", "127.0.0.1")
         if not _auth.auth_required() and not _auth.access_token() and host not in ("127.0.0.1", "localhost", "::1"):
             log.warning("sign-in is off and the server listens on %s: anyone who can reach it can use it "
@@ -362,38 +364,16 @@ def main() -> None:
         serve(http=args.http)
         return
     elif args.cmd == "keys":
-        # DEVELOPMENT ONLY. The server never reads a vendor key from its
-        # environment at request time (2026-09-13); this copies the ones a
-        # developer keeps in .env into the open instance's local account,
-        # sealed in the vault, so the local board runs on keys exactly the
-        # way a signed-in user's does.
-        import os
-        from alphadesk.ledger import store, vault
+        # The server never reads a vendor key from its environment at request
+        # time (2026-09-13); this seals the ones kept in the settings into the
+        # open instance's local account (the same load the server makes at
+        # start, ledger/envkeys.py), so the board runs on them exactly as it
+        # does on a key typed in by hand.
+        from alphadesk.ledger import envkeys, store
         store.init()
-        uid = store.ensure_local_user()
-        pairs = {"alpaca": ("ALPACA_API_KEY", "ALPACA_SECRET_KEY"), "polygon": ("POLYGON_API_KEY", None),
-                 "finnhub": ("FINNHUB_API_KEY", None), "alphavantage": ("ALPHAVANTAGE_API_KEY", None),
-                 "fmp": ("FMP_API_KEY", None), "coingecko": ("COINGECKO_API_KEY", None)}
-        done = []
-        for vendor, (k_env, s_env) in pairs.items():
-            key = (os.environ.get(k_env) or "").strip()
-            if not key:
-                continue
-            secret = (os.environ.get(s_env) or "").strip() if s_env else ""
-            store.set_user_key(uid, "prices", vendor, vault.encrypt({"api_key": key, "api_secret": secret}), key[-4:])
-            done.append(vendor)
-        # Finnhub is sealed for market data only: its general news feed carries
-        # almost no tickers, so as a news key it delivered nothing (0 of 100
-        # stories tagged, 2026-09-13). A reader can still connect it by hand.
-        news = {"polygon": ("POLYGON_API_KEY", None), "alpaca": ("ALPACA_API_KEY", "ALPACA_SECRET_KEY"),
-                "fmp": ("FMP_API_KEY", None)}
-        for vendor, (k_env, s_env) in news.items():
-            key = (os.environ.get(k_env) or "").strip()
-            if key:
-                secret = (os.environ.get(s_env) or "").strip() if s_env else ""
-                store.set_user_key(uid, "news", vendor, vault.encrypt({"api_key": key, "api_secret": secret}), key[-4:])
-                done.append(f"news:{vendor}")
-        print(f"sealed into the local account: {', '.join(done) or 'nothing (no vendor keys in the environment)'}")
+        done = envkeys.load(store.ensure_local_user())
+        names = done["sealed"] + done["current"]
+        print(f"sealed into the local account: {', '.join(names) or 'nothing (no vendor keys in the environment)'}")
     elif args.cmd == "calendar-accuracy":
         from alphadesk.ingest import calendar_accuracy
         from alphadesk.ledger import store
