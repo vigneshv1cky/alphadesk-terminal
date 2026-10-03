@@ -276,6 +276,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="alphadesk")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("dashboard", help="run the terminal")
+    p_init = sub.add_parser("init", help="first-time setup for one person: vault key, SEC contact, no sign-in")
+    p_init.add_argument("--email", required=True,
+                        help="your real contact email; the SEC asks for one in every request")
+    p_init.add_argument("--quiet", action="store_true", help="print nothing when already set up")
     p_back = sub.add_parser("backfill")
     p_back.add_argument("--hours", type=float, default=72)
     sub.add_parser("earnings", help="stamp today's EDGAR results releases and list the last three days")
@@ -304,6 +308,10 @@ def main() -> None:
             parser.error(f"keys {args.action} needs the keys file")
         from alphadesk.ledger import keyexport
         sys.exit(keyexport.run_cli(args.action, args.file))
+
+    if args.cmd == "init":
+        from alphadesk.setup_local import run_init
+        sys.exit(run_init(args.email, args.quiet))
 
     if args.cmd == "dashboard":
         import os

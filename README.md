@@ -44,6 +44,42 @@ data. The layout is the real thing.</sub>
 | ![The news window](alphadesk/ui/public/landing/news.jpg) | ![The options chain](alphadesk/ui/public/landing/options.jpg) |
 | **News** — your feeds in one three-day window, searched by word or meaning | **Options** — chains by expiry, calls and puts either side of the price |
 
+## Quick start — run it yourself, for one person
+
+You need Python 3.11+ (or Docker), and your own market-data and news keys for
+anything beyond SEC EDGAR and Treasury data. No account, no sign-in, no
+database to set up.
+
+```bash
+pip install alphadesk
+```
+
+```bash
+python -m alphadesk.main init --email you@example.com
+```
+
+```bash
+python -m alphadesk.main dashboard
+```
+
+Open http://127.0.0.1:8000, then connect your vendors on the **Account**
+page and your agent on **Agent access**. `init` runs once: it makes the
+settings file `~/.alphadesk/.env` (owner-only) holding a vault key that seals
+your stored vendor keys, the contact address the SEC asks for, and
+single-person mode. **Keep a copy of that file** — without the vault key the
+stored vendor keys cannot be opened. The server listens on this machine only.
+
+With Docker instead:
+
+```bash
+ALPHADESK_CONTACT_EMAIL=you@example.com docker compose up -d
+```
+
+The first start does the same setup inside a data volume and keeps it there.
+Other ways to run it, serving other people, and every setting are under
+[Two ways to run it](#two-ways-to-run-it) and
+[Configuration reference](#configuration-reference).
+
 ---
 
 ## Contents
