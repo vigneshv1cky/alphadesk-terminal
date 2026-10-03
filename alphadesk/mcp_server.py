@@ -1471,7 +1471,8 @@ def related_assets(symbol: str) -> dict:
     latest stories about the name and returns:
 
     * `from_own_words.crypto` — crypto assets the text names, with a mention
-      count, the first source (an accession for `filing_text`, or a story) and
+      count, `strength` ("repeated", or "single_passing_mention" — often a
+      director's biography, not a tie to the company), the first source (an accession for `filing_text`, or a story) and
       the sentence. Each carries `price_symbol` and `priceable`: true means
       `price_history` works for it; false means the reader's price vendors do
       not carry it (a CoinGecko key on the Account page adds many coins, with

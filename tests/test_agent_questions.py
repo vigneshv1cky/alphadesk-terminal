@@ -238,7 +238,10 @@ def test_a_companys_own_words_name_the_crypto_it_holds_and_the_companies_it_ment
     got = related.extract_related([{"source": "0000-26-1", "text": text}], "SVRN", ["OceanPal"])
     assets = {c["asset"]: c for c in got["crypto"]}
     assert "NEAR" in assets and assets["NEAR"]["mentions"] >= 2 and assets["NEAR"]["first_source"] == "0000-26-1"
+    assert assets["NEAR"]["strength"] == "repeated"
     assert "SUI" not in assets                                           # "sui generis" is not the coin
+    bio = related.extract_related([{"source": "8k", "text": "He led a US$425 million private placement for its Ethereum treasury strategy."}], "GRML")
+    assert [(c["asset"], c["strength"]) for c in bio["crypto"]] == [("ETH", "single_passing_mention")]   # a biography, not a tie
     assert [c["ticker"] for c in got["companies"]] == ["SEZL"]           # its own ticker is left out
     assert related.extract_related([{"source": "x", "text": "ABC treasury is a heading."}], "SVRN")["crypto"] == []
     lst = related.extract_related([{"source": "story:1", "text": "Here are 20 stocks: Foo Inc. (NASDAQ: FOO) rose."}], "SVRN")

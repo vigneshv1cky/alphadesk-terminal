@@ -42,9 +42,12 @@ def extract_related(sources: list[dict], own_symbol: str, own_names: list[str] |
     companies: dict[str, dict] = {}
 
     def add_coin(ticker, name, src, text, a, b):
-        row = crypto.setdefault(ticker, {"asset": ticker, "name": name, "mentions": 0,
-                                         "first_source": src, "snippet": _snippet(text, a, b)})
+        row = crypto.setdefault(ticker, {"asset": ticker, "name": name, "mentions": 0, "sources": 0,
+                                         "first_source": src, "snippet": _snippet(text, a, b), "_seen": set()})
         row["mentions"] += 1
+        if src not in row["_seen"]:
+            row["_seen"].add(src)
+            row["sources"] += 1
         if len(name) > len(row["name"]):
             row["name"] = name
 
@@ -72,5 +75,10 @@ def extract_related(sources: list[dict], own_symbol: str, own_names: list[str] |
     # A bare ticker found only by the generic pattern must repeat to count:
     # "ABC treasury" once in a long document is as likely a heading as an asset.
     keep = [c for c in crypto.values() if c["mentions"] >= 2 or c["asset"] in COINS.values()]
-    return {"crypto": sorted(keep, key=lambda c: -c["mentions"]),
+    for c in keep:
+        c.pop("_seen", None)
+        # One passing mention is as likely a director's biography ("led the launch
+        # of its Ethereum treasury", GRML, 2026-10-03) as a tie to the company.
+        c["strength"] = "repeated" if c["mentions"] >= 3 or c["sources"] >= 2 else "single_passing_mention"
+    return {"crypto": sorted(keep, key=lambda c: (c["strength"] != "repeated", -c["mentions"])),
             "companies": sorted(companies.values(), key=lambda c: -c["mentions"])}
