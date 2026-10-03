@@ -198,14 +198,11 @@ def test_a_missing_extension_does_not_break_start_up(store, monkeypatch):
 
 def test_a_postgres_url_without_a_user_connects_as_the_os_user(monkeypatch):
     """A Homebrew Postgres has your login as its superuser and no role called postgres."""
-    import sys
-    import types
+    import pg8000.dbapi
 
     from alphadesk.ledger import db
     seen = {}
-    fake = types.ModuleType("pg8000.dbapi")
-    fake.connect = lambda **kw: seen.update(kw) or object()
-    monkeypatch.setitem(sys.modules, "pg8000.dbapi", fake)
+    monkeypatch.setattr(pg8000.dbapi, "connect", lambda **kw: seen.update(kw) or object())
     monkeypatch.setattr(db, "_PgConn", lambda raw: raw)
     monkeypatch.setenv("ALPHADESK_DATABASE_URL", "postgresql://localhost:5432/alphadesk")
     monkeypatch.delenv("PGUSER", raising=False)
