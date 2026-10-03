@@ -323,3 +323,16 @@ def test_analyst_view_with_no_coverage_says_so(monkeypatch):
     with pytest.raises(NeedsKey) as err:
         analysts.analyst_view("GRML")
     assert "returned nothing" in str(err.value) and "no key is missing" in str(err.value)
+
+
+def test_only_text_posts_are_served_and_kept(store):
+    from alphadesk import postkind
+    posts = [{"url": "u1", "at": "2026-10-01T10:00:00+00:00", "text": "A full sentence about tariffs."},
+             {"url": "u2", "at": "2026-10-01T11:00:00+00:00", "text": "RT @someone: reposted words"},
+             {"url": "u3", "at": "2026-10-01T12:00:00+00:00", "text": "https://example.com/a https://example.com/b"},
+             {"url": "u4", "at": "2026-10-01T13:00:00+00:00", "text": "", "no_text": True}]
+    assert [postkind.of_post(p) for p in posts] == ["text", "repost", "link", "media"]
+    store.save_social_posts(posts)                                       # as if filed before the rule
+    assert store.prune_social_non_text() == 3
+    assert [p["url"] for p in store.archived_social_posts(10)] == ["u1"]
+    assert store.prune_social_non_text() == 0

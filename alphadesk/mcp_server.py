@@ -2001,7 +2001,10 @@ def social_posts(limit: int = 20, query: str = "") -> dict:
         # reaches back past the mirror's window. Newest first, one per URL.
         from alphadesk.ledger import store
         seen, merged = set(), []
+        from alphadesk import postkind
         for r in sorted([*(rows or []), *store.archived_social_posts(5000)], key=lambda r: r.get("at") or "", reverse=True):
+            if postkind.of_post(r) != "text":
+                continue                                    # only text posts are served
             url = r.get("url")
             if url and url in seen:                         # one copy per URL; a post with none is kept
                 continue

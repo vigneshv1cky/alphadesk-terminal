@@ -940,9 +940,12 @@ class SocialPulse:
             return None
         # THE KIND IS ADDED ON READ, not stored: rows already in the shared
         # store predate it, and the rule is cheaper than a migration.
+        # ONLY TEXT POSTS (2026-10-03, the owner's call): a repost, a bare link
+        # or a media-only post carries no words to read, so none is served. The
+        # limit counts the posts that remain.
         from alphadesk import postkind
-        return [{**r, "kind": postkind.of_post(r)}
-                for r in rows[:max(1, min(int(limit), 100))]] or None
+        texts = [{**r, "kind": "text"} for r in rows if postkind.of_post(r) == "text"]
+        return texts[:max(1, min(int(limit), 100))] or None
 
     def _fill_posts(self) -> None:
         """Read the mirror in the background, into the shared store."""
@@ -959,7 +962,8 @@ class SocialPulse:
             note_fill("posts", None)
             store.put_scraped("social", "posts", "LATEST", rows)
             try:
-                store.save_social_posts(rows)           # the archive keeps what the mirror drops
+                from alphadesk import postkind
+                store.save_social_posts([r for r in rows if postkind.of_post(r) == "text"])   # the archive keeps what the mirror drops
             except Exception as exc:                    # pragma: no cover
                 log.debug("social archive: %s", exc)
 

@@ -2028,7 +2028,22 @@ def prune_vendor_data(now: datetime | None = None) -> dict[str, int]:
         run("vendor_cache", "DELETE FROM vendor_cache WHERE fetched_at < ?", (ago(days=cfg.VENDOR_CACHE_KEEP_DAYS),))
         run("news_vectors", _ORPHAN_VECTORS)
         run("news_tickers", _ORPHAN_TICKERS)
+    out["social_non_text"] = prune_social_non_text()
     return out
+
+
+def prune_social_non_text() -> int:
+    """Drop archived posts that are not text (reposts, bare links, media only):
+    only text posts are kept (2026-10-03). Idempotent; a few thousand rows at
+    most, read once an hour."""
+    from alphadesk import postkind
+    with _lock, _connect() as conn:
+        rows = conn.execute("SELECT url, text FROM social_posts_archive").fetchall()
+        drop = [r["url"] for r in rows if postkind.post_kind(r["text"]) != "text"]
+        for i in range(0, len(drop), 400):
+            chunk = drop[i:i + 400]
+            conn.execute(f"DELETE FROM social_posts_archive WHERE url IN ({','.join('?' * len(chunk))})", chunk)
+    return len(drop)
 
 
 #: A story's vector is deleted with the story, whatever deleted it.
