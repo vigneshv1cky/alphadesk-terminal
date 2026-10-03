@@ -105,3 +105,32 @@ def test_only_a_person_is_seen_not_a_replay_or_a_probe(client, store, monkeypatc
     client.get("/api/keys", headers={"x-alphadesk-prewarm": "1"})
     client.get("/healthz")
     assert len(seen) == 1
+
+
+def test_the_market_data_key_can_be_given_to_the_news_feed(client, store, monkeypatch):
+    import base64
+
+    from alphadesk.ledger import vault
+    monkeypatch.setenv("ALPHADESK_VAULT_KEY", base64.b64encode(b"\x09" * 32).decode())
+    monkeypatch.setenv("ALPHADESK_AUTH", "off")
+    monkeypatch.delenv("ALPHADESK_ACCESS_TOKEN", raising=False)
+    from alphadesk.app import dashboard
+    monkeypatch.setattr(dashboard, "_local_uid_value", None)
+    uid = store.ensure_local_user()
+    monkeypatch.setattr(news, "backfill_user", lambda *a, **k: 0)
+    assert client.post("/api/keys/news/alpaca/use-market-data").status_code == 404        # nothing to copy yet
+    sealed = vault.encrypt({"api_key": "AK-good-1111", "api_secret": "AS-good-2222"})
+    store.set_user_key(uid, "prices", "alpaca", sealed, "1111")
+    store.set_user_key(uid, "news", "alpaca", vault.encrypt({"api_key": "stale", "api_secret": "stale"}), "ale")
+    news._feed_errors[(uid, "alpaca")] = "401"
+    r = client.post("/api/keys/news/alpaca/use-market-data")
+    assert r.status_code == 200 and r.json()["key_hint"] == "1111"
+    row = store.get_user_keys(uid, "news")[0]
+    assert vault.decrypt(row["config"])["api_key"] == "AK-good-1111"
+    assert news.feed_problem(uid, "alpaca") is None
+    # a refused key changes nothing
+    monkeypatch.setenv("ALPHADESK_SKIP_KEY_CHECK", "")
+    monkeypatch.setattr(news, "check_news_key", lambda *a, **k: "refused")
+    store.set_user_key(uid, "news", "alpaca", vault.encrypt({"api_key": "keep", "api_secret": "keep"}), "eep")
+    assert client.post("/api/keys/news/alpaca/use-market-data").status_code == 422
+    assert vault.decrypt(store.get_user_keys(uid, "news")[0]["config"])["api_key"] == "keep"

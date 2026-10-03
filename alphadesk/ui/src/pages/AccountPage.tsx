@@ -113,6 +113,14 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
     }
   }
 
+  // A feed the vendor refuses, beside a market-data key for the same vendor
+  // that works: one click gives the news feed that key (2026-10-03).
+  const useMarketKey = async () => {
+    try { await api.useMarketDataKeyForNews(); done() }
+    catch (err) { setError(String((err as Error).message ?? err)) }
+  }
+  const canBorrowKey = (row: { provider: string; problem?: string | null }) =>
+    row.provider === "alpaca" && !!row.problem && !!stored("prices", "alpaca")
   const remove = async (seam: Seam, provider?: string) => {
     try { await api.deleteKey(seam, provider); done() }
     catch (err) { setError(String((err as Error).message ?? err)) }
@@ -445,6 +453,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                     </TD>
                     <TD align="right">
                       <span className="inline-flex items-center justify-end gap-1.5">
+                        {canBorrowKey(row) && <button type="button" onClick={() => void useMarketKey()} className={BTN_PRIMARY}>Use market-data key</button>}
                         <button type="button" onClick={() => open("news", row.provider)} className={BTN}>Replace</button>
                         <button type="button" onClick={() => void remove("news", row.provider)} className={BTN_DANGER}>Remove</button>
                       </span>
@@ -495,6 +504,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
           <div className="@[680px]:hidden">
             {newsRows.map(row => (
               <Row key={row.provider} label={vendorLabel(row.provider)} actions={<>
+                {canBorrowKey(row) && <button type="button" onClick={() => void useMarketKey()} className={BTN_PRIMARY}>Use market-data key</button>}
                 <button type="button" onClick={() => open("news", row.provider)} className={BTN}>Replace</button>
                 <button type="button" onClick={() => void remove("news", row.provider)} className={BTN_DANGER}>Remove</button>
               </>}>

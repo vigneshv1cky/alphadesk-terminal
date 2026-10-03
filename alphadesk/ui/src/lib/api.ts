@@ -1505,6 +1505,7 @@ export const api = {
     }
     return { blob: await r.blob(), name: downloadName(r.headers.get("Content-Disposition")) }
   },
+  useMarketDataKeyForNews: () => post<{ ok: boolean }>("/api/keys/news/alpaca/use-market-data", {}),
   deleteKey: (seam: KeySeam, provider?: string) =>
     del<{ ok: boolean }>(provider
       ? `/api/keys/${seam}/${encodeURIComponent(provider)}`

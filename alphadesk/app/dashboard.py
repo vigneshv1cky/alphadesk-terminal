@@ -2001,6 +2001,34 @@ def api_keys_set(seam: str, body: KeyIn, request: Request, background: Backgroun
     return {"ok": True, "seam": seam, "provider": body.provider, "key_hint": api_key[-4:]}
 
 
+@app.post("/api/keys/news/alpaca/use-market-data")
+def api_news_key_from_market_data(request: Request, background: BackgroundTasks):
+    """Give the news feed the Alpaca key the reader already uses for market data
+    (2026-10-03). One Alpaca account serves both, and a news key typed or pasted
+    separately was the one Alpaca refused (HTTP 401) while the same account's
+    market-data stream ran fine — the news window then stayed empty for hours
+    behind no explanation. The key is tried first; a refusal changes nothing."""
+    from alphadesk.ingest import news as news_mod
+    from alphadesk.ledger import vault
+    from alphadesk.providers import registry
+    user_id = _key_user(request)
+    row = next((r for r in store.get_user_keys(user_id, "prices") if r["provider"] == "alpaca"), None)
+    if row is None:
+        raise HTTPException(404, "no Alpaca market-data key is stored to copy")
+    try:
+        cfg = vault.decrypt(row["config"])
+    except vault.VaultError:
+        raise HTTPException(503, "the stored market-data key cannot be opened") from None
+    refusal = news_mod.check_news_key("alpaca", cfg.get("api_key", ""), cfg.get("api_secret") or None)
+    if refusal:
+        raise HTTPException(422, "Alpaca refuses the market-data key for news too — replace the key itself")
+    store.set_user_key(user_id, "news", "alpaca", row["config"], row["key_hint"])
+    registry.forget_user_keys(user_id)
+    news_mod._feed_errors.pop((user_id, "alpaca"), None)
+    background.add_task(news_mod.backfill_user, user_id, "alpaca")
+    return {"ok": True, "seam": "news", "provider": "alpaca", "key_hint": row["key_hint"]}
+
+
 @app.delete("/api/keys/{seam}/{provider}")
 def api_keys_delete_provider(seam: str, provider: str, request: Request):
     """Drop ONE feed's key. News keys accumulate per provider, so removal
