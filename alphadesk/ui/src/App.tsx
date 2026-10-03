@@ -375,7 +375,6 @@ function Gate() {
   const [state, setState] = useState<"checking" | "open" | "login" | "subscribe">("checking")
   const [email, setEmail] = useState<string | null>(null)
   const [access, setAccess] = useState<Access | null>(null)
-  const [providers, setProviders] = useState<{ id: string; label: string }[]>([])
   const [tokenLogin, setTokenLogin] = useState(false)
 
   const check = useCallback(() => {
@@ -388,7 +387,6 @@ function Gate() {
           return
         }
         setEmail(me.user?.email ?? null)
-        setProviders(me.providers ?? [])
         setTokenLogin(!!me.token_login)
         setAccess(me.user?.access ?? null)
         // The access gate (alphadesk/billing.py): only when it is ON and this
@@ -417,8 +415,8 @@ function Gate() {
   // the owner's call): signed out it signs you in, signed in it leads into
   // the app. The app starts at /markets, where a sign-in lands.
   if (pathname === "/" || pathname === "/welcome") {
-    return <LandingPage providers={providers} signedIn={!!email} tokenMode={tokenLogin}
-                        onPasswordSignIn={state === "login" && !providers.length ? check : undefined} />
+    return <LandingPage signedIn={!!email} tokenMode={tokenLogin}
+                        onPasswordSignIn={state === "login" ? check : undefined} />
   }
   // Public pages: what the thing is, and what you agree to, are readable
   // before there is an account to read them with.
@@ -436,10 +434,9 @@ function Gate() {
     )
   }
   // Signed out: the landing page IS the sign-in — provider buttons on an
-  // SSO instance (they create the account), the password form without one.
+  // password form.
   if (state === "login") {
-    return <LandingPage providers={providers} tokenMode={tokenLogin}
-                        onPasswordSignIn={providers.length ? undefined : check} />
+    return <LandingPage tokenMode={tokenLogin} onPasswordSignIn={check} />
   }
   if (state === "subscribe") return <SubscribePage email={email} access={access} onRecheck={check} />
   return <Shell userEmail={email} />

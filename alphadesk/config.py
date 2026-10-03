@@ -33,7 +33,7 @@ log = logging.getLogger("alphadesk.config")
 #: The app's own settings, whose values a reader may have commented.
 _OUR_PREFIXES = ("ALPHADESK_", "DASHBOARD_", "NEWS_", "CHART_", "RSI_", "SEC_USER_AGENT",
                  "FORECAST_", "SCREENER_", "FILING_", "RESEARCH_", "OWNERSHIP_", "MCP_",
-                 "STRIPE_", "GOOGLE_CLIENT", "GITHUB_CLIENT", "MICROSOFT_CLIENT")
+                 "STRIPE_")
 
 
 def _strip_inline_comments() -> None:

@@ -1,14 +1,15 @@
 import { H, L, LegalPage, P } from "@/components/legal"
 
 /** The Privacy Policy — a PUBLIC page (2026-09-18), readable before sign-in
- * and required by Google before its sign-in can leave testing mode.
+ * (it was also what Google required before its sign-in could leave testing
+ * mode; that sign-in was removed on 2026-10-03).
  *
  * Every statement here was checked against the code on the day it was
  * written; keep it that way when either changes:
- * - sign-in asks Google, GitHub and Microsoft for the email address only
- *   ("openid email" / "user:email" in app/auth.py);
- * - three cookies, all necessary: the session, the sign-in state guard and
- *   the agent-consent return (app/auth.py, app/agent_oauth.py);
+ * - sign-in is the email and password the operator set; no third-party
+ *   sign-in service is involved (app/auth.py);
+ * - two cookies, both necessary: the session and the agent-consent return
+ *   (app/auth.py, app/agent_oauth.py);
  * - browser storage holds preferences only (theme, display choices);
  * - no analytics of our own; fonts are bundled; no third-party scripts in
  *   the terminal — the hosted front page alone carries X's ad pixel, which
@@ -32,10 +33,8 @@ export default function PrivacyPage() {
       <H>1. What we collect</H>
       <P><strong>Your account.</strong></P>
       <L items={[
-        <>Your email address, received from the sign-in service you choose (Google, GitHub or
-          Microsoft). We ask those services for your email address only, not your name, photo or
-          contacts.</>,
-        "Which sign-in methods you have used, and when you first and last used each.",
+        "Your email address, as set up by this server's operator. We hold no name, photo or contacts.",
+        "When you last signed in.",
         "When your account was created and when it was last active.",
       ]} />
       <P><strong>What you add and create.</strong></P>
@@ -57,10 +56,9 @@ export default function PrivacyPage() {
         Sign-in events in those logs include the email address.</P>
 
       <H>2. Cookies and browser storage</H>
-      <P>AlphaDesk uses three cookies, all strictly necessary for the service to work:</P>
+      <P>AlphaDesk uses two cookies, both strictly necessary for the service to work:</P>
       <L items={[
-        "a session cookie that keeps you signed in (up to 14 days);",
-        "a short-lived cookie that protects the sign-in handshake against forgery; and",
+        "a session cookie that keeps you signed in (up to 14 days); and",
         "a short-lived cookie that returns you to an AI agent's approval page after you sign in.",
       ]} />
       <P>
@@ -96,8 +94,6 @@ export default function PrivacyPage() {
       <L items={[
         <><strong>Hosting:</strong> Google Cloud, which runs the service and its database in the
           United States (Virginia).</>,
-        <><strong>Sign-in services:</strong> Google, GitHub or Microsoft, when you choose to sign in
-          with them.</>,
         <><strong>Your data providers:</strong> when AlphaDesk calls a provider with your key, that
           provider receives the request (for example, the symbols asked for) under your account with
           them, and handles it under its own privacy policy.</>,

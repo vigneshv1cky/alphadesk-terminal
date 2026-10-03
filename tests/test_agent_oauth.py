@@ -344,7 +344,6 @@ def _password_reader(client, store, monkeypatch):
     """A gated instance with a password account, signed in on `client`."""
     from alphadesk.app import auth
     monkeypatch.setenv("ALPHADESK_AUTH", "required")
-    monkeypatch.setattr(auth, "sso_enabled", lambda: False)
     store.create_user("pw-reader", "reader@example.com", auth.hash_password("correct horse battery"))
     resp = client.post("/api/auth/login", json={"email": "reader@example.com", "password": "correct horse battery"})
     assert resp.status_code == 200, resp.text

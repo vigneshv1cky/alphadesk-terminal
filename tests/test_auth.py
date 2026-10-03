@@ -78,7 +78,7 @@ class TestGate:
     def test_opted_out_instance_is_open(self, client):
         assert client.get("/api/system").status_code == 200
         assert client.get("/api/auth/me").json() == {
-            "auth_required": False, "token_login": False, "providers": [], "google": False, "user": None}
+            "auth_required": False, "token_login": False, "user": None}
 
     def test_login_on_an_open_instance_is_a_400(self, client):
         r = client.post("/api/auth/login", json={"email": "a@b.c", "password": "x"})
@@ -130,123 +130,12 @@ class TestGate:
         assert r.status_code == 401
 
 
-class TestGoogle:
+class TestSessionLifecycle:
     @staticmethod
     def _configure(monkeypatch):
         monkeypatch.setenv("ALPHADESK_AUTH", "required")
         monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid.apps.googleusercontent.com")
         monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "csecret")
-
-    def test_start_is_404_when_unconfigured(self, client, monkeypatch):
-        monkeypatch.setenv("ALPHADESK_AUTH", "required")
-        assert client.get("/api/auth/google/start",
-                          follow_redirects=False).status_code == 404
-
-    def test_start_redirects_to_google_with_state(self, client, monkeypatch):
-        self._configure(monkeypatch)
-        r = client.get("/api/auth/google/start", follow_redirects=False)
-        assert r.status_code == 307
-        loc = r.headers["location"]
-        assert loc.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
-        assert "cid.apps.googleusercontent.com" in loc
-        assert "alphadesk_oauth_state" in r.headers.get("set-cookie", "")
-
-    def _callback(self, client, monkeypatch, email, verified=True, provider="google"):
-        monkeypatch.setattr(auth, "_sso_exchange",
-                            lambda prov, code, uri: {"access_token": "tok"})
-        monkeypatch.setattr(auth, "_sso_email",
-                            lambda prov, tok: (email, verified))
-        start = client.get(f"/api/auth/{provider}/start", follow_redirects=False)
-        import urllib.parse
-        state = urllib.parse.parse_qs(
-            urllib.parse.urlparse(start.headers["location"]).query)["state"][0]
-        return client.get(f"/api/auth/{provider}/callback?code=abc&state={state}",
-                          follow_redirects=False)
-
-    def test_allowlisted_google_account_signs_in(self, client, store, monkeypatch):
-        self._configure(monkeypatch)
-        store.create_user("u1", "reader@example.com", "sso-only")
-        r = self._callback(client, monkeypatch, "reader@example.com")
-        # Sign-in lands on the Account page (2026-09-26): every figure here
-        # comes from a vendor key the reader supplies, so that is the page
-        # a new account needs first.
-        assert r.status_code == 307 and r.headers["location"] == "/account"
-        assert client.get("/api/system").status_code == 200      # session landed
-
-    def test_unknown_google_account_provisions_itself(self, client, store, monkeypatch):
-        """Google IS sign-up: a verified account gets a row on first
-        sign-in and lands signed in."""
-        self._configure(monkeypatch)
-        r = self._callback(client, monkeypatch, "stranger@example.com")
-        # Sign-in lands on the Account page (2026-09-26): every figure here
-        # comes from a vendor key the reader supplies, so that is the page
-        # a new account needs first.
-        assert r.status_code == 307 and r.headers["location"] == "/account"
-        assert client.get("/api/system").status_code == 200
-        assert store.get_user_by_email("stranger@example.com") is not None
-
-    def test_disabled_google_account_is_refused(self, client, store, monkeypatch):
-        self._configure(monkeypatch)
-        store.create_user("u9", "banned@example.com", "sso-only")
-        with store._connect() as conn:
-            conn.execute("UPDATE users SET disabled=1 WHERE email=?", ("banned@example.com",))
-        r = self._callback(client, monkeypatch, "banned@example.com")
-        assert "auth_error=account-disabled" in r.headers["location"]
-        assert client.get("/api/system").status_code == 401
-
-    def test_password_login_refused_when_google_is_the_door(self, client, store, monkeypatch):
-        self._configure(monkeypatch)
-        import uuid
-        from alphadesk.app import auth as _a
-        store.create_user(uuid.uuid4().hex, "op@example.com", _a.hash_password("a-long-password"))
-        r = client.post("/api/auth/login",
-                        json={"email": "op@example.com", "password": "a-long-password"})
-        assert r.status_code == 400
-        assert "Google" in r.json()["detail"]
-
-    def test_unverified_email_is_refused(self, client, store, monkeypatch):
-        self._configure(monkeypatch)
-        store.create_user("u1", "reader@example.com", "sso-only")
-        r = self._callback(client, monkeypatch, "reader@example.com", verified=False)
-        assert "auth_error=no-verified-email" in r.headers["location"]
-
-    def test_state_mismatch_bounces(self, client, monkeypatch):
-        self._configure(monkeypatch)
-        r = client.get("/api/auth/google/callback?code=abc&state=forged",
-                       follow_redirects=False)
-        assert "auth_error=state-mismatch" in r.headers["location"]
-
-    def test_second_provider_signs_in_to_the_same_account(self, client, store, monkeypatch):
-        """The EMAIL is the account key: the same verified address through
-        GitHub lands in the account any other provider created."""
-        self._configure(monkeypatch)
-        monkeypatch.setenv("GITHUB_CLIENT_ID", "ghcid")
-        monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
-        r = self._callback(client, monkeypatch, "reader@example.com", provider="github")
-        # Sign-in lands on the Account page (2026-09-26): every figure here
-        # comes from a vendor key the reader supplies, so that is the page
-        # a new account needs first.
-        assert r.status_code == 307 and r.headers["location"] == "/account"
-        assert client.get("/api/system").status_code == 200
-        u = store.get_user_by_email("reader@example.com")
-        r2 = self._callback(client, monkeypatch, "reader@example.com", provider="google")
-        assert r2.status_code == 307
-        assert store.get_user_by_email("reader@example.com")["user_id"] == u["user_id"]
-
-    def test_me_lists_enabled_providers_in_order(self, client, monkeypatch):
-        self._configure(monkeypatch)
-        monkeypatch.setenv("GITHUB_CLIENT_ID", "ghcid")
-        monkeypatch.setenv("GITHUB_CLIENT_SECRET", "ghsecret")
-        me = client.get("/api/auth/me").json()
-        assert [p["id"] for p in me["providers"]] == ["google", "github"]
-        assert me["google"] is True
-
-    def test_unconfigured_provider_start_is_404(self, client, monkeypatch):
-        self._configure(monkeypatch)
-        assert client.get("/api/auth/github/start",
-                          follow_redirects=False).status_code == 404
-        assert client.get("/api/auth/gitlab/start",
-                          follow_redirects=False).status_code == 404
 
     def test_logout_all_kills_the_other_devices_cookie(self, client, store, monkeypatch):
         """The session-version stamp: bump the row and every cookie issued

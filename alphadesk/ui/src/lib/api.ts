@@ -1352,11 +1352,6 @@ export interface AuthMe {
   /** The instance is guarded by one shared access token, not accounts: the
    * login screen asks for it alone. */
   token_login?: boolean
-  /** The configured identity providers, in the order the login screen
-   * should offer them. Empty means the password gate (self-host, dev). */
-  providers: { id: string; label: string }[]
-  /** Legacy flag, kept while cached bundles exist. */
-  google: boolean
   /** `sign_ins`: the methods this account has signed in with, latest
    * first — recorded from 2026-09-18 (2026-09-18). */
   user: {
