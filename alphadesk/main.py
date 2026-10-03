@@ -326,6 +326,9 @@ def main() -> None:
         problem = _auth.access_token_problem()
         if problem:
             sys.exit(problem)
+        if _auth.auth_required() and _auth.shared_account_email() and not _auth.allowed_emails():
+            sys.exit("ALPHADESK_SHARED_ACCOUNT needs ALPHADESK_ALLOWED_EMAILS: without a list, "
+                     "anyone with a Google or GitHub account would reach the shared workspace")
         _allowed = _auth.allowed_emails()
         if _allowed and _auth.auth_required():
             log.info("sign-in is limited to %d allowed address%s", len(_allowed), "" if len(_allowed) == 1 else "es")

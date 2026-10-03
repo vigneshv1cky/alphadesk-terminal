@@ -80,16 +80,55 @@ def allowed_emails() -> set[str] | None:
     return names or None
 
 
+def shared_account_email() -> str:
+    return os.environ.get("ALPHADESK_SHARED_ACCOUNT", "").strip().lower()
+
+
+def shared_account() -> dict | None:
+    """The one account everyone who gets in acts as (2026-10-03), or None.
+
+    For a server a small group uses as ONE workspace: the people are named by
+    ALPHADESK_ALLOWED_EMAILS and sign in as themselves, but every session acts
+    as this account, so they see and change the same keys, stories, views and
+    agent tokens. An existing account is adopted as it is; a missing one is
+    made. It needs the allow-list: without one, anyone with a Google or GitHub
+    account would walk into the workspace, so nobody is let in at all."""
+    email = shared_account_email()
+    if not email or not auth_required():
+        return None
+    row = store.get_user_by_email(email)
+    if row is None:
+        store.create_user(uuid.uuid4().hex, email, "sso-only")
+        row = store.get_user_by_email(email)
+    return row
+
+
+def session_cookie_for(user: dict) -> str:
+    """A session for a person who has signed in: their own account, or the
+    shared one with their address kept on it (the allow-list is checked
+    against that address on every request)."""
+    acting = shared_account() or user
+    return issue_session(acting["user_id"], user["email"], acting.get("session_version") or 1)
+
+
 def email_allowed(email: str | None) -> bool:
-    names = allowed_emails()
-    if names is None or not auth_required():
+    if not auth_required():
         return True
+    names = allowed_emails()
+    if names is None:
+        return not shared_account_email()      # a shared workspace is never open to everyone
     return (email or "").strip().lower() in names
 
 
 def uid_allowed(user_id: str) -> bool:
-    """For credentials that carry only an account id (agent tokens)."""
-    if allowed_emails() is None or not auth_required():
+    """For credentials that carry only an account id (agent tokens). In a
+    shared workspace the one account is the only one there is."""
+    if not auth_required():
+        return True
+    if shared_account_email():
+        shared = shared_account()
+        return shared is not None and shared["user_id"] == user_id
+    if allowed_emails() is None:
         return True
     return email_allowed(store.account_email(user_id))
 
@@ -525,8 +564,12 @@ def sso_callback(provider: str, request: Request, code: str = "", state: str = "
     if not email_allowed(email):
         log.info("%s sign-in refused for %s: not on the allow-list", provider, email)
         return bounce("not-allowed")
-    user = store.get_user_by_email(email)
-    if user and user.get("disabled"):
+    shared = shared_account()
+    if shared is not None:
+        user = {**shared, "email": email}            # a person of the shared workspace
+    else:
+        user = store.get_user_by_email(email)
+    if shared is None and user and user.get("disabled"):
         # Disabling a row is the operator's ban switch, and it survives the
         # open-signup policy.
         log.info("%s sign-in refused for %s: account disabled", provider, email)
@@ -563,7 +606,7 @@ def sso_callback(provider: str, request: Request, code: str = "", state: str = "
         response.delete_cookie(RETURN_COOKIE)
     response.set_cookie(
         SESSION_COOKIE,
-        issue_session(user["user_id"], user["email"], user.get("session_version") or 1),
+        session_cookie_for(user),
         max_age=SESSION_TTL_S, httponly=True, samesite="lax",
         secure=os.environ.get("ALPHADESK_COOKIE_SECURE", "").strip() == "1",
     )
@@ -601,7 +644,7 @@ def login(body: LoginBody, response: Response):
     store.record_sign_in(user["user_id"], "password")
     response.set_cookie(
         SESSION_COOKIE,
-        issue_session(user["user_id"], user["email"], user.get("session_version") or 1),
+        session_cookie_for(user),
         max_age=SESSION_TTL_S, httponly=True, samesite="strict",
         secure=os.environ.get("ALPHADESK_COOKIE_SECURE", "").strip() == "1",
     )
