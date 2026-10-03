@@ -65,6 +65,35 @@ def auth_required() -> bool:
     return os.environ.get("ALPHADESK_AUTH", "required").strip().lower() != "off"
 
 
+# ── the allow-list (2026-10-03) ─────────────────────────────────────────────
+# SSO is also sign-up, so any verified Google or GitHub account makes its own
+# account on first sign-in. ALPHADESK_ALLOWED_EMAILS closes that to the people
+# the operator names: a comma- or space-separated list, compared without case.
+# Unset or empty, nothing changes. It applies wherever accounts gate — to new
+# sign-ins, to sessions already open, and (in the agent door) to tokens made by
+# an account no longer on the list — and not to an instance with sign-in off,
+# which has one account and no addresses.
+
+def allowed_emails() -> set[str] | None:
+    raw = os.environ.get("ALPHADESK_ALLOWED_EMAILS", "")
+    names = {e.strip().lower() for e in raw.replace(",", " ").split() if e.strip()}
+    return names or None
+
+
+def email_allowed(email: str | None) -> bool:
+    names = allowed_emails()
+    if names is None or not auth_required():
+        return True
+    return (email or "").strip().lower() in names
+
+
+def uid_allowed(user_id: str) -> bool:
+    """For credentials that carry only an account id (agent tokens)."""
+    if allowed_emails() is None or not auth_required():
+        return True
+    return email_allowed(store.account_email(user_id))
+
+
 # ── the access token (2026-10-03) ──────────────────────────────────────────
 # One person's own server that is reachable beyond their machine. With sign-in
 # off it acts as a single local account and would answer anyone who finds it,
@@ -313,6 +342,8 @@ def current_user(request: Request) -> dict | None:
     claims = read_session(request.cookies.get(SESSION_COOKIE))
     if claims is None or not claims.get("uid"):
         return claims
+    if not email_allowed(claims.get("email")):
+        return None                                   # taken off the list: signed out
     state = _session_state(claims["uid"])
     if state is None or state.get("disabled")             or int(claims.get("sv", 1)) != int(state.get("session_version") or 1):
         return None
@@ -491,6 +522,9 @@ def sso_callback(provider: str, request: Request, code: str = "", state: str = "
 
     if not email or not verified:
         return bounce("no-verified-email")
+    if not email_allowed(email):
+        log.info("%s sign-in refused for %s: not on the allow-list", provider, email)
+        return bounce("not-allowed")
     user = store.get_user_by_email(email)
     if user and user.get("disabled"):
         # Disabling a row is the operator's ban switch, and it survives the
@@ -562,6 +596,8 @@ def login(body: LoginBody, response: Response):
         raise HTTPException(401, "wrong email or password")
 
     _attempts.pop(email, None)
+    if not email_allowed(user["email"]):
+        raise HTTPException(403, "this account is not allowed on this server")
     store.record_sign_in(user["user_id"], "password")
     response.set_cookie(
         SESSION_COOKIE,

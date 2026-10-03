@@ -89,6 +89,12 @@ class TokenGate:
         if not agent_access.address_allowed(client_address(scope), allowed):
             await _forbidden(send)
             return
+        # The allow-list reaches the agent too: a token made by an account no
+        # longer on it stops working (app/auth.py, ALPHADESK_ALLOWED_EMAILS).
+        from alphadesk.app import auth as _auth
+        if not await anyio.to_thread.run_sync(_auth.uid_allowed, uid):
+            await _forbidden_account(send)
+            return
         # The access gate reaches the agent too: a reader past the trial with
         # no subscription is refused here as on the web (alphadesk/billing.py).
         from alphadesk import billing
@@ -117,6 +123,15 @@ class TokenGate:
             await self.app(scope, receive, send_with_limits)
         finally:
             reset_request_user(held)
+
+
+async def _forbidden_account(send) -> None:
+    body = json.dumps({"detail": "this account is not allowed on this server"}).encode("utf-8")
+    await send({"type": "http.response.start", "status": 403, "headers": [
+        (b"content-type", b"application/json"),
+        (b"content-length", str(len(body)).encode("ascii")),
+    ]})
+    await send({"type": "http.response.body", "body": body})
 
 
 async def _forbidden(send) -> None:
