@@ -30,6 +30,30 @@ load_dotenv()
 
 log = logging.getLogger("alphadesk.config")
 
+
+def _ensure_ca_bundle() -> None:
+    """Make HTTPS work on a Python with no trusted root certificates (the
+    python.org build on macOS ships none until its "Install Certificates"
+    script is run, so every EDGAR and vendor call failed with CERTIFICATE_
+    VERIFY_FAILED on a fresh clone, 2026-10-03). When nothing is configured and
+    the interpreter's own default bundle is missing, use certifi's."""
+    if os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR"):
+        return
+    import ssl
+    paths = ssl.get_default_verify_paths()
+    if paths.cafile and os.path.exists(paths.cafile):
+        return
+    if paths.capath and os.path.isdir(paths.capath) and os.listdir(paths.capath):
+        return
+    try:
+        import certifi
+    except ImportError:
+        return
+    os.environ["SSL_CERT_FILE"] = certifi.where()
+
+
+_ensure_ca_bundle()
+
 #: The app's own settings, whose values a reader may have commented.
 _OUR_PREFIXES = ("ALPHADESK_", "DASHBOARD_", "NEWS_", "CHART_", "RSI_", "SEC_USER_AGENT",
                  "FORECAST_", "SCREENER_", "FILING_", "RESEARCH_", "OWNERSHIP_", "MCP_")

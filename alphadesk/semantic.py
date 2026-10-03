@@ -112,7 +112,12 @@ def _server_busy() -> bool:
 
 
 def enabled() -> bool:
-    return os.environ.get("ALPHADESK_SEMANTIC_SEARCH", "on").lower() not in ("off", "0", "false", "no")
+    """On unless switched off — or the optional packages (`pip install
+    "alphadesk[search]"`) are not installed, which reads as off, quietly."""
+    if os.environ.get("ALPHADESK_SEMANTIC_SEARCH", "on").lower() in ("off", "0", "false", "no"):
+        return False
+    import importlib.util
+    return importlib.util.find_spec("sentence_transformers") is not None
 
 
 def model() -> Any:

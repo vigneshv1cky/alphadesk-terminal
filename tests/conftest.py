@@ -56,6 +56,13 @@ def _reset_providers():
 
 
 @pytest.fixture(autouse=True)
+def _test_client_host(monkeypatch):
+    """The test client's host name is `testserver`; an open server answers only to
+    names it is told about (dashboard._browser_guards)."""
+    monkeypatch.setenv("ALPHADESK_ALLOWED_HOSTS", "testserver")
+
+
+@pytest.fixture(autouse=True)
 def _no_vendor_key_check(monkeypatch):
     """Saving a news key tries it once at the vendor (ingest/news.check_news_key);
     no test may reach a real vendor, so the check is off unless a test turns it on."""

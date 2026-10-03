@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alphadesk"
 version = "0.2.1"
-description = "Open-source, self-hosted market research terminal: SEC filings, market data on your own vendor keys, and 37 read-only MCP tools for your own AI agent."
+description = "Open-source, self-hosted market research terminal: SEC filings, market data on your own vendor keys, and 50 read-only MCP tools for your own AI agent."
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.11"
@@ -44,10 +44,8 @@ dependencies = [
     "python-multipart",
     "mcp>=1.0,<2",                     # `alphadesk.main mcp` — exposes the terminal to agents
     "pg8000>=1.30",                 # ledger/db.py — Postgres, pure-Python BSD driver
-    "stripe>=12",                   # billing.py — hosted checkout and webhooks, MIT
     "cryptography>=42",             # ledger/vault.py — AES-256-GCM for readers' sealed keys
-    "sentence-transformers>=3",     # alphadesk/semantic.py — news search by meaning (Apache 2.0)
-    "transformers>=4.51",           # Qwen3-Embedding-0.6B needs >= 4.51 (Apache 2.0)
+    "certifi",                      # config.py — a CA bundle when the interpreter has none (macOS python.org)
 ]
 
 # Providers plug in here. A package declaring this group is discovered
@@ -56,6 +54,13 @@ dependencies = [
 # example = "mypackage.providers:register_all"
 
 [project.optional-dependencies]
+# News search by meaning (alphadesk/semantic.py): pulls torch, about a gigabyte,
+# and a 1.2 GB model on first use. Without it search matches words, and a
+# clone installs in seconds. The Docker image installs it (requirements.txt).
+search = [
+    "sentence-transformers>=3",     # Apache 2.0
+    "transformers>=4.51",           # Qwen3-Embedding-0.6B needs >= 4.51 (Apache 2.0)
+]
 dev = ["pytest", "ruff", "httpx"]      # httpx backs fastapi's TestClient
 
 [project.scripts]

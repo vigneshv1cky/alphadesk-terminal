@@ -25,3 +25,22 @@ def test_init_refuses_something_that_is_not_an_email(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     assert setup_local.run_init("not-an-email") == 1
     assert not (tmp_path / ".env").exists()
+
+
+def test_a_python_with_no_root_certificates_falls_back_to_certifi(monkeypatch):
+    """The python.org build on macOS ships no CA bundle, so every HTTPS call failed
+    on a fresh clone; config points OpenSSL at certifi's bundle then (2026-10-03)."""
+    import ssl
+    from types import SimpleNamespace
+
+    import certifi
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    monkeypatch.setattr(ssl, "get_default_verify_paths",
+                        lambda: SimpleNamespace(cafile="/nonexistent/cert.pem", capath="/nonexistent"))
+    config._ensure_ca_bundle()
+    assert os.environ["SSL_CERT_FILE"] == certifi.where()
+    monkeypatch.setenv("SSL_CERT_FILE", "/mine.pem")                 # an operator's own choice wins
+    config._ensure_ca_bundle()
+    assert os.environ["SSL_CERT_FILE"] == "/mine.pem"

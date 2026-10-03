@@ -174,7 +174,7 @@ cp alphadesk/deploy/env.example .env
 | `ALPHADESK_ACCESS_TOKEN` | if reachable beyond your machine | with sign-in off, one shared secret (16+ characters) the browser asks for once; see Quick start |
 | `ALPHADESK_DATABASE_URL` | no | a `postgres://` URL; unset, SQLite in `ALPHADESK_DATA` (`~/.alphadesk`) |
 | `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys. Found at start, they are sealed into your account — the local one with sign-in off, or the one allowed address's — so the settings file is the record: they add or update keys, never delete them, and win over a key changed on the Account page at the next start. You can still connect keys on the Account page instead |
-| `ALPHADESK_SEMANTIC_SEARCH` | no | `off` skips the ~1.2 GB embedding model; search then matches words only |
+| `ALPHADESK_SEMANTIC_SEARCH` | no | `off` skips the ~1.2 GB embedding model; search then matches words only. Without the `search` extra installed it is off anyway |
 | `ALPHADESK_LOGIN_EMAIL` + `ALPHADESK_LOGIN_PASSWORD_HASH` | no | with sign-in on: your own sign-in, and the only user the server accepts. With sign-in on it is required; the server will not start without it. At start the account is made, or an existing account with that email gets the password and keeps its data. While set, the password form is the only door. Make the hash with `python -m alphadesk.main hash-password`; `ALPHADESK_LOGIN_PASSWORD` (12+ characters) also works but is readable to anyone who can read the settings. The identifier is an email address |
 
 Generate the vault key with:
@@ -194,9 +194,10 @@ pip install alphadesk
 python -m alphadesk.main dashboard
 ```
 
-The terminal is at http://127.0.0.1:8000. The first start downloads the
-embedding model into the Hugging Face cache (skip it with
-`ALPHADESK_SEMANTIC_SEARCH=off`).
+The terminal is at http://127.0.0.1:8000. This install is small and quick and
+searches news by words. For search by meaning too, install the extra
+(`pip install "alphadesk[search]"`, about a gigabyte of PyTorch); the first start
+then downloads a 1.2 GB model into the Hugging Face cache.
 
 **2b. Or run from a clone**, which is what you want if you intend to change
 anything:
@@ -550,7 +551,7 @@ tests/               pytest suite
 - Python **3.11+**, Node with **pnpm**
 - A **SEC User-Agent** string with real contact details (SEC requires one)
 - Your own vendor keys for anything beyond EDGAR and Treasury
-- About 1.5 GB of disk for the embedding model, downloaded on first use (or
+- About 1.5 GB of disk for the embedding model, only with the `search` extra, downloaded on first use (or
   set `ALPHADESK_SEMANTIC_SEARCH=off`)
 
 ### Set up and run

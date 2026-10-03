@@ -417,7 +417,8 @@ code{{font-size:12.5px;word-break:break-all}}
 
 
 def _secure_cookie() -> bool:
-    return os.environ.get("ALPHADESK_COOKIE_SECURE", "").strip() == "1"
+    from alphadesk.app import auth
+    return auth._cookie_secure()
 
 
 @router.get(CONSENT_PATH, include_in_schema=False)

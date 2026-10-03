@@ -14,8 +14,8 @@ python-multipart            # form parsing
 # imports. Lifting the ceiling means porting that module, not just the pin.
 mcp>=1.0,<2                 # `alphadesk.main mcp` — exposes the terminal to agents
 pg8000>=1.30       # ledger/db.py's Postgres driver — pure Python, BSD (the C drivers are LGPL)
-stripe>=12          # billing.py — the hosted service's checkout and webhooks, MIT; imported only when a key is set
 cryptography>=42
+certifi                     # config.py — a CA bundle when the interpreter has none
 # alphadesk/semantic.py — news search by meaning, self-hosted
 # Qwen3-Embedding-0.6B (Apache 2.0). Both Apache 2.0; torch (BSD) comes with
 # them — the Dockerfile installs its CPU-only build first.

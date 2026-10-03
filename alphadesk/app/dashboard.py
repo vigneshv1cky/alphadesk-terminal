@@ -131,6 +131,59 @@ async def _count_in_flight(request: Request, call_next):
         semantic.request_finished()
 
 
+# THE BROWSER GUARDS (2026-10-03). A server with sign-in off answers whatever
+# reaches it, so a web page the owner visits could reach it two ways: by
+# rebinding its own name to 127.0.0.1 (the request then arrives with the
+# attacker's Host), or by firing a cross-site request. Both are refused before
+# anything runs. They only ever turn away browsers: a program sends neither
+# Sec-Fetch-Site nor a foreign Origin.
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
+_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_BROWSER_EXEMPT = ("/api/agent/tools", "/api/v1")
+
+
+def _host_of(value: str) -> str:
+    value = value.strip().lower()
+    if value.startswith("["):                       # [::1]:8000
+        return value.split("]", 1)[0] + "]"
+    return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
+
+def _allowed_hosts() -> set[str]:
+    hosts = set(_LOCAL_HOSTS)
+    base = os.environ.get("ALPHADESK_BASE_URL", "").strip()
+    if base:
+        from urllib.parse import urlsplit
+        if urlsplit(base).hostname:
+            hosts.add(urlsplit(base).hostname.lower())
+    for h in os.environ.get("ALPHADESK_ALLOWED_HOSTS", "").replace(",", " ").split():
+        hosts.add(h.strip().lower())
+    return hosts
+
+
+@app.middleware("http")
+async def _browser_guards(request: Request, call_next):
+    from alphadesk.app import auth
+    path = request.url.path
+    if (not auth.auth_required() and not auth.access_token()
+            and path not in ("/healthz", "/api/healthz")
+            and _host_of(request.headers.get("host", "")) not in _allowed_hosts()):
+        return Response("this server answers only to localhost; set ALPHADESK_ALLOWED_HOSTS (or "
+                        "ALPHADESK_BASE_URL) to use another name, or set ALPHADESK_ACCESS_TOKEN",
+                        status_code=400, media_type="text/plain")
+    if request.method in _WRITE_METHODS and path.startswith("/api") and not path.startswith(_BROWSER_EXEMPT):
+        site = request.headers.get("sec-fetch-site", "")
+        origin = request.headers.get("origin", "")
+        cross = site in ("cross-site", "same-site")
+        if not cross and origin and origin != "null":
+            from urllib.parse import urlsplit
+            cross = (urlsplit(origin).netloc or "").lower() != request.headers.get("host", "").lower()
+        if cross:
+            return Response('{"detail": "cross-site request refused"}', status_code=403,
+                            media_type="application/json")
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def _login_gate(request: Request, call_next):
     """Hosted mode's one door. With ALPHADESK_AUTH unset this is a straight
@@ -2536,6 +2589,8 @@ def spa(path: str):
     # The shell must be revalidated on every load (its ETag makes that a
     # 304 when nothing changed); the hashed assets under /assets are
     # immutable by name and may be cached for a year.
+    if "\x00" in path:
+        return Response("not found", status_code=404)
     if path:
         candidate = (_STATIC / path).resolve()
         if candidate.is_file() and candidate.is_relative_to(_STATIC.resolve()):

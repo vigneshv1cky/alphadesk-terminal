@@ -49,7 +49,48 @@ SESSION_TTL_S = 14 * 24 * 3600
 
 _LOCK_AFTER = 5
 _LOCK_S = 60.0
-_attempts: dict[str, tuple[int, float]] = {}   # email -> (fails, lock_until)
+_attempts: dict[str, tuple[int, float]] = {}   # "ip|email" -> (fails, lock_until)
+
+
+def _client_ip(request: Request) -> str:
+    """The caller's address as the front door saw it: the last X-Forwarded-For
+    entry (Cloud Run appends the real client; anything earlier was sent by the
+    caller), else the socket peer."""
+    forwarded = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",") if p.strip()]
+    return forwarded[-1] if forwarded else (request.client.host if request.client else "")
+
+
+def _lock_key(request: Request, name: str) -> str:
+    """A lockout is per caller AND per name: keyed by the name alone, anyone
+    could keep the one valid login locked with five bad tries a minute
+    (2026-10-03)."""
+    if len(_attempts) > 5000:                       # bound a long process
+        now = time.time()
+        for k in [k for k, (_, until) in _attempts.items() if until < now]:
+            _attempts.pop(k, None)
+        if len(_attempts) > 5000:
+            _attempts.clear()
+    return f"{_client_ip(request)}|{name}"
+
+
+def _cookie_secure() -> bool:
+    """Secure cookies when asked, and by default behind an https address."""
+    flag = os.environ.get("ALPHADESK_COOKIE_SECURE", "").strip()
+    if flag:
+        return flag == "1"
+    return os.environ.get("ALPHADESK_BASE_URL", "").strip().lower().startswith("https://")
+
+
+_DUMMY_HASH: str | None = None
+
+
+def _burn_a_verify(password: str) -> None:
+    """Spend the time a real verification takes, so an unknown or disabled
+    address answers no faster than a wrong password does."""
+    global _DUMMY_HASH
+    if _DUMMY_HASH is None:
+        _DUMMY_HASH = hash_password("not-a-real-password")
+    verify_password(password, _DUMMY_HASH)
 
 
 def auth_required() -> bool:
@@ -192,6 +233,7 @@ def apply_login_from_settings() -> str | None:
     if agrees:
         return "unchanged"
     store.set_user_password(email, want_hash or hash_password(plain))
+    invalidate_sessions(row["user_id"])             # a new password ends every old session
     return "password set"
 
 
@@ -389,24 +431,27 @@ def me(request: Request, response: Response):
 
 
 @router.post("/login")
-def login(body: LoginBody, response: Response):
+def login(body: LoginBody, request: Request, response: Response):
     if not auth_required():
         raise HTTPException(400, "this instance has no login — it is open")
     email = body.email.lower().strip()
 
-    fails, lock_until = _attempts.get(email, (0, 0.0))
+    lock = _lock_key(request, email)
+    fails, lock_until = _attempts.get(lock, (0, 0.0))
     if time.time() < lock_until:
         raise HTTPException(429, "too many attempts — wait a minute and try again")
 
     user = store.get_user_by_email(email)
     # The same failure for a wrong password and an unknown email, on purpose:
     # a login form must not confirm which addresses have accounts.
+    if not user or user.get("disabled"):
+        _burn_a_verify(body.password)
     if not user or user.get("disabled") or not verify_password(body.password, user["password_hash"]):
         fails += 1
-        _attempts[email] = (fails, time.time() + _LOCK_S if fails >= _LOCK_AFTER else 0.0)
+        _attempts[lock] = (fails, time.time() + _LOCK_S if fails >= _LOCK_AFTER else 0.0)
         raise HTTPException(401, "wrong email or password")
 
-    _attempts.pop(email, None)
+    _attempts.pop(lock, None)
     if not email_allowed(user["email"]):
         raise HTTPException(403, "this account is not allowed on this server")
     store.record_sign_in(user["user_id"], "password")
@@ -414,7 +459,7 @@ def login(body: LoginBody, response: Response):
         SESSION_COOKIE,
         issue_session(user["user_id"], user["email"], user.get("session_version") or 1),
         max_age=SESSION_TTL_S, httponly=True, samesite="strict",
-        secure=os.environ.get("ALPHADESK_COOKIE_SECURE", "").strip() == "1",
+        secure=_cookie_secure(),
     )
     return {"user": {"email": user["email"]}}
 
@@ -424,21 +469,22 @@ class TokenBody(BaseModel):
 
 
 @router.post("/token-login")
-def token_login(body: TokenBody, response: Response):
+def token_login(body: TokenBody, request: Request, response: Response):
     """Trade the instance's access token for a session cookie, as the one
     local account. Compared in constant time and rate limited like a password
     (the same five-misses-a-minute lock, shared across callers because there
     is only one secret to guess)."""
     if not token_gate():
         raise HTTPException(400, "this instance has no access token")
-    fails, lock_until = _attempts.get("\x00token", (0, 0.0))
+    lock = _lock_key(request, "\x00token")
+    fails, lock_until = _attempts.get(lock, (0, 0.0))
     if time.time() < lock_until:
         raise HTTPException(429, "too many attempts — wait a minute and try again")
     if not hmac.compare_digest(body.token.strip().encode(), access_token().encode()):
         fails += 1
-        _attempts["\x00token"] = (fails, time.time() + _LOCK_S if fails >= _LOCK_AFTER else 0.0)
+        _attempts[lock] = (fails, time.time() + _LOCK_S if fails >= _LOCK_AFTER else 0.0)
         raise HTTPException(401, "that is not this instance's access token")
-    _attempts.pop("\x00token", None)
+    _attempts.pop(lock, None)
     from alphadesk.app import dashboard
     uid = dashboard._local_uid()
     state = store.user_session_state(uid)
@@ -446,7 +492,7 @@ def token_login(body: TokenBody, response: Response):
         SESSION_COOKIE,
         issue_session(uid, store.user_email(uid) or "local@alphadesk.invalid", (state or {}).get("session_version") or 1),
         max_age=SESSION_TTL_S, httponly=True, samesite="strict",
-        secure=os.environ.get("ALPHADESK_COOKIE_SECURE", "").strip() == "1",
+        secure=_cookie_secure(),
     )
     return {"user": {"email": "this instance"}}
 
