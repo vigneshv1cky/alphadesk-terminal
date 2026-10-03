@@ -314,8 +314,6 @@ def main() -> None:
         sys.exit(run_init(args.email, args.quiet))
 
     if args.cmd == "dashboard":
-        import os
-
         # Importing config is what loads .env; without it this line reported
         # the DEFAULT port while the server bound the configured one, and a
         # self-hoster on another port followed a link to nothing (2026-09-19).
