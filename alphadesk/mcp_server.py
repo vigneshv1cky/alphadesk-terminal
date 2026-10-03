@@ -1038,32 +1038,49 @@ def move_state(symbols: list[str] | str) -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
-def candidates(horizon_days: int = 3, filing_hours: int = 36, limit: int = 25) -> dict:
-    """WHICH NAMES HAVE A DATED REASON TO MOVE: a list of candidates with the
-    evidence for each, strongest first. Not a prediction — it says what is
-    scheduled or just filed, never that a price will move.
+def candidates(session: str = "", sessions_ahead: int = 1, filing_hours: int = 0, limit: int = 25) -> dict:
+    """WHICH NAMES HAVE A DATED REASON TO MOVE IN THE NEXT TRADING SESSION: a
+    list of candidates with the evidence for each, strongest first. Not a
+    prediction — it says what is scheduled or just filed, never that a price
+    will move.
 
-    Evidence gathered: reports due within `horizon_days` (default 3; two days
-    or fewer weighs more), material 8-Ks, stake filings (13D/13G, tender
-    offers) and offering filings accepted in the last `filing_hours` (default
-    36, max 168), and trading halts today. A name on the reader's board is
-    marked. Each row carries `already_moved_pct` where the name is among
-    today's biggest movers, so what has moved is told apart from what might.
-    `evidence_weight` only orders the list; it is not a probability.
+    THE SESSION, NOT THE CALENDAR DAY. Asked on a Friday evening, a Saturday or
+    a Sunday it answers for MONDAY; asked on a Monday after the open, for
+    TUESDAY ("tomorrow"). `session` (YYYY-MM-DD) asks about a named trading day
+    instead, and `sessions_ahead` (default 1, max 5) widens it to that many
+    sessions from the first. The reply names the sessions it used in `sessions`
+    and the `as_of` clock it read them from; a holiday or weekend is skipped.
+
+    Evidence gathered: reports that can move the session — before the open on
+    that day, or after the close the session before; where the vendor states no
+    timing both are counted and the row says so — material 8-Ks, stake filings
+    (13D/13G, tender offers) and offering filings accepted since the LAST CLOSE
+    (so a weekend's filings are all there; `filing_hours` reaches further back),
+    and trading halts since the last session opened. A name on the reader's
+    board is marked. Each row carries `already_moved_pct` where the name is
+    among the biggest movers of the last session, so what has moved is told
+    apart from what might. `evidence_weight` only orders the list.
 
     `unavailable` names any source that could not be read, so a short list is
     not mistaken for a quiet market. Judge each filing by reading it with
     `filing_text`."""
-    from datetime import timedelta
+    from datetime import date as _date, timedelta
     from alphadesk.config import now_et
-    from alphadesk.desk import candidates as cand
+    from alphadesk.desk import candidates as cand, sessions as cal
     from alphadesk.identity import request_user
     from alphadesk.ingest import earnings_calendar, edgar_feed, movers as mv
     from alphadesk.ledger import store
     from alphadesk.providers import get_prices
-    horizon = max(1, min(int(horizon_days), 14))
-    hours = max(1, min(int(filing_hours), 168))
-    today = now_et().date()
+    now = now_et()
+    if (session or "").strip():
+        first = _date.fromisoformat(_date(session, "session"))
+        if not cal.is_session(first):
+            raise ValueError(f"{first.isoformat()} is not a trading day; the next is {cal.next_session(first).isoformat()}")
+    else:
+        first = cal.upcoming_session(now)
+    targets = cal.sessions_from(first, max(1, min(int(sessions_ahead), 5)))
+    last_close = cal.last_close(now)
+    since = min(last_close, now - timedelta(hours=max(0, min(int(filing_hours), 168))))
     unavailable: dict[str, str] = {}
 
     def attempt(name, fn, default):
@@ -1073,21 +1090,28 @@ def candidates(horizon_days: int = 3, filing_hours: int = 36, limit: int = 25) -
             unavailable[name] = str(exc)[:160]
             return default
 
-    earnings = attempt("earnings", lambda: earnings_calendar.upcoming(days=horizon), [])
+    # Calendar rows from the session before the first target (a report after
+    # that close moves it) through the last target.
+    span_from = cal.previous_session(first)
+    rows_between = lambda: earnings_calendar.rows_between(span_from.isoformat(), targets[-1].isoformat(), stats=False)  # noqa: E731
+    earnings = attempt("earnings", lambda: rows_between(), [])
     feed = attempt("filings", lambda: edgar_feed.recent(groups=["events", "stakes", "offerings"], limit=200), {})
-    edge = (now_et() - timedelta(hours=hours)).date().isoformat()
-    filings = [f for f in (feed.get("filings") or []) if str(f.get("filed_at") or "")[:10] >= edge]
+    filings = [f for f in (feed.get("filings") or []) if str(f.get("filed_at") or "")[:10] >= since.date().isoformat()]
     for k, why in (feed.get("unavailable") or {}).items():
         unavailable[f"filings:{k}"] = str(why)
-    halts = attempt("halts", lambda: get_prices().ask("trading_halts", limit=100, surface="trading_halts") or [], [])
+    last_session_day = (now.date() if cal.is_session(now.date()) and now.time() >= cal.OPEN
+                        else cal.previous_session(now.date()))
+    halts = [{**h, "today": str(h.get("halted_at") or "")[:10] >= last_session_day.isoformat()}
+             for h in attempt("halts", lambda: get_prices().ask("trading_halts", limit=100, surface="trading_halts") or [], [])]
     movers_rows: list[dict] = []
     for tab in (attempt("movers", lambda: mv.category_movers("stocks", top=50), {}) or {}).get("tabs") or []:
         if tab.get("id") in ("gainers", "losers"):
             movers_rows += tab.get("rows") or []
     uid = request_user()
     board = (store.get_board(uid) or {}).get("symbols", []) if uid else []
-    rows = cand.rank(earnings, filings, halts, movers_rows, board, today, horizon)
-    return {"as_of": today.isoformat(), "horizon_days": horizon, "filing_hours": hours,
+    rows = cand.rank(earnings, filings, halts, movers_rows, board, targets)
+    return {"as_of": now.isoformat(timespec="minutes"), "sessions": [d.isoformat() for d in targets],
+            "filings_since": since.isoformat(timespec="minutes"),
             "count": len(rows), "candidates": rows[:max(1, min(int(limit), 100))],
             "unavailable": unavailable}
 

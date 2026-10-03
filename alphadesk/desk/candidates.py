@@ -6,7 +6,9 @@ one might, so a reader can weigh them, and says which names have already moved.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date
+
+from alphadesk.desk import sessions
 
 #: What each kind of evidence adds to a symbol's `evidence_weight`. The weights
 #: only order the list; they are not a probability.
@@ -23,12 +25,30 @@ def _day(raw) -> date | None:
         return None
 
 
+def _reaction_sessions(row: dict) -> list[date]:
+    """The session(s) a report could move: before the open moves its own day,
+    after the close the next trading day, and where the vendor gives no timing
+    either could."""
+    d = _day(row.get("report_date"))
+    if d is None:
+        return []
+    timing = str(row.get("time") or row.get("hour") or row.get("report_time") or "").lower()
+    same = sessions.on_or_next_session(d)
+    after = sessions.next_session(d)
+    if any(k in timing for k in ("bmo", "before", "pre")):
+        return [same]
+    if any(k in timing for k in ("amc", "after", "post")):
+        return [after]
+    return sorted({same, after})
+
+
 def rank(earnings: list[dict], filings: list[dict], halts: list[dict], movers: list[dict],
-         board: list[str], today: date, horizon_days: int = 3) -> list[dict]:
-    """Candidates, strongest evidence first. Inputs are the rows the matching
-    tools return: calendar rows {symbol, report_date}, filing-feed rows
-    {symbols, form, items, filed_at}, halts {symbol, today, resumed, reason_code},
-    mover rows {symbol, change_pct}."""
+         board: list[str], target_sessions: list[date]) -> list[dict]:
+    """Candidates for the given target session(s), strongest evidence first.
+    Inputs are the rows the matching tools return: calendar rows {symbol,
+    report_date, time}, filing-feed rows {symbols, form, items, filed_at},
+    halts {symbol, today, resumed, reason_code}, mover rows {symbol,
+    change_pct}. `target_sessions` are the trading days being asked about."""
     by: dict[str, dict] = {}
 
     def add(sym, kind, when, detail):
@@ -41,13 +61,17 @@ def rank(earnings: list[dict], filings: list[dict], halts: list[dict], movers: l
         row["evidence"].append({"kind": kind, "when": when, "detail": detail})
         row["evidence_weight"] += WEIGHTS[kind]
 
+    targets = set(target_sessions)
+    first = target_sessions[0] if target_sessions else None
     for r in earnings or []:
-        d = _day(r.get("report_date"))
-        if d is None or d < today or d > today + timedelta(days=horizon_days):
+        hit = [d for d in _reaction_sessions(r) if d in targets]
+        if not hit:
             continue
-        soon = (d - today).days <= 2
-        add(r.get("symbol"), "earnings_soon" if soon else "earnings_in_horizon", d.isoformat(),
-            f"reports {d.isoformat()}" + (f", EPS estimate {r['eps_estimate']}" if r.get("eps_estimate") is not None else ""))
+        timing = str(r.get("time") or r.get("hour") or r.get("report_time") or "").strip()
+        add(r.get("symbol"), "earnings_soon" if first in hit else "earnings_in_horizon", str(r.get("report_date"))[:10],
+            f"reports {str(r.get('report_date'))[:10]}" + (f" ({timing})" if timing else " (timing not stated)")
+            + f", can move {', '.join(d.isoformat() for d in hit)}"
+            + (f", EPS estimate {r['eps_estimate']}" if r.get("eps_estimate") is not None else ""))
     for f in filings or []:
         form = str(f.get("form") or "")
         kind = ("stake_filing" if form.startswith(_STAKE) else "offering_filing" if form.startswith(_OFFERING)

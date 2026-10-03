@@ -53,24 +53,44 @@ def test_no_bars_gives_the_daily_footing_only():
     assert s["session"] is None and s["daily"]["consecutive_closes"] == 3
 
 
-def test_candidates_collect_dated_evidence_and_mark_what_already_moved():
-    today = date(2026, 10, 5)
+def test_the_next_session_skips_weekends_and_holidays_and_follows_the_clock():
+    from alphadesk.desk import sessions as cal
+    ny = ZoneInfo("America/New_York")
+    at = lambda *a: datetime(*a, tzinfo=ny)  # noqa: E731
+    assert cal.upcoming_session(at(2026, 10, 2, 19, 0)) == date(2026, 10, 5)     # Friday evening -> Monday
+    assert cal.upcoming_session(at(2026, 10, 3, 12, 0)) == date(2026, 10, 5)     # Saturday -> Monday
+    assert cal.upcoming_session(at(2026, 10, 5, 8, 0)) == date(2026, 10, 5)      # Monday before the open -> today
+    assert cal.upcoming_session(at(2026, 10, 5, 10, 0)) == date(2026, 10, 6)     # Monday after the open -> tomorrow
+    assert cal.next_session(date(2026, 11, 25)) == date(2026, 11, 27)            # Thanksgiving closed
+    assert cal.next_session(date(2026, 7, 2)) == date(2026, 7, 6)                # July 4 is a Saturday: Friday the 3rd closed
+    assert not cal.is_session(date(2026, 4, 3)) and not cal.is_session(date(2026, 12, 25))   # Good Friday, Christmas
+    assert cal.is_session(date(2027, 12, 31))                                    # a Saturday New Year's closes nothing
+    assert cal.last_close(at(2026, 10, 3, 12, 0)) == at(2026, 10, 2, 16, 0)
+
+
+def test_candidates_collect_dated_evidence_for_the_next_session():
+    monday = [date(2026, 10, 5)]
     rows = candidates.rank(
-        earnings=[{"symbol": "AAA", "report_date": "2026-10-06", "eps_estimate": 1.2},
-                  {"symbol": "BBB", "report_date": "2026-10-08"},
-                  {"symbol": "OLD", "report_date": "2026-10-01"}],
-        filings=[{"symbols": ["AAA"], "form": "8-K", "items": [{"item": "1.01"}], "filed_at": "2026-10-05T08:00:00-04:00"},
-                 {"symbols": ["CCC"], "form": "SCHEDULE 13D", "items": [], "filed_at": "2026-10-04T10:00:00-04:00", "role": "subject"},
-                 {"symbols": ["DDD"], "form": "10-Q", "items": [], "filed_at": "2026-10-04T10:00:00-04:00"}],
-        halts=[{"symbol": "EEE", "today": True, "resumed": False, "reason_code": "T1", "halted_at": "2026-10-05T10:00"}],
+        earnings=[{"symbol": "AAA", "report_date": "2026-10-05", "time": "bmo", "eps_estimate": 1.2},     # before the open Monday
+                  {"symbol": "FRI", "report_date": "2026-10-02", "time": "amc"},                          # after Friday's close -> Monday
+                  {"symbol": "FRIB", "report_date": "2026-10-02", "time": "bmo"},                         # Friday morning: already traded
+                  {"symbol": "UNK", "report_date": "2026-10-02"},                                         # no timing: could be Monday
+                  {"symbol": "TUE", "report_date": "2026-10-06", "time": "bmo"}],                         # a later session
+        filings=[{"symbols": ["AAA"], "form": "8-K", "items": [{"item": "1.01"}], "filed_at": "2026-10-02T17:00:00-04:00"},
+                 {"symbols": ["CCC"], "form": "SCHEDULE 13D", "items": [], "filed_at": "2026-10-02T18:00:00-04:00", "role": "subject"},
+                 {"symbols": ["DDD"], "form": "10-Q", "items": [], "filed_at": "2026-10-02T18:00:00-04:00"}],
+        halts=[{"symbol": "EEE", "today": True, "resumed": False, "reason_code": "T1", "halted_at": "2026-10-02T10:00"}],
         movers=[{"symbol": "AAA", "change_pct": 12.5}],
-        board=["CCC", "ZZZ"], today=today, horizon_days=3)
+        board=["CCC", "ZZZ"], target_sessions=monday)
     got = {r["symbol"]: r for r in rows}
-    assert set(got) == {"AAA", "BBB", "CCC", "EEE"}              # a 10-Q is no catalyst; a past report is not upcoming
+    assert set(got) == {"AAA", "FRI", "UNK", "CCC", "EEE"}          # FRIB already traded; TUE is a later session; a 10-Q is no catalyst
     assert got["AAA"]["evidence_weight"] == 5 and got["AAA"]["already_moved_pct"] == 12.5
-    assert got["BBB"]["evidence_weight"] == 2                    # three days out: inside the horizon, not "soon"
+    assert "timing not stated" in got["UNK"]["evidence"][0]["detail"]
     assert got["CCC"]["on_board"] is True and got["CCC"]["evidence_weight"] == 3
-    assert [r["symbol"] for r in rows][0] == "AAA"
+    assert rows[0]["symbol"] == "AAA"
+    two = candidates.rank(earnings=[{"symbol": "TUE", "report_date": "2026-10-06", "time": "bmo"}], filings=[], halts=[],
+                          movers=[], board=[], target_sessions=[date(2026, 10, 5), date(2026, 10, 6)])
+    assert two[0]["evidence"][0]["kind"] == "earnings_in_horizon"   # in the window, but not the first session
 
 
 def test_report_reactions_measure_the_move_across_each_report():
