@@ -30,6 +30,11 @@ from alphadesk.providers.registry import register
 
 log = logging.getLogger("alphadesk.providers.news")
 
+# Tickers kept per story (2026-10-03). It was 8, which dropped the tail of every
+# many-name story ("12 Industrials Stocks Moving…"), so a quiet name tagged
+# ninth had no story of its own panel. A story rarely names more than this.
+MAX_STORY_TICKERS = 30
+
 # Cap on RAW items paged through per call, distinct from the caller's `limit`
 # on USABLE ones. Without it a wide window on a busy day pages forever.
 _MAX_SCAN = int(os.environ.get("NEWS_MAX_SCAN", "400"))
@@ -116,7 +121,7 @@ class PolygonNews:
                     url=getattr(art, "article_url", "") or "",
                     published_at=str(getattr(art, "published_utc", "")
                                      or datetime.now(timezone.utc).isoformat()),
-                    symbols=symbols[:8],
+                    symbols=symbols[:MAX_STORY_TICKERS],
                     # The FULL description — the feed's summary is the one
                     # piece of article text the subscription delivers, and
                     # truncating it at 400 was showing less than is paid for.
@@ -244,7 +249,7 @@ def alpaca_article(a) -> Article | None:
         title=title,
         url=getattr(a, "url", "") or "",
         published_at=published,
-        symbols=symbols[:8],
+        symbols=symbols[:MAX_STORY_TICKERS],
         summary=unescape(getattr(a, "summary", "") or "")[:4000],
         source=getattr(a, "source", "") or "Alpaca",
         image_url=first_image,
@@ -320,7 +325,7 @@ class FinnhubNews:
                 title=title,
                 url=a.get("url") or "",
                 published_at=datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
-                symbols=symbols[:8],
+                symbols=symbols[:MAX_STORY_TICKERS],
                 summary=(a.get("summary") or "")[:4000],
                 source=a.get("source") or "Finnhub",
                 image_url=a.get("image") or "",
@@ -392,7 +397,7 @@ class BenzingaNews:
                     title=title,
                     url=a.get("url") or "",
                     published_at=created.astimezone(timezone.utc).isoformat(),
-                    symbols=symbols[:8],
+                    symbols=symbols[:MAX_STORY_TICKERS],
                     summary=_strip_html(a.get("teaser") or "")[:4000],
                     source="Benzinga",
                     image_url=first_image,
@@ -482,7 +487,7 @@ class AlphaVantageNews:
                 title=title,
                 url=art_url,
                 published_at=published.isoformat(),
-                symbols=symbols[:8],
+                symbols=symbols[:MAX_STORY_TICKERS],
                 summary=(a.get("summary") or "")[:4000],
                 source=a.get("source") or "Alpha Vantage",
                 image_url=a.get("banner_image") or "",
@@ -543,7 +548,7 @@ class MarketauxNews:
                 url=a.get("url") or "",
                 published_at=str(a.get("published_at") or "")
                              or datetime.now(timezone.utc).isoformat(),
-                symbols=symbols[:8],
+                symbols=symbols[:MAX_STORY_TICKERS],
                 summary=(a.get("description") or a.get("snippet") or "")[:4000],
                 source=a.get("source") or "Marketaux",
                 image_url=a.get("image_url") or "",
