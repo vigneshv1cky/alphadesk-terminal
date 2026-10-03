@@ -110,3 +110,29 @@ def test_report_reactions_measure_the_move_across_each_report():
     assert view["next_report"] == {"date": "2026-12-01", "days_away": 61}
     assert view["analyst_targets"]["mean_vs_last_pct"] == 10.0
     assert "expectations" in view["what_this_cannot_tell"]
+
+
+def test_a_gainer_is_laid_beside_its_own_news_filings_and_shape():
+    from alphadesk.desk import focus
+    mover = {"symbol": "AAA", "name": "Alpha Inc", "change_pct": 31.0, "price": 5.1, "volume": 900000}
+    articles = [
+        {"published_at": "2026-10-02T13:00:00+00:00", "title": "Alpha wins contract", "kind": "release", "tickers": ["AAA"]},
+        {"published_at": "2026-10-02T14:00:00+00:00", "title": "Alpha prices offering", "kind": "offering", "tickers": ["AAA"]},
+        {"published_at": "2026-10-02T15:00:00+00:00", "title": "12 Industrials Moving", "kind": "movers", "tickers": list("ABCDEFGHIJKL")},
+    ]
+    filings = [{"form": "424B5", "filed_at": "2026-10-02T09:00:00-04:00"}, {"form": "8-K", "filed_at": "2026-10-02T08:00:00-04:00"}]
+    shape = {"reliable": True, "given_back_from_high_pct": 62.0, "last_60min_change_pct": -3.0,
+             "direction": {"last_60min": "down"}, "volume": {"vs_median_daily": 3.4}}
+    row = focus.build_row(mover, articles, filings, halted=True, shape=shape)
+    assert row["news"]["own"] == 2 and row["news"]["named_in_lists"] == 1
+    assert row["news"]["by_kind"] == {"release": 1, "offering": 1}
+    assert {"story_of_its_own", "named_in_list_stories", "offering_story", "offering_filing", "material_8k", "halted_today",
+            "given_back_over_half_of_swing", "last_hour_down", "volume_over_2x_usual"} <= set(row["flags"])
+    assert "still_near_the_high" not in row["flags"]
+
+
+def test_a_gainer_with_no_news_and_an_unreliable_shape_says_only_what_it_knows():
+    from alphadesk.desk import focus
+    row = focus.build_row({"symbol": "BBB", "change_pct": 18.0}, [], [], halted=False,
+                          shape={"reliable": False, "given_back_from_high_pct": 90})
+    assert row["flags"] == ["no_story_of_its_own"]              # a shape that is not reliable raises no flag

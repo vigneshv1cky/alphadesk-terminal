@@ -110,3 +110,10 @@ def sessions_from(start: date, count: int) -> list[date]:
         out.append(d)
         d = next_session(d)
     return out
+
+
+def latest_session(now: datetime) -> date:
+    """The session whose trading the market data now describes: today once the
+    open has passed on a trading day, otherwise the one before."""
+    now = now.astimezone(NY)
+    return now.date() if is_session(now.date()) and now.time() >= OPEN else previous_session(now.date())

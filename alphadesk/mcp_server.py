@@ -1099,8 +1099,7 @@ def candidates(session: str = "", sessions_ahead: int = 1, filing_hours: int = 0
     filings = [f for f in (feed.get("filings") or []) if str(f.get("filed_at") or "")[:10] >= since.date().isoformat()]
     for k, why in (feed.get("unavailable") or {}).items():
         unavailable[f"filings:{k}"] = str(why)
-    last_session_day = (now.date() if cal.is_session(now.date()) and now.time() >= cal.OPEN
-                        else cal.previous_session(now.date()))
+    last_session_day = cal.latest_session(now)
     halts = [{**h, "today": str(h.get("halted_at") or "")[:10] >= last_session_day.isoformat()}
              for h in attempt("halts", lambda: get_prices().ask("trading_halts", limit=100, surface="trading_halts") or [], [])]
     movers_rows: list[dict] = []
@@ -1114,6 +1113,100 @@ def candidates(session: str = "", sessions_ahead: int = 1, filing_hours: int = 0
             "filings_since": since.isoformat(timespec="minutes"),
             "count": len(rows), "candidates": rows[:max(1, min(int(limit), 100))],
             "unavailable": unavailable}
+
+
+@mcp.tool(annotations=READ_ONLY)
+def movers_in_context(direction: str = "gainers", category: str = "stocks", top: int = 10,
+                      with_shape: bool = True) -> dict:
+    """THE BIGGEST GAINERS (or losers) WITH THEIR NEWS, FILINGS AND SHAPE, for
+    "focus on the gainers and their news and find which might keep rising".
+    One call returns, for each of the top names: the change, price and volume;
+    the stories published since the previous close — those about the name
+    itself counted apart from LIST stories ("12 Industrials Stocks Moving…")
+    that only mention it, with the publisher's own kinds ("offering", "ma",
+    "earnings", "why", …) and the newest few; the SEC filings accepted since the
+    previous close; whether it was halted; and (with `with_shape`, up to 10
+    names) the shape of the day's move as `move_state` measures it.
+
+    `flags` are plain facts, and they cut both ways: "story_of_its_own",
+    "volume_over_2x_usual" and "still_near_the_high" are what a continuation
+    would lean on; "no_story_of_its_own", "offering_filing" or "offering_story"
+    (new shares can cap a rise), "given_back_over_half_of_swing", "last_hour_down"
+    and "halted_today" are what a fade would. NOTHING IS RANKED BY LIKELIHOOD and
+    no verdict is returned — weigh them, read the stories with `news_story` and
+    the filings with `filing_text`, and say what you could not check.
+
+    `direction` is "gainers" or "losers"; `category` is as for `movers`
+    (stocks or etfs carry news and filings). `unavailable` names any source
+    that could not be read. For the days around a scheduled report use
+    `candidates`; for one name's whole picture, `move_state`, `what_moved` and
+    `priced_in`."""
+    from datetime import datetime
+    from alphadesk.app import dashboard
+    from alphadesk.config import now_et
+    from alphadesk.desk import focus, movestate, sessions as cal
+    from alphadesk.identity import request_user
+    from alphadesk.ingest import edgar_feed, movers as mv
+    from alphadesk.ingest.news import news_owner
+    from alphadesk.ledger import store
+    from alphadesk.providers import get_prices
+    want = (direction or "gainers").strip().lower()
+    if want not in ("gainers", "losers"):
+        raise ValueError("direction must be gainers or losers")
+    cat = (category or "stocks").strip().lower()
+    top = max(1, min(int(top), 15))
+    unavailable: dict[str, str] = {}
+    payload = mv.category_movers(cat, top=top) if cat in mv.CATEGORIES else {}
+    rows = next((t.get("rows") or [] for t in payload.get("tabs") or [] if t.get("id") == want), [])[:top]
+    if not rows:
+        return {"direction": want, "category": cat, "count": 0, "rows": [],
+                "note": payload.get("closed") or payload.get("unavailable") or "the vendor returned no rows"}
+    now = now_et()
+    session = cal.latest_session(now)
+    since = datetime.combine(cal.previous_session(session), cal.CLOSE, tzinfo=cal.NY)
+    uid = request_user()
+    owner = news_owner(uid) if uid else None
+    has_news = bool(uid and store.get_user_keys(uid, "news"))
+    if not has_news:
+        unavailable["news"] = "no news feed is connected"
+    try:
+        feed = edgar_feed.recent(groups=["events", "stakes", "offerings"], limit=200)
+        for k, why in (feed.get("unavailable") or {}).items():
+            unavailable[f"filings:{k}"] = str(why)
+    except Exception as exc:
+        feed = {}
+        unavailable["filings"] = str(exc)[:160]
+    by_symbol: dict[str, list[dict]] = {}
+    for f in feed.get("filings") or []:
+        if str(f.get("filed_at") or "")[:19] >= since.isoformat()[:19]:
+            for sym in f.get("symbols") or []:
+                by_symbol.setdefault(sym.upper(), []).append(f)
+    try:
+        halted = {str(h.get("symbol") or "").upper() for h in (get_prices().ask("trading_halts", limit=100, surface="trading_halts") or [])
+                  if str(h.get("halted_at") or "")[:10] >= session.isoformat()}
+    except Exception as exc:
+        halted = set()
+        unavailable["halts"] = str(exc)[:160]
+    out = []
+    for i, m in enumerate(rows):
+        sym = str(m.get("symbol") or "").upper()
+        articles = []
+        if has_news:
+            for a in store.articles_for_symbol(owner, sym, None, 40, body=False):
+                at = movestate._at(a.get("published_at"))
+                if at is not None and at >= since:
+                    articles.append({**a, "kind": newskind.of_article(a)})
+        shape = None
+        if with_shape and i < 10 and cat in ("stocks", "etfs"):
+            try:
+                series = get_prices().chart_series(sym, days=5) or {}
+                daily = _http_errors(dashboard.api_chart, sym, range="3M").get("bars") or []
+                shape = movestate.move_state(series.get("bars") or [], daily)
+            except Exception as exc:
+                unavailable[f"shape:{sym}"] = str(exc)[:100]
+        out.append(focus.build_row(m, articles, by_symbol.get(sym, []), sym in halted, shape))
+    return {"direction": want, "category": cat, "session": session.isoformat(), "news_since": since.isoformat(timespec="minutes"),
+            "count": len(out), "rows": out, "unavailable": unavailable}
 
 
 @mcp.tool(annotations=READ_ONLY)
