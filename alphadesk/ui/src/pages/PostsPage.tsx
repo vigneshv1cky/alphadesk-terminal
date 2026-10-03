@@ -1,11 +1,10 @@
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { QueryFailure } from "@/components/KeyPrompt"
-import { Btn, Empty, fieldCls, Widget } from "@/components/terminal"
+import { Btn, Empty, fieldCls } from "@/components/terminal"
 import { on, isNeedsKey } from "@/lib/api"
 import { newsTime } from "@/lib/newsClock"
 import { matchesQuery } from "@/lib/newsMatch"
-import { postKind, POST_KIND_LABEL, type PostKind } from "@/lib/postKind"
 
 /** SOCIAL POSTS, ON THEIR OWN PAGE (2026-09-29, the owner: "lets make Trump
  * Truth social a tab too").
@@ -17,8 +16,8 @@ import { postKind, POST_KIND_LABEL, type PostKind } from "@/lib/postKind"
  * toolbar was switched off under it — and the filter box was not, which is
  * why it sat there filtering stories nobody could see.
  *
- * A POST IS NOT A STORY AND IS NOT A RECORD. It is marked UNVERIFIED on every
- * row because the social source is the one anyone can write into, and NO
+ * A POST IS NOT A STORY AND IS NOT A RECORD. Every card says it is read from
+ * a third party's mirror of the account, and NO
  * TICKER IS READ OUT OF POST TEXT anywhere in this codebase: a ticker in a
  * post is the author's claim, and tagging it would route an unverified
  * assertion into that symbol's context. That is why this page has no symbol
@@ -42,125 +41,96 @@ export default function PostsPage() {
   const live = posts.isError ? [] : posts.data?.posts ?? []
   const off = Object.values(posts.data?.unavailable ?? {})
 
-  // THE KIND IS THE POST'S OWN SHAPE (repost, media, link, text) — never its
-  // topic, for the reason no ticker is read out of post text. Only the kinds
-  // the window holds are offered, with counts, like the News kind picker.
-  const [kind, setKind] = useState<PostKind | "">("")
-  const kinds = useMemo(() => {
-    const n = new Map<PostKind, number>()
-    for (const p of live) { const k = postKind(p); n.set(k, (n.get(k) ?? 0) + 1) }
-    return [...n.entries()].sort((a, b) => b[1] - a[1] || POST_KIND_LABEL[a[0]].localeCompare(POST_KIND_LABEL[b[0]]))
-  }, [live])
+  // ONLY TEXT POSTS ARE SERVED NOW (2026-10-03, the owner's call: "in posts
+  // only keep the text posts"), so the kind picker that stood here has
+  // nothing to choose between and is gone.
   // THE NEWS FILTER'S OWN WORD RULE (lib/newsMatch): whole words, in order,
   // plurals folded, the last word allowed to stop part-way. Over the post's
   // TEXT only — no ticker or company is resolved from a post, so a search for
   // "HOOD" finds the word, not a claim about Robinhood.
   const [query, setQuery] = useState("")
   const needle = query.trim()
-  const shown = live.filter(p => (!kind || postKind(p) === kind) && (!needle || matchesQuery(needle, p.text)))
+  const shown = live.filter(p => !needle || matchesQuery(needle, p.text))
+
+  // A message in the place the list would be, framed like a card so the page
+  // does not jump between states.
+  const note = (children: React.ReactNode) => (
+    <div className="rounded-lg border border-card-border bg-card shadow-card">{children}</div>
+  )
 
   return (
-    <>
-      {/* THE PAGE SAYS WHICH PAGE IT IS (2026-09-29, the owner: "include
-          heading in filings and posts too"). Every composed board carries one
-          above its tiles; these two are single panels on no board, so they
-          had none and read as a panel floating with no context. Same type and
-          inset as the board heading, without the Customize control — there is
-          no board here to compose. */}
-      <div className="px-4 pt-2">
-        <h1 className="mb-2 text-emph font-extrabold tracking-tight">Posts</h1>
-      </div>
-      {/* THE PANEL SITS IN THE SAME FRAME AS EVERY OTHER PAGE'S TILES
-          (2026-09-29, the owner: "the gap between left sidebar and tiles is
-          not maintained in filings and posts"). These two are single panels
-          on no board, so they never got the board's 16px inset: the HEADING
-          was inset by its own padding and the panel was not, leaving it flush
-          against the rail and the window edge while every board page stood
-          16px clear. Measured: 10px against 26px on both sides.
-          The board's own wrapper, rather than a matching pair of paddings —
-          a second way of expressing the same inset is a second thing to keep
-          in step, and this is the page that proves it does not stay in step
-          on its own. */}
-      <div className="collage !pt-0">
-    <Widget
-      span={12}
-      title="Social posts"
-      subtitle="an account mirror — unverified, and never read for tickers"
-      scroll="fit"
-      actions={
-        <>
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search posts — a word or phrase…"
-            aria-label="Search the posts"
-            title="Whole words, in order, as in the news filter. Searches the loaded posts' text only."
-            className={`${fieldCls} w-56`}
-          />
-          {query && <Btn variant="ghost" onClick={() => setQuery("")}>Clear</Btn>}
-          {kinds.length > 1 && (
-            <select value={kind} onChange={e => setKind(e.target.value as PostKind | "")}
-                    aria-label="Kind"
-                    title="The shape of the post — a repost, media with no caption, a bare link or text. Never what it is about."
-                    className="h-[28px] border border-border bg-panel px-1.5 text-caption text-foreground">
-              <option value="">All kinds</option>
-              {kinds.map(([k, n]) => <option key={k} value={k}>{`${POST_KIND_LABEL[k]} · ${n}`}</option>)}
-            </select>
+    // RESTYLED AS A FEED (2026-10-03, the owner: "restyle posts page"). One
+    // readable column of cards instead of a dense table of tiny capitals:
+    // the account and the time on a line, the words in full-strength ink at
+    // reading size, and the source as a quiet footer. Same tokens as every
+    // other card (radius-lg, card surface, card shadow) — nothing new.
+    <div className="px-4 pb-8 pt-2">
+      <div className="mx-auto w-full max-w-[760px]">
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0">
+            <h1 className="text-emph font-extrabold tracking-tight">Posts</h1>
+            <p className="mt-0.5 text-caption text-muted-foreground">a mirror of the account — never read for tickers</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search posts — a word or phrase…"
+              aria-label="Search the posts"
+              title="Whole words, in order, as in the news filter. Searches the loaded posts' text only."
+              className={`${fieldCls} w-60 !rounded-md`}
+            />
+            {query && <Btn variant="ghost" onClick={() => setQuery("")}>Clear</Btn>}
+            <span className="tnum text-caption text-muted-foreground">{`${shown.length} / ${live.length}`}</span>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          {posts.isPending ? note(<Empty>loading…</Empty>)
+          : isNeedsKey(posts.error) ? note(<Empty>The social source is off — switch it on from the Account page.</Empty>)
+          : posts.isError ? note(<QueryFailure error={posts.error}>the social source could not be read</QueryFailure>)
+          : off.length > 0 ? (
+            // THE SOURCE IS ON AND THE SITE WOULD NOT ANSWER (2026-09-23). This
+            // used to fall through to "switch it on", which is the one
+            // instruction that cannot help a reader who already did.
+            note(<Empty>the social source is on, but could not be read — {off.join("; ")}</Empty>)
+          ) : live.length === 0 ? note(<Empty>the social source answered, but with no posts in it</Empty>)
+          : shown.length === 0 ? note(<Empty>no post matches these filters</Empty>)
+          : (
+            <ul className="space-y-3">
+              {shown.map((post, i) => (
+                <li key={post.url ?? i}>
+                  <a href={post.url ?? undefined} target="_blank" rel="noopener noreferrer"
+                     title={post.trust ?? undefined}
+                     className="group block rounded-lg border border-card-border bg-card px-5 py-4 shadow-card transition-colors hover:border-border">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 truncate text-body font-bold text-foreground">
+                        {post.account ? `@${post.account}` : post.platform ?? "social"}
+                        {post.account && post.platform && (
+                          <span className="ml-2 text-caption font-normal text-muted-foreground">{post.platform}</span>
+                        )}
+                      </span>
+                      <span className="tnum shrink-0 text-caption text-muted-foreground">{newsTime(post.at)}</span>
+                    </div>
+                    {/* A WORDLESS POST IS STILL A POST (#66): it says so rather
+                        than vanish, though only text posts are served now. */}
+                    <p className="mt-2 whitespace-pre-wrap text-[15px] leading-[1.6] text-foreground">
+                      {post.no_text
+                        ? <span className="italic text-muted-foreground">no text — a picture or video, posted without a caption. Open it to see.</span>
+                        : post.text}
+                    </p>
+                    <div className="mt-3 flex items-center gap-2 text-caption text-muted-foreground"
+                         title="Read from a third party's copy of the account, not the platform itself">
+                      <span>{post.via ? `via ${post.via}` : "mirror"}</span>
+                      <span className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">Open ↗</span>
+                    </div>
+                  </a>
+                </li>
+              ))}
+            </ul>
           )}
-          <span className="tnum text-caption text-muted-foreground">{`${shown.length} / ${live.length}`}</span>
-        </>
-      }
-    >
-      {posts.isPending ? <Empty>loading…</Empty>
-      : isNeedsKey(posts.error) ? (
-        <Empty>The social source is off — switch it on from the Account page.</Empty>
-      ) : posts.isError ? (
-        <QueryFailure error={posts.error}>the social source could not be read</QueryFailure>
-      ) : off.length > 0 ? (
-        // THE SOURCE IS ON AND THE SITE WOULD NOT ANSWER (2026-09-23). This
-        // used to fall through to "switch it on", which is the one
-        // instruction that cannot help a reader who already did.
-        <Empty>the social source is on, but could not be read — {off.join("; ")}</Empty>
-      ) : live.length === 0 ? (
-        <Empty>the social source answered, but with no posts in it</Empty>
-      ) : shown.length === 0 ? (
-        <Empty>no post matches these filters</Empty>
-      ) : (
-        <ul>
-          {shown.map((post, i) => (
-            <li key={post.url ?? i} className="row-rule hover:bg-foreground/5">
-              <a href={post.url ?? undefined} target="_blank" rel="noopener noreferrer"
-                 title={post.trust ?? undefined} className="block w-full px-3 py-3 text-left">
-                <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
-                  <span className="border border-border px-1 text-label font-semibold leading-[17px] tracking-ticker text-muted-foreground">post</span>
-                  <span className="text-muted-foreground">{post.platform ?? "social"}</span>
-                  <span className="text-muted-foreground"
-                        title="The post's own shape, not its topic">{POST_KIND_LABEL[postKind(post)]}</span>
-                  <span className="normal-case tracking-normal text-warn">unverified</span>
-                  <span className="normal-case tracking-normal text-muted-foreground">{newsTime(post.at)}</span>
-                  {post.via && (
-                    <span className="normal-case tracking-normal text-muted-foreground"
-                          title="Read from a third party's copy of the account, not the platform itself">
-                      via {post.via}
-                    </span>
-                  )}
-                </span>
-                <span className="block text-body leading-[1.3] text-muted-foreground">
-                  {/* A WORDLESS POST IS STILL A POST (#66). Two of a day's
-                      posts were dropped for having no text — both were media
-                      posted without a caption, so "he did not post" and "he
-                      posted a photo" looked identical. */}
-                  {post.no_text
-                    ? <span className="italic">no text — a picture or video, posted without a caption. Open it to see.</span>
-                    : post.text}
-                </span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Widget>
+        </div>
       </div>
-    </>
+    </div>
   )
 }
