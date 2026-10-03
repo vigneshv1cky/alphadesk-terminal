@@ -35,7 +35,7 @@ or act as them:
   recent sign-in, or to receive its contents unsealed;
 - crossing the per-reader boundary: any cache, query or agent tool that
   serves one reader's vendor data to another;
-- session handling, single sign-on, the agent access tokens and the OAuth
+- session handling, the login, the agent access tokens and the OAuth
   flow for connector apps, including consent and token handling;
 - the agent tools or the plain-HTTP data API (`/api/v1`) gaining any write
   surface, or running as anyone other than the reader whose credential they

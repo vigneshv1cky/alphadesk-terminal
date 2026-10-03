@@ -44,13 +44,20 @@ def test_a_hash_works_and_a_changed_password_is_applied(configured, store, monke
     assert configured.post("/api/auth/login", json={"email": EMAIL, "password": "another-long-pass-2"}).status_code == 401
 
 
-def test_google_and_github_are_not_offered_while_a_login_is_set(configured, monkeypatch):
-    monkeypatch.setenv("GOOGLE_CLIENT_ID", "id")
-    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
-    assert auth.enabled_providers() == []
-    assert configured.get("/api/auth/me").json()["providers"] == []
-    monkeypatch.delenv("ALPHADESK_LOGIN_EMAIL")
-    assert auth.enabled_providers() == ["google"]
+def test_only_the_configured_login_can_be_used(configured, store):
+    """One user: another account, even with a correct password, is refused."""
+    store.create_user("other", "other@example.com", auth.hash_password("some-other-password"))
+    assert configured.post("/api/auth/login", json={"email": "other@example.com",
+                                                    "password": "some-other-password"}).status_code == 403
+    assert auth.uid_allowed("other") is False
+
+
+def test_sign_in_on_with_no_login_set_is_a_start_up_problem(monkeypatch):
+    monkeypatch.setenv("ALPHADESK_AUTH", "required")
+    monkeypatch.delenv("ALPHADESK_LOGIN_EMAIL", raising=False)
+    assert "no login is set" in auth.login_problem()
+    monkeypatch.setenv("ALPHADESK_AUTH", "off")
+    assert auth.login_problem() is None
 
 
 @pytest.mark.parametrize("env,expect", [

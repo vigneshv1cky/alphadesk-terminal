@@ -10,37 +10,20 @@ the end of this page.
   `ALPHADESK_AUTH=off` is set deliberately (development: one local account,
   no sign-in). Only `/api` data routes are gated; the page shell and static
   files stay open, so a deep link can load the landing page.
-- **Single sign-on is the only door, and it is also sign-up.** With any
-  identity provider configured, a verified account from that provider
-  creates its own AlphaDesk account on first sign-in, with no invite step.
-  **The email address is the account key**, so the same address through
-  Google and GitHub lands in one account. Password sign-in is refused while
-  any provider is configured. Each provider is enabled by its environment
-  pair, with `<base-url>/api/auth/<provider>/callback` registered as the
-  redirect URI:
-  - **Google** — `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. In testing
-    mode Google admits only listed test users until the app is published.
-  - **GitHub** — `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`. The primary
-    **verified** address is used; an account without one is refused.
-  - **Microsoft** — `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET`
-    (an Entra app on the `common` tenant).
+- **One user, one login, no sign-up.** The only door is the email and
+  password the operator sets in the settings: `ALPHADESK_LOGIN_EMAIL` with
+  `ALPHADESK_LOGIN_PASSWORD_HASH` (make the hash with
+  `python -m alphadesk.main hash-password`; `ALPHADESK_LOGIN_PASSWORD`, 12 or
+  more characters, also works but is readable to anyone who can read the
+  settings). At start the account is made — or, if that email already has an
+  account, it is given the password and keeps its data. Any other account is
+  refused, along with its sessions and agent tokens. With sign-in on and no
+  login set the server will not start. Google, GitHub and Microsoft sign-in
+  were removed on 2026-10-03.
+- **The email address is the account key.** The identifier is an email, not a
+  free-form username.
 - **`ALPHADESK_BASE_URL` is required behind a proxy**: the app cannot infer
-  HTTPS, and every provider accepts only HTTPS redirect URIs (localhost
-  excepted). Identity claims are read from each provider's userinfo endpoint
-  over TLS.
-- **Each sign-in's method is recorded**, so the Account page shows which
-  methods an account has used and when.
-- **Break-glass**: with no provider configured, password accounts managed
-  from the command line are the gate:
-
-```bash
-python -m alphadesk.main user add op@example.com       # password account
-python -m alphadesk.main user allow reader@gmail.com   # allow an address for SSO
-python -m alphadesk.main user list
-python -m alphadesk.main user passwd op@example.com
-python -m alphadesk.main user revoke op@example.com    # sign out everywhere
-python -m alphadesk.main user remove reader@gmail.com
-```
+  HTTPS (agent connections depend on it).
 
   Passwords are hashed with scrypt (n=2^14, r=8, p=1, 32-byte salt),
   verified in constant time, at least 10 characters, and prompted, never

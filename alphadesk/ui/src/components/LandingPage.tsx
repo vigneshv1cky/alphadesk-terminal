@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 import { api } from "@/lib/api"
 import { btnCls, fieldCls } from "@/components/terminal"
 import { cn } from "@/lib/utils"
-import { PROVIDER_MARKS } from "@/components/providerMarks"
 import { loadAdPixel } from "@/lib/adPixel"
 
 /** The front page a signed-out visitor sees (2026-09-18, the owner's pick
@@ -25,7 +24,6 @@ import { loadAdPixel } from "@/lib/adPixel"
  * tokens, so the page follows light and dark with the rest. The hero is a
  * `.chrome` scope, the same dark ink as the app header. */
 
-type Provider = { id: string; label: string }
 
 const SHOTS = [
   { src: "/landing/markets.jpg", title: "Markets", text: "a board you compose: live chart, quotes, movers, sectors, yields.",
@@ -67,19 +65,8 @@ const PROMISES = [
   { title: "Your data stays yours", text: "The terminal runs no analytics and loads no third-party scripts; this front page carries an ad pixel, and the Privacy Policy says so. Provider data is kept only as long as a feature needs it; delete your account and everything goes." },
 ]
 
-/** The sign-in errors an SSO callback bounces back with, in words. */
-const OAUTH_ERRORS: Record<string, string> = {
-  "account-disabled": "That account has been disabled by this instance's operator.",
-  "not-allowed": "That account is not allowed on this server. Ask its operator to add your address.",
-  "state-mismatch": "The sign-in attempt expired or was tampered with — try again.",
-  "sso-failed": "Sign-in failed — try again.",
-  "no-verified-email": "That account has no verified email address.",
-  "not-configured": "That sign-in method isn't configured on this instance.",
-}
-
-/** The sign-in for an instance with no SSO provider configured — local
- * testing with sign-in on, or the live break-glass when every provider's
- * settings are removed. Accounts there are created by the operator. */
+/** The sign-in: the email and password the operator set (or, on an instance
+ * guarded by one shared access token, that token alone). */
 function PasswordForm({ onSignedIn, tokenMode = false }: { onSignedIn: () => void; tokenMode?: boolean }) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -93,9 +80,8 @@ function PasswordForm({ onSignedIn, tokenMode = false }: { onSignedIn: () => voi
     try {
       if (tokenMode) await api.tokenLogin(password)
       else await api.login(email, password)
-      // The SSO callback redirects server-side; this route answers JSON, so
-      // the same landing has to happen here or a password instance would
-      // stay on the front page looking at "Open your terminal".
+      // This route answers JSON, so the landing has to happen here or the
+      // page would stay on the front page looking at "Open your terminal".
       onSignedIn()
       window.location.assign("/account")
     } catch (err) {
@@ -128,34 +114,11 @@ function PasswordForm({ onSignedIn, tokenMode = false }: { onSignedIn: () => voi
   )
 }
 
-function SignIn({ providers, signedIn, primaryFirst = true, row = false }: {
-  providers: Provider[]
-  signedIn: boolean
-  primaryFirst?: boolean
-  row?: boolean
-}) {
-  // Already signed in, or an instance without single sign-on (the local open
-  // one, a password gate): no provider buttons, the page leads into the app.
-  if (signedIn || !providers.length) {
-    return (
-      <a href="/markets" className="flex h-[52px] items-center justify-center rounded-md bg-foreground px-6 text-body font-extrabold uppercase tracking-caps text-background no-underline hover:bg-foreground/85">
-        Open your terminal
-      </a>
-    )
-  }
+function OpenTerminal() {
   return (
-    <div className={row ? "flex flex-wrap gap-3" : "flex flex-col gap-3"}>
-      {providers.map((p, i) => (
-        <a key={p.id} href={`/api/auth/${p.id}/start`}
-           className={`flex h-[52px] items-center justify-center gap-2.5 rounded-md px-6 text-body font-extrabold uppercase tracking-caps no-underline transition-colors ${
-             i === 0 && primaryFirst
-               ? "bg-foreground text-background hover:bg-foreground/85"
-               : "border border-foreground/30 text-foreground hover:bg-foreground/10"}`}>
-          <span aria-hidden="true" className="flex shrink-0 items-center">{PROVIDER_MARKS[p.id]}</span>
-          Continue with {p.label}
-        </a>
-      ))}
-    </div>
+    <a href="/markets" className="flex h-[52px] items-center justify-center rounded-md bg-foreground px-6 text-body font-extrabold uppercase tracking-caps text-background no-underline hover:bg-foreground/85">
+      Open your terminal
+    </a>
   )
 }
 
@@ -167,27 +130,20 @@ const Legal = ({ className = "" }: { className?: string }) => (
   </>
 )
 
-export function LandingPage({ providers, signedIn = false, onPasswordSignIn, tokenMode = false }: {
-  providers: Provider[]
+export function LandingPage({ signedIn = false, onPasswordSignIn, tokenMode = false }: {
   signedIn?: boolean
   /** The instance is guarded by one shared access token: the form asks for it alone. */
   tokenMode?: boolean
-  /** Set when this instance signs in by password (no SSO provider): the
-   * hero shows the form, and this runs once it succeeds. */
+  /** Set when a sign-in is needed: the hero shows the form, and this runs
+   * once it succeeds. */
   onPasswordSignIn?: () => void
 }) {
-  const ask = !signedIn && providers.length > 0
   // The gate renders this outside the shell, whose effect sets page titles.
   useEffect(() => { document.title = "AlphaDesk — research the market" }, [])
   // The ad pixel loads HERE and nowhere else — this is the page an
   // advertisement lands on, and confining it here is what keeps "the
   // terminal loads no third-party scripts" true (lib/adPixel.ts).
   useEffect(() => { loadAdPixel() }, [])
-  const error = (() => {
-    const code = new URLSearchParams(window.location.search).get("auth_error")
-    return code ? OAUTH_ERRORS[code] ?? "Sign-in failed — try again." : null
-  })()
-
   return (
     <div className="h-dvh overflow-y-auto bg-background text-foreground">
       {/* ── hero: the app header's dark ink ─────────────────────────── */}
@@ -212,10 +168,9 @@ export function LandingPage({ providers, signedIn = false, onPasswordSignIn, tok
           <div id="signin" className="w-full shrink-0 lg:w-[360px]">
             {onPasswordSignIn && !signedIn
               ? <PasswordForm onSignedIn={onPasswordSignIn} tokenMode={tokenMode} />
-              : <SignIn providers={providers} signedIn={signedIn} />}
-            {error && <p className="mt-3 text-caption text-loss">{error}</p>}
+              : <OpenTerminal />}
             <p className="mt-3 text-caption leading-[1.5] text-muted-foreground">
-              {ask && "Signing in creates your account. "}<Legal />
+              <Legal />
             </p>
           </div>
         </div>
@@ -298,12 +253,12 @@ export function LandingPage({ providers, signedIn = false, onPasswordSignIn, tok
         <div className="min-w-0 flex-1">
           <h2 className="text-[clamp(28px,2.6vw,36px)] font-black tracking-[-0.03em]">Open your terminal.</h2>
           <p className="mt-2.5 text-[16px] text-muted-foreground">
-            {ask ? "Free. Sign in and your account is ready." : "Free."}
+            Free.
           </p>
         </div>
         {onPasswordSignIn && !signedIn
           ? <a href="#signin" className="flex h-[52px] items-center justify-center rounded-md bg-foreground px-6 text-body font-extrabold uppercase tracking-caps text-background no-underline hover:bg-foreground/85">Sign in</a>
-          : <SignIn providers={providers} signedIn={signedIn} row />}
+          : <OpenTerminal />}
       </section>
 
       <footer className="chrome mt-20 flex flex-wrap items-center gap-x-6 gap-y-2 bg-background px-5 py-6 text-caption text-muted-foreground sm:px-10 lg:px-24">

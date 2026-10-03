@@ -289,12 +289,6 @@ def main() -> None:
     p_mcp = sub.add_parser("mcp", help="serve the terminal's data to agents over MCP")
     p_mcp.add_argument("--http", action="store_true",
                        help="streamable HTTP instead of stdio")
-    # `user …` manages hosted-mode accounts and parses its own argv — an
-    # allowlist edited at the terminal, which is the whole phase-1 policy.
-    if len(sys.argv) > 1 and sys.argv[1] == "user":
-        from alphadesk.app.auth import make_user_cli
-        make_user_cli()
-        sys.exit(0)
     p_keys = sub.add_parser("keys", help="development: seal vendor keys from the environment into the local account")
     p_keys.add_argument("action", choices=["import-env", "decrypt", "import-file"],
                         help="import-env: seal .env keys; decrypt FILE: print an exported keys file;"

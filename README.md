@@ -137,7 +137,7 @@ see [Accounts](#accounts-security-and-privacy)).
 |---|---|---|
 | Price | **Free during early access.** Planned: $19 a month or $190 a year, announced before it starts | Free |
 | Licence | Commercial terms of service — no AGPL obligations for you | GNU AGPL-3.0 |
-| You run | Nothing: sign in with GitHub | One container or one Python process, and a database |
+| You run | Nothing: sign in with the login its operator set | One container or one Python process, and a database |
 | Search by meaning | Included (the embedding model runs on our servers) | Runs on your CPU (~1.2 GB model, 2 vCPU / 4 GiB recommended) or switched off |
 | Vendor keys | Your own, connected on the Account page | Your own, in `.env` or the Account page |
 | Updates | Continuous | `git pull` and restart |
@@ -145,8 +145,8 @@ see [Accounts](#accounts-security-and-privacy)).
 ### Option A — Managed cloud
 
 1. Open the [hosted terminal](https://alphadesk-764298799571.us-east4.run.app)
-   and sign in with GitHub — the account is created on first sign-in. (Google
-   sign-in admits invited accounts only until Google approves the app.)
+   and sign in with the email and password its operator set. There is one
+   user per server and no sign-up.
 2. On the **Account** page, connect the market-data and news providers you
    already use (Alpaca, FMP, Finnhub, Polygon, CoinGecko, …). SEC
    EDGAR and the US Treasury need no key.
@@ -179,9 +179,7 @@ cp alphadesk/deploy/env.example .env
 | `ALPHADESK_DATABASE_URL` | no | a `postgres://` URL; unset, SQLite in `ALPHADESK_DATA` (`~/.alphadesk`) |
 | `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys; sealed into the local account with `python -m alphadesk.main keys import-env` (or connect them on the Account page instead) |
 | `ALPHADESK_SEMANTIC_SEARCH` | no | `off` skips the ~1.2 GB embedding model; search then matches words only |
-| `GOOGLE_CLIENT_ID` / `GITHUB_CLIENT_ID` (+ secrets), `ALPHADESK_BASE_URL` | for several people | single sign-on for a shared instance |
-| `ALPHADESK_LOGIN_EMAIL` + `ALPHADESK_LOGIN_PASSWORD_HASH` | no | with sign-in on: choose your own sign-in instead of Google or GitHub. At start the account is made, or an existing account with that email gets the password and keeps its data. While set, the password form is the only door. Make the hash with `python -m alphadesk.main hash-password`; `ALPHADESK_LOGIN_PASSWORD` (12+ characters) also works but is readable to anyone who can read the settings. The identifier is an email address |
-| `ALPHADESK_ALLOWED_EMAILS` | no | with sign-in on: only these addresses (comma- or space-separated) may sign in; others, and any session or agent token of an address taken off the list, are refused. Unset, anyone with a verified account signs up |
+| `ALPHADESK_LOGIN_EMAIL` + `ALPHADESK_LOGIN_PASSWORD_HASH` | no | with sign-in on: your own sign-in, and the only user the server accepts. With sign-in on it is required; the server will not start without it. At start the account is made, or an existing account with that email gets the password and keeps its data. While set, the password form is the only door. Make the hash with `python -m alphadesk.main hash-password`; `ALPHADESK_LOGIN_PASSWORD` (12+ characters) also works but is readable to anyone who can read the settings. The identifier is an email address |
 
 Generate the vault key with:
 
@@ -224,12 +222,9 @@ docker build -t alphadesk .
 docker run -d --name alphadesk -p 8000:8000 --env-file .env -e ALPHADESK_DATA=/data -v alphadesk-data:/data alphadesk
 ```
 
-With `ALPHADESK_AUTH` left on and no sign-on provider configured, create a
-password account inside the container:
-
-```bash
-docker exec -it alphadesk python -m alphadesk.main user add you@example.com
-```
+With `ALPHADESK_AUTH` left on, set your login in `.env` (an email and a
+password hash from `python -m alphadesk.main hash-password`); the server will
+not start with sign-in on and no login set.
 
 **3. Keep it private or publish your changes.** Under the AGPL, if you let
 other people use a modified copy over a network, you must offer them the
@@ -454,9 +449,10 @@ and polling rather than streaming: see **[docs/rest-api.md](docs/rest-api.md)**.
 
 ## Accounts, security and privacy
 
-- **Sign-in**: single sign-on is the only door and is also sign-up — Google
-  and GitHub are live, Microsoft is a configuration slot. The email address
-  is the account key across providers; each sign-in's method is recorded.
+- **Sign-in**: one user per server. The only door is the email and password
+  the operator sets in the settings (`ALPHADESK_LOGIN_EMAIL` with a password
+  hash); there is no sign-up and no third-party sign-in (Google, GitHub and
+  Microsoft sign-in were removed on 2026-10-03). Any other account is refused.
 - **Sessions**: HMAC-signed cookie, 14-day lifetime, sign-out everywhere.
 - **Vendor keys**: sealed per reader with AES-256-GCM under a master key held
   outside the database; never logged, never shown after entry. The one way a
@@ -608,7 +604,7 @@ cd alphadesk/ui && pnpm install && pnpm dev
 | `python -m alphadesk.main backfill --hours 72` | Backfill EDGAR results releases |
 | `python -m alphadesk.main calendar-accuracy --days 30` | Score calendar vendors against EDGAR release days |
 | `python -m alphadesk.main mcp [--http]` | The agent tools standalone (EDGAR only — no reader identity) |
-| `python -m alphadesk.main user …` | Manage password accounts for instances without SSO |
+| `python -m alphadesk.main hash-password` | Make the password hash for `ALPHADESK_LOGIN_PASSWORD_HASH` (asks for the password) |
 
 ### Extending
 
@@ -642,7 +638,6 @@ required.
 | `ALPHADESK_ACCESS_TOKEN` | with sign-in off, a shared secret (16+ characters) that guards the browser; ignored where accounts gate |
 | `ALPHADESK_LOCAL_USER_EMAIL` | with sign-in off, act as this existing account instead of a fresh local one — for a server that began with accounts and became one person's own; nothing is moved |
 | `ALPHADESK_PURGE_ON_KEY_REMOVAL` | `1` deletes a vendor's stored data when its key is removed (for an instance serving other people whose vendor terms require it); off by default |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in (likewise `GITHUB_…`, `MICROSOFT_…`) |
 | `ALPHADESK_BASE_URL` | Public URL; OAuth redirects and the agent host allowlist depend on it |
 | `ALPHADESK_SECRET` | Session signing secret |
 | `ALPHADESK_COOKIE_SECURE` | Secure cookies (on behind HTTPS) |

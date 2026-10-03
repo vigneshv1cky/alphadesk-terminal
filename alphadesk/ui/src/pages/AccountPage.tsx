@@ -5,7 +5,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { on, api, type Access } from "@/lib/api"
 import { useAuthMe, useSystem, useUserKeys } from "@/lib/queries"
 import { Dialog, Empty, fieldCls, Table, TD, TH, THead, TR, Widget, btnCls } from "@/components/terminal"
-import { PROVIDER_MARKS } from "@/components/providerMarks"
 import { DeleteAccountDialog } from "@/components/DeleteAccountDialog"
 import { KeysExportDialog } from "@/components/KeysExportDialog"
 import { BTN, BTN_DANGER, BTN_PRIMARY, Caption, Heading, Pill, ROOMY, Row } from "@/components/accountParts"
@@ -624,43 +623,24 @@ function StatStrip({ open }: { open: boolean }) {
 
 /** How the reader signs in, and the session that results — the two used to
  * be separate panels of two rows each. */
-function SecurityPanel({ providers, sso, signIns, onSignOutEverywhere, email, owner }: {
+function SecurityPanel({ signIns, onSignOutEverywhere, email, owner }: {
   email?: string
   owner?: boolean
-  providers: { id: string; label: string }[]
-  sso: boolean
   /** The methods THIS account has signed in with (recorded from 2026-09-18). */
   signIns: { method: string; last_at: string | null }[]
   onSignOutEverywhere: () => void
 }) {
   const [deleting, setDeleting] = useState(false)
-  // "Active" used to mean the server offers the method — so a reader who
-  // only ever used GitHub saw Google active too (2026-09-18). Now: USED, with
-  // when, for a method this account has signed in with; AVAILABLE otherwise.
   const used = new Map(signIns.map(s => [s.method, s.last_at]))
   const when = (iso: string | null | undefined) =>
     iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""
   return (
     <Widget span={12} title={<Heading>Security</Heading>} subtitle="how you sign in, and where" bodyClassName="@container">
-      {providers.map(p => (
-        <Row key={p.id}
-             label={<span className="flex min-w-0 items-center gap-2">
-               <span aria-hidden="true" className="flex w-[20px] shrink-0 items-center justify-center">
-                 {PROVIDER_MARKS[p.id]}
-               </span>
-               <span className="truncate">{p.label}</span>
-             </span>}
-             actions={used.has(p.id) ? <Pill tone="gain">Used</Pill> : <Pill tone="muted">Available</Pill>}>
-          {used.has(p.id)
-            ? `you sign in with ${p.label} · last ${when(used.get(p.id))}`
-            : "offered here · not used by this account (recorded since Sep 18, 2026)"}
-        </Row>
-      ))}
-      {/* Only when it IS the door: an SSO instance refuses passwords,
-          and a row whose whole message is "refused" earns no place. */}
-      {!sso && (
-        <Row label="Password" actions={used.has("password") ? <Pill tone="gain">Used</Pill> : <Pill tone="muted">Available</Pill>}>the gate on this instance</Row>
-      )}
+      <Row label="Sign-in" actions={<Pill tone="gain">{used.has("password") ? "Password" : "Set by the operator"}</Pill>}>
+        {used.has("password")
+          ? `the email and password this server's operator set · last ${when(used.get("password"))}`
+          : "the email and password this server's operator set; it is the only door"}
+      </Row>
       <Row label="Session" actions={
         <button type="button" onClick={onSignOutEverywhere} className={BTN_DANGER}>Sign out everywhere</button>}>
         HMAC-signed cookie · 14-day lifetime · other devices stay signed in until you sign them out
@@ -740,8 +720,6 @@ export default function AccountPage() {
 
   const open = !me.auth_required
   const email = me.user?.email ?? "—"
-  const providers = me.providers ?? []
-  const sso = providers.length > 0
   const newsProviders = sys?.providers?.available?.news ?? ["polygon", "alpaca"]
   const transcriptProviders = (sys?.providers?.available?.transcripts ?? ["finnhub", "fmp"]).filter(p => p !== "edgar")
 
@@ -773,17 +751,11 @@ export default function AccountPage() {
           <div className="min-w-0 flex-1">
             <div className="truncate text-body font-extrabold sm:text-emph">{email}</div>
             <div className="mt-0.5 truncate text-caption text-muted-foreground">
-              <span className="sm:hidden">{sso ? "Via SSO" : "Operator-created"} · 14-day session</span>
-              <span className="max-sm:hidden">{sso ? "Self-provisioned via SSO" : "Operator-created account"} · 14-day signed session</span>
+              <span className="sm:hidden">14-day session</span>
+              <span className="max-sm:hidden">14-day signed session</span>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {providers.map(p => (
-              <span key={p.id}
-                    className="hidden h-[28px] items-center gap-2 rounded-sm border border-border px-2.5 text-caption font-semibold uppercase tracking-caps sm:flex">
-                {PROVIDER_MARKS[p.id]}{p.label}
-              </span>
-            ))}
             {/* An icon on a phone, so the email keeps the line. */}
             <button type="button" onClick={signOut} aria-label="Sign out" title="Sign out"
                     className={btnCls({ variant: "danger" }, "rounded-md max-sm:w-[28px] max-sm:px-0 sm:h-[28px] sm:px-3 max-sm:h-[28px]")}>
@@ -800,7 +772,7 @@ export default function AccountPage() {
           processor there is nothing to show. */}
       {!open && me.user?.access && (me.user.access.enforced || me.user.access.can_subscribe) && <PlanPanel access={me.user.access} />}
       <KeysPanel newsProviders={newsProviders} transcriptProviders={transcriptProviders} />
-      {!open && <SecurityPanel providers={providers} sso={sso} signIns={me.user?.sign_ins ?? []} onSignOutEverywhere={signOutEverywhere}
+      {!open && <SecurityPanel signIns={me.user?.sign_ins ?? []} onSignOutEverywhere={signOutEverywhere}
                                 email={me.user?.email} owner={!!me.user?.owner} />}
 
     </div>
