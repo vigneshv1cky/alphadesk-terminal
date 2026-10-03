@@ -326,6 +326,15 @@ def main() -> None:
         problem = _auth.access_token_problem()
         if problem:
             sys.exit(problem)
+        if not _auth.auth_required():
+            # An instance acting as one existing account (ALPHADESK_LOCAL_USER_
+            # EMAIL) must name one that is there, or every request would fail.
+            from alphadesk.ledger import store as _store
+            _store.init()
+            try:
+                _store.ensure_local_user()
+            except RuntimeError as exc:
+                sys.exit(str(exc))
         _allowed = _auth.allowed_emails()
         if _allowed and _auth.auth_required():
             log.info("sign-in is limited to %d allowed address%s", len(_allowed), "" if len(_allowed) == 1 else "es")

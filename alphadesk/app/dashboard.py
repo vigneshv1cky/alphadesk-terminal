@@ -2088,10 +2088,15 @@ def api_keys_export(body: KeyExportIn, request: Request):
 
 
 def _purge_after_key_removal(user_id: str, seam: str, provider: str | None) -> None:
-    """A removed key's data goes with it (store.purge_vendor_data): vendors
-    require deletion when the customer's access ends, and removing the key is
-    where AlphaDesk sees that."""
+    """A removed key's data used to go with it (store.purge_vendor_data):
+    vendors can require deletion when the customer's access ends, and removing
+    the key is where AlphaDesk sees that. It is now OPT-IN (2026-10-03, the
+    owner's call for a personal server, where the data is the reader's own
+    record): set ALPHADESK_PURGE_ON_KEY_REMOVAL=1 on an instance that serves
+    other people. The retention windows still age the data out."""
     import logging
+    if os.environ.get("ALPHADESK_PURGE_ON_KEY_REMOVAL", "").strip() not in ("1", "true", "yes"):
+        return
 
     from alphadesk.ingest.news import news_owner
     log = logging.getLogger(__name__)

@@ -644,6 +644,8 @@ required.
 | `ALPHADESK_DATA` | Data directory for SQLite (default `~/.alphadesk`) |
 | `ALPHADESK_AUTH` | `off` for a single local account without sign-in |
 | `ALPHADESK_ACCESS_TOKEN` | with sign-in off, a shared secret (16+ characters) that guards the browser; ignored where accounts gate |
+| `ALPHADESK_LOCAL_USER_EMAIL` | with sign-in off, act as this existing account instead of a fresh local one — for a server that began with accounts and became one person's own; nothing is moved |
+| `ALPHADESK_PURGE_ON_KEY_REMOVAL` | `1` deletes a vendor's stored data when its key is removed (for an instance serving other people whose vendor terms require it); off by default |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in (likewise `GITHUB_…`, `MICROSOFT_…`) |
 | `ALPHADESK_BASE_URL` | Public URL; OAuth redirects and the agent host allowlist depend on it |
 | `ALPHADESK_SECRET` | Session signing secret |

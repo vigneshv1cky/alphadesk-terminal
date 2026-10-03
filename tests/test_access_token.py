@@ -60,3 +60,23 @@ def test_a_short_token_is_refused(monkeypatch):
     assert "at least" in auth.access_token_problem()
     monkeypatch.setenv("ALPHADESK_ACCESS_TOKEN", TOKEN)
     assert auth.access_token_problem() is None
+
+
+def test_an_open_instance_can_act_as_an_existing_account(client, store, monkeypatch):
+    """A server that began with accounts and became one person's own adopts that
+    account instead of a fresh local one, so nothing has to be moved."""
+    import uuid
+
+    from alphadesk.app import dashboard
+    uid = uuid.uuid4().hex
+    store.create_user(uid, "me@example.com", "sso-only")
+    monkeypatch.setenv("ALPHADESK_AUTH", "off")
+    monkeypatch.delenv("ALPHADESK_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("ALPHADESK_LOCAL_USER_EMAIL", "Me@Example.com")
+    monkeypatch.setattr(dashboard, "_local_uid_value", None)    # restored afterwards
+    assert store.ensure_local_user() == uid
+    store.set_user_key(uid, "news", "alpaca", "sealed", "…abcd")
+    assert [k["provider"] for k in client.get("/api/keys").json()["keys"]] == ["alpaca"]
+    monkeypatch.setenv("ALPHADESK_LOCAL_USER_EMAIL", "nobody@example.com")
+    with pytest.raises(RuntimeError, match="not an account"):
+        store.ensure_local_user()

@@ -16,6 +16,7 @@ and `init()` removes them from pre-existing databases.
 """
 
 import json
+import os
 from html import unescape
 from datetime import datetime, timedelta, timezone
 
@@ -654,11 +655,29 @@ def init() -> None:
 LOCAL_USER_ID = "local"
 
 
+def user_email(user_id: str) -> str | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT email FROM users WHERE user_id=?", (user_id,)).fetchone()
+    return row["email"] if row else None
+
+
 def ensure_local_user() -> str:
     """The one account an OPEN instance (ALPHADESK_AUTH=off: development,
     a single-person self-host) acts as, so the key vault and every keyed
     surface work there exactly as they do for a signed-in user. Its password
-    hash is not a valid scrypt string, so it can never be logged into."""
+    hash is not a valid scrypt string, so it can never be logged into.
+
+    ALPHADESK_LOCAL_USER_EMAIL (2026-10-03) names an EXISTING account to act
+    as instead — for an instance that began with accounts and became one
+    person's own server: their keys, stories, views and layouts are already
+    under that account, so adopting it moves nothing and can be undone by
+    unsetting it."""
+    email = os.environ.get("ALPHADESK_LOCAL_USER_EMAIL", "").strip().lower()
+    if email:
+        row = get_user_by_email(email)
+        if row is None:
+            raise RuntimeError(f"ALPHADESK_LOCAL_USER_EMAIL names {email!r}, which is not an account on this instance")
+        return row["user_id"]
     with _lock, _connect() as conn:
         conn.execute(
             "INSERT INTO users (user_id, email, password_hash, created_at) VALUES (?,?,?,?)"
