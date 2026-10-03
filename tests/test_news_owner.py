@@ -310,9 +310,9 @@ def test_one_symbols_news_is_its_whole_window_not_the_shared_lists_newest(client
     from alphadesk.app import dashboard
     monkeypatch.setattr(dashboard, "_since_iso", lambda: at(48), raising=False)
     ids = [a["article_id"] for a in client.get("/api/news?symbol=xlk").json()["articles"]]
-    assert ids == ["x1", "x2"]                      # both days, newest first; nothing older, no other symbol
+    assert ids == ["x1", "x2", "x3"]                # newest first, past the window too; no other symbol
     older = client.get(f"/api/news?symbol=XLK&before={at(40)}").json()["articles"]
-    assert [a["article_id"] for a in older] == ["x3"]  # the next page reaches past the window
+    assert [a["article_id"] for a in older] == ["x3"]  # a later page starts where the shown ones end
 
 
 def test_a_quiet_symbol_with_nothing_in_the_window_shows_its_newest_stories(client, store, monkeypatch):

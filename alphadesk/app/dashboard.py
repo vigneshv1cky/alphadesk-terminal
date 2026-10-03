@@ -527,14 +527,10 @@ def api_news(limit: int = 300, before: str | None = None, q: str | None = None, 
         # symbol alone (ingest/news.symbol_articles, 2026-10-02).
         from alphadesk.ingest.news import symbol_articles
         rows = symbol_articles(uid, sym, before, min(limit, 300))
-        if not before:
-            # A quiet name may have nothing inside the window yet have older
-            # stories (SVRN, 2026-10-03: fifty from the vendor, all older than
-            # the window, so the panel read empty). The window only trims a
-            # name that has recent stories; otherwise its newest are shown.
-            edge = _since_iso()
-            recent = [a for a in rows if (a.get("published_at") or "") >= edge]
-            rows = recent or rows
+        # NO WINDOW TRIM (2026-10-03). A symbol's panel is its newest stories,
+        # a page at a time, however old: trimming to the window showed one
+        # story of fifty until "Load older stories" was pressed, and nothing at
+        # all for a name that was quiet through the window (SVRN).
         articles = rows
     elif before or q:
         # A page of OLDER stories (`before`: published before this instant),
