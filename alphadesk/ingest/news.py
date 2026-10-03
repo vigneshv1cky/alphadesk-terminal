@@ -452,6 +452,39 @@ def symbol_articles(user_id: str, symbol: str, before: str | None, limit: int) -
     return rows
 
 
+_REPAIR_VENDOR, _REPAIR_METHOD = "alphadesk", "ticker_repair_v1"
+
+
+def repair_board_tickers(user_id: str, max_symbols: int = 3) -> int:
+    """Re-ask the feed, once per symbol, for the symbols on the reader's board,
+    so stories stored before the ticker cap was lifted (2026-10-03) gain the
+    tickers they lost; a story delivered again keeps the tickers it never had
+    (ledger.store.save_articles). A few symbols a call, so the work is spread
+    over the poll cycles; a symbol done is remembered and never asked again.
+    Returns the number of symbols asked."""
+    board = store.get_board(user_id)
+    if not board or not board.get("symbols") or not store.get_user_keys(user_id, "news"):
+        return 0
+    owner = news_owner(user_id)
+    done = 0
+    for sym in board["symbols"][:60]:
+        sym = str(sym).strip().upper()
+        if not sym or store.vendor_cache_get(owner, _REPAIR_VENDOR, _REPAIR_METHOD, sym):
+            continue
+        if has_feed_problem(user_id):
+            break
+        try:
+            symbol_articles(user_id, sym, None, 300)
+        except Exception as exc:
+            log.info("%s ticker repair: %s", sym, exc)
+            continue
+        store.vendor_cache_put(owner, _REPAIR_VENDOR, _REPAIR_METHOD, sym, "1")
+        done += 1
+        if done >= max_symbols:
+            break
+    return done
+
+
 # One ask returns at most this many stories; a day is walked in up to this many.
 BACKFILL_PAGE = 400
 BACKFILL_PAGES_PER_DAY = 8

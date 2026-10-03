@@ -917,7 +917,7 @@ def _full_filing_text(url: str) -> str | None:
     """A filing's full text from SEC EDGAR — public data, so one process-wide
     cache serves every reader."""
     from alphadesk.ingest import edgar
-    return edgar.fetch_filing_text(url, max_chars=_FILING_READ_MAX_CHARS)
+    return edgar.fetch_filing_with_exhibits(url, max_chars=_FILING_READ_MAX_CHARS)
 
 
 def _filing_document(accession: str) -> str | None:
@@ -949,6 +949,55 @@ def filing_text(accession: str, page: int = 1) -> dict:
     start = (n - 1) * _FILING_PAGE_CHARS
     return {"accession": acc, "page": n, "pages": pages, "characters": len(text),
             "text": text[start:start + _FILING_PAGE_CHARS]}
+
+
+@mcp.tool(annotations=READ_ONLY)
+def what_moved(symbol: str, days: int = 90, min_move_pct: float = 10.0) -> dict:
+    """ONE CALL FOR "WHY DID THIS STOCK MOVE": the sessions the price moved at
+    least `min_move_pct` (default 10) over the last `days` (default 90, max 365),
+    each with the stories published and the SEC filings accepted in the window
+    leading into it — from the previous close to that close — and, for every
+    filing in the span, the size of the move on the first session that could
+    react to it (a filing accepted after 4pm New York time reacts the next day).
+
+    NO VERDICT. Nothing says a story or filing CAUSED a move; the window is the
+    evidence. `nothing_attached` is true for a day with neither: that is the
+    finding, and usually means the news is under another ticker or a theme
+    (search it with `news_search`) or there was none. Stories carry their
+    publisher's `kind` and `named_tickers` (a "movers" list names many stocks
+    and says nothing of one). Open a story with `news_story` and a filing with
+    `filing_text`, which reads a press release's exhibits as well as the cover.
+    Compare the price with a related asset (NEAR for a NEAR-treasury company)
+    by calling `price_history` on both."""
+    from alphadesk.app import dashboard
+    from alphadesk.desk import filings as filings_desk, moves
+    from alphadesk.identity import request_user
+    from alphadesk.ingest.news import news_owner
+    from alphadesk.ledger import store
+    sym = _symbol(symbol)
+    days = max(5, min(int(days), 365))
+    key = "1M" if days <= 31 else "3M" if days <= 93 else "6M" if days <= 186 else "1Y"
+    series = _http_errors(dashboard.api_chart, sym, range=key)
+    bars = [b for b in (series.get("bars") or []) if b.get("c") is not None]
+    if not bars:
+        raise ValueError(f"no daily bars for {sym}")
+    from datetime import date, timedelta
+    since = (date.today() - timedelta(days=days)).isoformat()
+    uid = request_user()
+    articles, notes = [], []
+    if uid and store.get_user_keys(uid, "news"):
+        for a in store.articles_for_symbol(news_owner(uid), sym, None, 500, body=False):
+            articles.append({**a, "kind": newskind.of_article(a)})
+    else:
+        notes.append("no news feed is connected, so no stories are matched")
+    try:
+        filed = filings_desk.list_filings(sym)
+    except Exception as exc:
+        filed = []
+        notes.append(f"filings could not be listed: {exc}")
+    out = moves.join_moves(bars, articles, filed, float(min_move_pct), since=since)
+    return {"symbol": sym, "from": since, "price_vendor": series.get("vendor") or series.get("source"),
+            **out, "notes": notes}
 
 
 # ── Calendars, sectors, options, peers, transcripts (2026-09-17) ─────────

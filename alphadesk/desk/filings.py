@@ -42,7 +42,7 @@ def get_text(accession: str, url: str | None = None) -> str | None:
         url = meta["url"] if meta else None
     if not url:
         return None
-    text = edgar.fetch_filing_text(url, max_chars=FILING_MAX_CHARS)
+    text = edgar.fetch_filing_with_exhibits(url, max_chars=FILING_MAX_CHARS)
     if text:
         store.save_filing_text(accession, text)
     return text

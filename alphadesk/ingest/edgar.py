@@ -18,6 +18,7 @@ that are easy to get wrong and will silently 403/empty-result you if you do:
 import logging
 from datetime import datetime, timezone
 import os
+import json
 import re
 import threading
 import time
@@ -294,6 +295,11 @@ def _accepted_at(raw: str | None, file_date: str | None = None) -> str | None:
 READABLE_FORMS: frozenset[str] = frozenset({
     "10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A",
     "20-F", "20-F/A", "6-K", "6-K/A", "DEF 14A",
+    # Large-holder notices since December 2024 are filed as "SCHEDULE 13D" and
+    # "SCHEDULE 13G" (the old "SC 13D" names stopped), and the document is a
+    # structured form whose items carry prose: who holds how many shares and
+    # what share of the class that is (2026-10-03).
+    "SCHEDULE 13D", "SCHEDULE 13D/A", "SCHEDULE 13G", "SCHEDULE 13G/A",
 })
 # Listed for completeness but never picked for the Q&A: ownership forms are
 # XML tables (Form 3/4/5 insider statements, Form 144 sale notices, 13D/13G
@@ -304,6 +310,47 @@ LISTED_ONLY_FORMS: frozenset[str] = frozenset({
     "SC 13D", "SC 13D/A", "SC 13G", "SC 13G/A",
 })
 DEFAULT_FORMS: tuple[str, ...] = tuple(sorted(READABLE_FORMS | LISTED_ONLY_FORMS))
+
+
+# The press release a 6-K or 8-K carries is an EXHIBIT, not the cover page: the
+# cover of a foreign filer's 6-K says only "attached is a press release"
+# (SVRN, 2026-10-03, where the whole story was in Exhibit 99.1).
+_EXHIBIT_NAME = re.compile(r"ex[-_ ]?99", re.I)
+_MAX_EXHIBITS = 3
+
+
+def exhibit_documents(url: str) -> list[str]:
+    """URLs of a filing's press-release exhibits (99.x), from the filing's own
+    folder index; empty when it has none or the index cannot be read. `url` is
+    the primary document's archive URL."""
+    base, _, primary = url.rpartition("/")
+    if not base:
+        return []
+    try:
+        listing = json.loads(_get(f"{base}/index.json", timeout=15.0))
+    except Exception as exc:
+        log.debug("EDGAR folder index unavailable (%s): %s", base, exc)
+        return []
+    names = [str(i.get("name") or "") for i in ((listing.get("directory") or {}).get("item") or [])]
+    picked = [n for n in names if n != primary and _EXHIBIT_NAME.search(n) and n.lower().endswith((".htm", ".html"))]
+    return [f"{base}/{n}" for n in sorted(picked)[:_MAX_EXHIBITS]]
+
+
+def fetch_filing_with_exhibits(url: str, max_chars: int = 60_000) -> str | None:
+    """The filing's own text followed by its press-release exhibits, each under
+    a marker line, so a reader gets what the company announced and not only
+    the cover note. None when the main document cannot be read."""
+    text = fetch_filing_text(url, max_chars=max_chars)
+    if text is None:
+        return None
+    parts = [text]
+    for ex_url in exhibit_documents(url):
+        if sum(len(x) for x in parts) >= max_chars:
+            break
+        body = fetch_filing_text(ex_url, max_chars=max_chars)
+        if body:
+            parts.append(f"\n\n[EXHIBIT {ex_url.rpartition('/')[2]}]\n{body}")
+    return "".join(parts)[:max_chars]
 
 
 def is_readable(form: str | None) -> bool:
@@ -502,6 +549,83 @@ def fetch_filing_text(url: str, max_chars: int = 60_000) -> str | None:
         log.warning("EDGAR text extraction failed (%s): %s", url, exc)
         return None
     return text[:max_chars]
+
+
+# ── Shares outstanding, including a foreign filer's (2026-10-03) ─────────────
+# A domestic filer states the count on its report's cover, which is in the
+# SEC's structured data. A foreign filer's structured record can stop years
+# back (SVRN's ends with the 2024 annual report), while its large-holder
+# notices say "N shares, representing approximately P% of the outstanding
+# common stock", and N / P is the count at the date of the notice. The result
+# says which it is, and from what.
+_CONCEPT_URL = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik10}/dei/EntityCommonStockSharesOutstanding.json"
+_HOLDER_FORMS = ("SCHEDULE 13D", "SCHEDULE 13D/A", "SCHEDULE 13G", "SCHEDULE 13G/A")
+_HOLDING_PCT = re.compile(
+    r"([\d,]{3,})\s+(?:common\s+)?shares?\b[^.%]{0,120}?approximately\s+(\d{1,3}(?:\.\d+)?)\s*%", re.I)
+_shares_cache: dict[str, tuple[float, dict | None]] = {}
+_SHARES_TTL_S = 6 * 3600
+
+
+def derive_shares(text: str) -> int | None:
+    """The outstanding share count a holder notice implies, or None. Each
+    "N shares ... approximately P%" gives N / P; a notice with several reporting
+    persons gives several, and the median is taken. P is stated to a tenth or
+    a hundredth of a percent, so the result is good to about that fraction."""
+    counts = []
+    for m in _HOLDING_PCT.finditer(text or ""):
+        held, pct = int(m.group(1).replace(",", "")), float(m.group(2))
+        if held > 0 and 0 < pct <= 100:
+            counts.append(held * 100.0 / pct)
+    if not counts:
+        return None
+    counts.sort()
+    return int(round(counts[len(counts) // 2], -2))
+
+
+def shares_outstanding(symbol: str) -> dict | None:
+    """{shares, as_of, basis, form, accession} for a symbol: the count the
+    company's structured record states ('stated'), or the one its newest
+    large-holder notice implies ('derived from a holder's stated percentage'),
+    whichever is newer. None when neither can be had."""
+    sym = symbol.upper()
+    hit = _shares_cache.get(sym)
+    if hit and time.monotonic() - hit[0] < _SHARES_TTL_S:
+        return hit[1]
+    out = None
+    try:
+        out = _shares_outstanding(sym)
+    except Exception as exc:
+        log.debug("shares outstanding for %s: %s", sym, exc)
+    _shares_cache[sym] = (time.monotonic(), out)
+    return out
+
+
+def _shares_outstanding(sym: str) -> dict | None:
+    cik10 = cik_for(sym)
+    if not cik10:
+        return None
+    stated = None
+    try:
+        data = get_json(_CONCEPT_URL.format(cik10=cik10))
+        rows = [r for units in (data.get("units") or {}).values() for r in units if r.get("val")]
+        if rows:
+            r = max(rows, key=lambda x: (x.get("end") or "", x.get("filed") or ""))
+            stated = {"shares": int(r["val"]), "as_of": r.get("end"), "basis": "stated on the report's cover",
+                      "form": r.get("form"), "accession": r.get("accn"), "filed": r.get("filed")}
+    except Exception as exc:
+        log.debug("no structured share count for %s: %s", sym, exc)
+    derived = None
+    for f in filings_for_cik(cik10, sym, _HOLDER_FORMS, limit=3):
+        text = fetch_filing_text(f["url"], max_chars=30_000)
+        count = derive_shares(text or "")
+        if count:
+            derived = {"shares": count, "as_of": f["filing_date"],
+                       "basis": "derived from a holder's stated percentage (about 1% precision)",
+                       "form": f["form"], "accession": f["accession"], "filed": f["filing_date"]}
+            break
+    if stated and derived:
+        return derived if (derived["filed"] or "") > (stated["filed"] or stated["as_of"] or "") else stated
+    return stated or derived
 
 
 # ── A ticker that moved to a successor registrant ────────────────────────────

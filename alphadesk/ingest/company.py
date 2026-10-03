@@ -480,5 +480,9 @@ def profile(symbol: str) -> dict | None:
             # for a coin.
             "financials": _financials(sym, facts),
             "coin": coin,
+            # The share count, with its basis: a foreign filer's structured
+            # record can stop years back, so it may be derived from a holder's
+            # notice (ingest/edgar.shares_outstanding).
+            "shares_outstanding": edgar.shares_outstanding(sym) if facts else None,
         }
     return out

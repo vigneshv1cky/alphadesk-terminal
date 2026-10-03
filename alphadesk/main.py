@@ -154,6 +154,12 @@ async def _serve() -> None:
                         user_last[uid] = asked_at
                     if un:
                         log.info("Ingested %d articles for reader %s", un, uid[:8])
+                    # A few board symbols a cycle get their stored stories'
+                    # tickers repaired, once each (news.repair_board_tickers).
+                    try:
+                        await loop.run_in_executor(None, news.repair_board_tickers, uid)
+                    except Exception as exc:
+                        log.warning("ticker repair for reader %s: %s", uid[:8], exc)
                 for gone in set(user_last) - set(active):
                     user_last.pop(gone, None)   # inactive readers restart from lookback on return
             except Exception as exc:
