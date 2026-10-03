@@ -1000,6 +1000,141 @@ def what_moved(symbol: str, days: int = 90, min_move_pct: float = 10.0) -> dict:
             **out, "notes": notes}
 
 
+@mcp.tool(annotations=READ_ONLY)
+def move_state(symbols: list[str] | str) -> dict:
+    """HAS THE MOVE DIED DOWN, HELD, OR TURNED: measurements of each symbol's
+    latest session (up to 8 symbols). Read `reliable` first: false means the
+    intraday bars are too few or too sparse to read a shape from, and only the
+    daily fields mean anything.
+
+    For the session: the change from the previous close, the gap at the open,
+    the high and low with the times of each and the minutes since, how much of
+    the session's swing has been GIVEN BACK from the high (0 at the high, 100
+    at the low), the last 60 and 30 minutes' change, whether the last hour ran
+    AGAINST the session's direction, volume against the usual day and the last
+    hour's pace against the session's own, and the move's size in units of the
+    symbol's typical daily range. `daily` holds the footing: the previous close,
+    the typical range, consecutive up or down closes, the 20-day high and low and
+    the last sessions side by side — what a multi-day fade looks like.
+
+    NO VERDICT: nothing says the move is over or will go on. Pair it with
+    `what_moved` for why, and `priced_in` for how it compares with the stock's
+    usual reactions."""
+    from alphadesk.app import dashboard
+    from alphadesk.desk import movestate
+    from alphadesk.providers import get_prices
+    wanted = _symbols(symbols)[:8]
+    if not wanted:
+        raise ValueError("at least one symbol is required")
+    out, failed = {}, {}
+    for sym in wanted:
+        try:
+            series = get_prices().chart_series(sym, days=5) or {}
+            daily = _http_errors(dashboard.api_chart, sym, range="3M").get("bars") or []
+            out[sym] = movestate.move_state(series.get("bars") or [], daily)
+        except Exception as exc:
+            failed[sym] = str(exc)[:160]
+    return {"symbols": out, "failed": failed}
+
+
+@mcp.tool(annotations=READ_ONLY)
+def candidates(horizon_days: int = 3, filing_hours: int = 36, limit: int = 25) -> dict:
+    """WHICH NAMES HAVE A DATED REASON TO MOVE: a list of candidates with the
+    evidence for each, strongest first. Not a prediction — it says what is
+    scheduled or just filed, never that a price will move.
+
+    Evidence gathered: reports due within `horizon_days` (default 3; two days
+    or fewer weighs more), material 8-Ks, stake filings (13D/13G, tender
+    offers) and offering filings accepted in the last `filing_hours` (default
+    36, max 168), and trading halts today. A name on the reader's board is
+    marked. Each row carries `already_moved_pct` where the name is among
+    today's biggest movers, so what has moved is told apart from what might.
+    `evidence_weight` only orders the list; it is not a probability.
+
+    `unavailable` names any source that could not be read, so a short list is
+    not mistaken for a quiet market. Judge each filing by reading it with
+    `filing_text`."""
+    from datetime import timedelta
+    from alphadesk.config import now_et
+    from alphadesk.desk import candidates as cand
+    from alphadesk.identity import request_user
+    from alphadesk.ingest import earnings_calendar, edgar_feed, movers as mv
+    from alphadesk.ledger import store
+    from alphadesk.providers import get_prices
+    horizon = max(1, min(int(horizon_days), 14))
+    hours = max(1, min(int(filing_hours), 168))
+    today = now_et().date()
+    unavailable: dict[str, str] = {}
+
+    def attempt(name, fn, default):
+        try:
+            return fn()
+        except Exception as exc:
+            unavailable[name] = str(exc)[:160]
+            return default
+
+    earnings = attempt("earnings", lambda: earnings_calendar.upcoming(days=horizon), [])
+    feed = attempt("filings", lambda: edgar_feed.recent(groups=["events", "stakes", "offerings"], limit=200), {})
+    edge = (now_et() - timedelta(hours=hours)).date().isoformat()
+    filings = [f for f in (feed.get("filings") or []) if str(f.get("filed_at") or "")[:10] >= edge]
+    for k, why in (feed.get("unavailable") or {}).items():
+        unavailable[f"filings:{k}"] = str(why)
+    halts = attempt("halts", lambda: get_prices().ask("trading_halts", limit=100, surface="trading_halts") or [], [])
+    movers_rows: list[dict] = []
+    for tab in (attempt("movers", lambda: mv.category_movers("stocks", top=50), {}) or {}).get("tabs") or []:
+        if tab.get("id") in ("gainers", "losers"):
+            movers_rows += tab.get("rows") or []
+    uid = request_user()
+    board = (store.get_board(uid) or {}).get("symbols", []) if uid else []
+    rows = cand.rank(earnings, filings, halts, movers_rows, board, today, horizon)
+    return {"as_of": today.isoformat(), "horizon_days": horizon, "filing_hours": hours,
+            "count": len(rows), "candidates": rows[:max(1, min(int(limit), 100))],
+            "unavailable": unavailable}
+
+
+@mcp.tool(annotations=READ_ONLY)
+def priced_in(symbol: str, since: str = "") -> dict:
+    """THE FIGURES BEHIND "IS IT ALREADY PRICED IN" for one symbol. Whether a
+    move is priced in is a judgement about expectations that no data feed
+    holds, so this returns what CAN be measured and leaves the judgement to
+    you: the stock's own two-session reaction to each of its last eight reports
+    (with the EPS surprise beside it), the typical size of that reaction, how
+    far it had run in the ten sessions before each report against how far it
+    has run now, the next report's date, the move since `since` (YYYY-MM-DD, the
+    date of an event you are asking about) in units of that typical reaction,
+    and analyst price targets against the last close with the 52-week position.
+
+    A past reaction is not a forecast; report dates and surprise are the
+    vendor's (see `earnings_history`). Needs a calendar vendor for the report
+    history, and says so in `notes` when it has none."""
+    from alphadesk.app import dashboard
+    from alphadesk.config import now_et
+    from alphadesk.desk import pricedin
+    from alphadesk.ingest import analysts, earnings_record, keystats
+    sym = _symbol(symbol)
+    notes = []
+    daily = _http_errors(dashboard.api_chart, sym, range="5Y").get("bars") or []
+    if not daily:
+        raise ValueError(f"no daily bars for {sym}")
+    try:
+        reports = (earnings_record.history(sym) or {}).get("reports") or []
+    except Exception as exc:
+        reports, notes = [], [f"no report history: {str(exc)[:120]}"]
+    targets = None
+    try:
+        targets = (analysts.analyst_view(sym) or {}).get("targets")
+    except Exception as exc:
+        notes.append(f"no analyst targets: {str(exc)[:120]}")
+    position = None
+    try:
+        position = keystats.key_stats(sym).get("week52_position")
+    except Exception as exc:
+        notes.append(f"no key statistics: {str(exc)[:120]}")
+    out = pricedin.priced_in_view(sym, reports, daily, now_et().date().isoformat(),
+                                  since=(since or "").strip(), targets=targets, week52_position=position)
+    return {**out, "notes": notes}
+
+
 # ── Calendars, sectors, options, peers, transcripts (2026-09-17) ─────────
 
 
