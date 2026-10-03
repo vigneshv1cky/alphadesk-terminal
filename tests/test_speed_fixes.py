@@ -113,3 +113,40 @@ def test_a_failed_rebuild_is_not_remembered():
         memo.cached(("f",), 5.0, flaky)
     assert memo.cached(("f",), 5.0, flaky) == "fine"
     memo.clear()
+
+
+def test_a_symbols_news_comes_from_the_side_table(store):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    uid = uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    store.save_articles([
+        {"id": f"s{i}", "title": f"t{i}", "url": f"https://x/{i}", "published_at": (now - timedelta(minutes=i)).isoformat(),
+         "tickers": ["SVRN", "NVDA"] if i % 2 == 0 else ["NVDA"], "feeds": ["alpaca"]} for i in range(6)
+    ], owner=uid)
+    got = store.articles_for_symbol(uid, "svrn", limit=10)
+    assert [a["article_id"] for a in got] == ["s0", "s2", "s4"]            # newest first, only that symbol
+    older = store.articles_for_symbol(uid, "SVRN", before_iso=(now - timedelta(minutes=1)).isoformat(), limit=10)
+    assert [a["article_id"] for a in older] == ["s2", "s4"]
+    assert store.articles_for_symbol(uid, "F", limit=10) == []             # a substring of another symbol never slips in
+    with store._lock, store._connect() as conn:                            # stories gone: their ticker rows go with them
+        conn.execute("DELETE FROM news_articles WHERE owner=? AND article_id='s0'", (uid,))
+        conn.execute(store._ORPHAN_TICKERS)
+    assert [a["article_id"] for a in store.articles_for_symbol(uid, "SVRN", limit=10)] == ["s2", "s4"]
+
+
+def test_stories_stored_before_the_side_table_are_filled_in_once(store):
+    import json
+    import uuid
+
+    uid = uuid.uuid4().hex
+    with store._lock, store._connect() as conn:
+        conn.execute("DELETE FROM news_tickers")
+        conn.execute("INSERT INTO news_articles (owner, article_id, title, published_at, tickers, feeds)"
+                     " VALUES (?, 'old1', 't', '2026-09-01T00:00:00+00:00', ?, 'alpaca')", (uid, json.dumps(["AAPL", "MSFT"])))
+    store.init()
+    assert [a["article_id"] for a in store.articles_for_symbol(uid, "MSFT", limit=5)] == ["old1"]
+    store.init()                                                           # a second start adds nothing
+    with store._connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS n FROM news_tickers WHERE owner=?", (uid,)).fetchone()["n"] == 2

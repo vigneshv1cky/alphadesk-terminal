@@ -215,6 +215,18 @@ CREATE TABLE IF NOT EXISTS scraped_data (
 );
 CREATE INDEX IF NOT EXISTS idx_scraped_at ON scraped_data (fetched_at);
 
+-- A story's tickers as ROWS (2026-10-03), so a symbol's own news is an index
+-- lookup instead of a LIKE over every story's JSON ticker text. Written with the
+-- story, deleted with it, and filled once from existing rows at start.
+CREATE TABLE IF NOT EXISTS news_tickers (
+    owner        TEXT NOT NULL,
+    ticker       TEXT NOT NULL,
+    published_at TEXT NOT NULL,
+    article_id   TEXT NOT NULL,
+    PRIMARY KEY (owner, ticker, article_id)
+);
+CREATE INDEX IF NOT EXISTS idx_news_tickers_pub ON news_tickers (owner, ticker, published_at);
+
 CREATE TABLE IF NOT EXISTS news_vectors (
     owner       TEXT NOT NULL,
     article_id  TEXT NOT NULL,
@@ -504,6 +516,30 @@ def _key_table_needs_rebuild(conn) -> bool:
     return "CHECK" in row["sql"] and "'prices'" not in row["sql"]
 
 
+def _backfill_news_tickers(conn) -> None:
+    """Fill the ticker side table from stories stored before it existed (once:
+    it only runs while the table is empty and stories are not)."""
+    if conn.execute("SELECT 1 FROM news_tickers LIMIT 1").fetchone():
+        return
+    batch: list[tuple] = []
+    for r in conn.execute("SELECT owner, article_id, published_at, tickers FROM news_articles").fetchall():
+        try:
+            tickers = {str(t).upper() for t in json.loads(r["tickers"] or "[]") if t}
+        except (TypeError, ValueError):
+            continue
+        batch.extend((r["owner"], t, r["published_at"] or "", r["article_id"]) for t in tickers)
+        if len(batch) >= 5000:
+            _insert_ticker_rows(conn, batch)
+            batch = []
+    if batch:
+        _insert_ticker_rows(conn, batch)
+
+
+def _insert_ticker_rows(conn, rows: list[tuple]) -> None:
+    conn.executemany("INSERT INTO news_tickers (owner, ticker, published_at, article_id) VALUES (?,?,?,?)"
+                     " ON CONFLICT (owner, ticker, article_id) DO NOTHING", rows)
+
+
 def init() -> None:
     with _lock, _connect() as conn:
         # One-time removal of the trading ledger (2026-08-18). AlphaDesk stopped
@@ -640,6 +676,9 @@ def init() -> None:
             " ON CONFLICT (user_id, seam, provider) DO NOTHING")
         conn.execute("DELETE FROM user_api_keys WHERE seam = 'crypto'")
 
+    with _lock, _connect() as conn:
+        _backfill_news_tickers(conn)
+
 
 LOCAL_USER_ID = "local"
 
@@ -754,7 +793,7 @@ def save_articles(articles: list[dict], owner: str = "") -> list[str]:
                 (owner, floor, ceiling)).fetchall()]
         by_id = {r["article_id"]: r for r in existing}
         by_url = {article_url_key(r["url"]): r for r in existing if article_url_key(r["url"])}
-        inserts, feed_updates, body_updates = [], {}, {}
+        inserts, feed_updates, body_updates, ticker_rows = [], {}, {}, []
         for a in articles:
             feeds = _feed_list(",".join(a.get("feeds") or []))
             hit = by_id.get(a["id"]) or by_url.get(article_url_key(a.get("url")))
@@ -778,6 +817,8 @@ def save_articles(articles: list[dict], owner: str = "") -> list[str]:
             inserts.append((owner, a["id"], a.get("title"), a.get("summary"), a.get("source"), a.get("url"),
                             a.get("published_at"), json.dumps(a.get("tickers") or []), _now(),
                             a.get("image_url"), a.get("author"), a.get("body"), row["feeds"]))
+            ticker_rows.extend((owner, str(t).upper(), a.get("published_at") or "", a["id"])
+                               for t in {str(t).upper() for t in (a.get("tickers") or []) if t})
         if inserts:
             conn.executemany(
                 "INSERT INTO news_articles"
@@ -785,6 +826,10 @@ def save_articles(articles: list[dict], owner: str = "") -> list[str]:
                 "  image_url, author, body, feeds)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT (owner, article_id) DO NOTHING", inserts)
+        if ticker_rows:
+            conn.executemany(
+                "INSERT INTO news_tickers (owner, ticker, published_at, article_id) VALUES (?,?,?,?)"
+                " ON CONFLICT (owner, ticker, article_id) DO NOTHING", ticker_rows)
         for aid, feeds in feed_updates.items():
             conn.execute("UPDATE news_articles SET feeds = ? WHERE owner = ? AND article_id = ?", (feeds, owner, aid))
         for aid, body in body_updates.items():
@@ -807,13 +852,14 @@ def feed_counts(owner: str, since_iso: str) -> dict[str, int]:
     return out
 
 
-def _body_cols(body: bool) -> str:
+def _body_cols(body: bool, prefix: str = "") -> str:
     """The article text column — or only whether there IS text. Lists show a
     headline and a "full text" mark; they never show the text, which is
     kilobytes a story that were read, sorted, decoded and thrown away on every
     rail, news list and market-today call (2026-10-03). Only `article` and the
     story reader need the text."""
-    return "body" if body else "(CASE WHEN body IS NULL OR body = '' THEN 0 ELSE 1 END) AS has_body"
+    return (f"{prefix}body" if body
+            else f"(CASE WHEN {prefix}body IS NULL OR {prefix}body = '' THEN 0 ELSE 1 END) AS has_body")
 
 
 def _flag_body(d: dict) -> dict:
@@ -970,15 +1016,20 @@ def articles_for_symbol(owner: str, symbol: str, before_iso: str | None = None,
     sym = (symbol or "").strip().upper()
     if not sym:
         return []
-    pattern = '%"' + sym.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + '"%'
-    sql = ("SELECT article_id, title, summary, source, url, published_at, tickers,"
-           f"  image_url, author, {_body_cols(body)}, feeds"
-           " FROM news_articles WHERE owner = ? AND upper(tickers) LIKE ? ESCAPE '\\'")
-    args: list = [owner, pattern]
+    # THE SIDE TABLE (2026-10-03): news_tickers holds one row per story and
+    # ticker, indexed by (owner, ticker, published_at), so this reads one
+    # symbol's newest stories directly. It was a LIKE over every story's ticker
+    # JSON, which grows with the whole history now that it is kept.
+    sql = ("SELECT a.article_id, a.title, a.summary, a.source, a.url, a.published_at, a.tickers,"
+           f"  a.image_url, a.author, {_body_cols(body, 'a.')}, a.feeds"
+           " FROM news_tickers t JOIN news_articles a"
+           "   ON a.owner = t.owner AND a.article_id = t.article_id"
+           " WHERE t.owner = ? AND t.ticker = ?")
+    args: list = [owner, sym]
     if before_iso:
-        sql += " AND published_at < ?"
+        sql += " AND t.published_at < ?"
         args.append(before_iso)
-    sql += " ORDER BY published_at DESC LIMIT ?"
+    sql += " ORDER BY t.published_at DESC LIMIT ?"
     args.append(int(limit) * 2 + 10)
     with _connect() as conn:
         rows = conn.execute(sql, args).fetchall()
@@ -1865,10 +1916,13 @@ def prune_vendor_data(now: datetime | None = None) -> dict[str, int]:
             (ago(days=cfg.SCRAPED_KEEP_DAYS),))
         run("nasdaq_earnings", "DELETE FROM earnings")
         run("news_vectors", _ORPHAN_VECTORS)
+        run("news_tickers", _ORPHAN_TICKERS)
     return out
 
 
 #: A story's vector is deleted with the story, whatever deleted it.
+_ORPHAN_TICKERS = ("DELETE FROM news_tickers WHERE NOT EXISTS (SELECT 1 FROM news_articles a"
+                   " WHERE a.owner = news_tickers.owner AND a.article_id = news_tickers.article_id)")
 _ORPHAN_VECTORS = ("DELETE FROM news_vectors WHERE NOT EXISTS (SELECT 1 FROM news_articles a"
                    " WHERE a.owner = news_vectors.owner AND a.article_id = news_vectors.article_id)")
 
@@ -2154,6 +2208,7 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
                                  (owner, r["article_id"]))
                     out["news"] += 1
             conn.execute(_ORPHAN_VECTORS)
+            conn.execute(_ORPHAN_TICKERS)
         elif seam == "prices":
             if provider is None:
                 out["forecasts"] = conn.execute("DELETE FROM earnings_forecasts WHERE owner=?", (owner,)).rowcount or 0
@@ -2174,7 +2229,7 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
 _ACCOUNT_TABLES_BY_USER = ("user_sign_ins", "user_api_keys", "user_views", "user_baskets",
                            "user_boards", "user_layouts", "agent_access_tokens", "oauth_codes",
                            "oauth_grants", "user_chart_state", "warm_paths")
-_ACCOUNT_TABLES_BY_OWNER = ("news_articles", "news_vectors", "earnings_announcements", "release_habits",
+_ACCOUNT_TABLES_BY_OWNER = ("news_articles", "news_tickers", "news_vectors", "earnings_announcements", "release_habits",
                             "press_release_checks", "earnings_forecasts", "reader_dollar_pools")
 
 
