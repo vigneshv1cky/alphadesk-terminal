@@ -100,3 +100,36 @@ def coin(symbol: str, api_key: str | None = None) -> dict | None:
     with _lock:
         _cache[ck] = (time.time(), out)
     return out
+
+
+def daily_bars(symbol: str, days: int, api_key: str | None) -> list[dict] | None:
+    """Daily closes and volumes for "NEAR-USD" / "NEAR" from CoinGecko's
+    market chart, oldest first as {t, c, v}, or None when it knows no such coin
+    or the call fails (2026-10-03). Demo keys reach 365 days; asked for more,
+    this returns that much. A coin has no daily high and low in this series, so
+    none is invented."""
+    base = symbol.upper().split("-")[0].split("/")[0]
+    try:
+        cid = resolve_id(base, api_key)
+        if not cid:
+            return None
+        data = _get(f"/coins/{cid}/market_chart?vs_currency=usd&days={max(2, min(int(days), 365))}&interval=daily", api_key)
+    except Exception as exc:
+        log.debug("coingecko daily bars failed for %s: %s", base, exc)
+        return None
+    vols = {int(t // 86_400_000): v for t, v in (data.get("total_volumes") or [])}
+    out = []
+    for t, price in data.get("prices") or []:
+        if price is None:
+            continue
+        day = time.strftime("%Y-%m-%d", time.gmtime(t / 1000))
+        out.append({"t": day, "c": price, "v": vols.get(int(t // 86_400_000))})
+    # The last point is the live price, stamped now; a day already present keeps its close.
+    seen, dedup = set(), []
+    for b in out:
+        if b["t"] in seen:
+            dedup[-1] = b
+        else:
+            seen.add(b["t"])
+            dedup.append(b)
+    return dedup or None
