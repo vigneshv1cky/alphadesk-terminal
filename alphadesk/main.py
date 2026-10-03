@@ -335,6 +335,9 @@ def main() -> None:
                 _store.ensure_local_user()
             except RuntimeError as exc:
                 sys.exit(str(exc))
+        _allowed = _auth.allowed_emails()
+        if _allowed and _auth.auth_required():
+            log.info("sign-in is limited to %d allowed address%s", len(_allowed), "" if len(_allowed) == 1 else "es")
         host = env_value("DASHBOARD_HOST", "127.0.0.1")
         if not _auth.auth_required() and not _auth.access_token() and host not in ("127.0.0.1", "localhost", "::1"):
             log.warning("sign-in is off and the server listens on %s: anyone who can reach it can use it "

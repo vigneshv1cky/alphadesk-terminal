@@ -1169,6 +1169,14 @@ def get_user_by_email(email: str) -> dict | None:
     return dict(row) if row else None
 
 
+def account_email(user_id: str) -> str | None:
+    """An account's address, for the allow-list's check on credentials that
+    carry only the account id."""
+    with _connect() as conn:
+        row = conn.execute("SELECT email FROM users WHERE user_id=?", (user_id,)).fetchone()
+    return row["email"] if row else None
+
+
 def user_session_state(user_id: str) -> dict | None:
     """The two facts a presented cookie is re-validated against on every
     request: the row's current session_version and its disabled flag. None
