@@ -32,6 +32,8 @@ def analyst_view(symbol: str) -> dict:
     got: dict = {}
     sources: dict = {}
     needs: dict = {}
+    refused: list[str] = []
+    failed: dict[str, str] = {}
     for section in SECTIONS:
         try:
             got[section] = router.ask(section, sym)
@@ -39,9 +41,14 @@ def analyst_view(symbol: str) -> dict:
         except NeedsKey as exc:
             got[section] = None
             needs[section] = exc.prompt()
+            refused += [v for v in exc.refused if v not in refused]
+            failed.update(exc.failed)
     if all(v is None for v in got.values()):
-        raise NeedsKey("analyst_ratings", refused=needs.get("analyst_ratings", {}).get("refused"),
-                       signed_in=router.uid is not None)
+        # Said with what happened (2026-10-03): the reader's vendors may all be
+        # connected and simply carry nothing for a small company, which must
+        # not read as a missing key.
+        raise NeedsKey("analyst_ratings", refused=refused, signed_in=router.uid is not None,
+                       connected=list(router.vendors), failed=failed)
     ratings = got["analyst_ratings"] or {}
     quote = router.get("quote", sym) or {}
     t = got["price_targets"] or {}

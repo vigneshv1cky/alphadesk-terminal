@@ -304,3 +304,22 @@ def test_social_posts_are_archived_once_and_found_after_the_mirror_drops_them(st
     got = store.archived_social_posts(10)
     assert [p["url"] for p in got] == ["https://x/2", "https://x/1", "https://x/0"]          # newest first
     assert store.archived_social_posts(10, since_iso="2026-09-21T00:00:00+00:00")[-1]["url"] == "https://x/1"
+
+
+def test_analyst_view_with_no_coverage_says_so(monkeypatch):
+    from alphadesk.ingest import analysts
+    from alphadesk.providers.base import NeedsKey
+
+    class Router:
+        uid = "u"
+        vendors = {"finnhub": object(), "fmp": object(), "alpaca": object()}
+        answered_by = None
+
+        def ask(self, section, sym):
+            raise NeedsKey(section, [], connected=list(self.vendors))      # connected vendors, nothing for this symbol
+    import alphadesk.providers as providers
+    monkeypatch.setattr(providers, "get_prices", lambda: Router())
+    import pytest
+    with pytest.raises(NeedsKey) as err:
+        analysts.analyst_view("GRML")
+    assert "returned nothing" in str(err.value) and "no key is missing" in str(err.value)
