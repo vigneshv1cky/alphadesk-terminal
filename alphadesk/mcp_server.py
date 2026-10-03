@@ -1210,6 +1210,58 @@ def movers_in_context(direction: str = "gainers", category: str = "stocks", top:
 
 
 @mcp.tool(annotations=READ_ONLY)
+def news_scan(hours: int = 18, kinds: str = "", min_stories: int = 1, limit: int = 30) -> dict:
+    """THE WHOLE NEWS WINDOW, GROUPED BY NAME, in one call — for "look through
+    the news and tell me what could gain or lose, and why". Each row is a symbol
+    with the number of stories about it in the last `hours` (default 18, max
+    168), their publisher kinds, the first story's time, its newest three
+    headlines (read one with `news_story`), and the symbol's day change from the
+    quote so a story the price has already reacted to is visible. List-style
+    stories that name eight or more tickers are left out: they mention a name and
+    explain nothing.
+
+    `kinds` keeps only the publisher's own kinds, comma-separated — for example
+    "offering,ma,rating,earnings,why,legal" (the kinds are listed under
+    `symbol_news`). `min_stories` hides names with fewer.
+
+    THE ORDER IS ATTENTION, not likelihood: most stories, then newest. Nothing
+    here says a story is good or bad news, which way a price will go or whether
+    it is already reflected; reading the stories and judging that is the job of
+    whoever asks, with `priced_in` and `move_state` for the figures around it.
+    `unavailable` says when the news feed or the quotes could not be read."""
+    from datetime import datetime, timedelta, timezone
+    from alphadesk.app import dashboard
+    from alphadesk.desk import focus
+    from alphadesk.identity import request_user
+    from alphadesk.ingest.news import news_owner
+    from alphadesk.ledger import store
+    from alphadesk.providers.base import NeedsKey
+    uid = request_user()
+    if not uid or not store.get_user_keys(uid, "news"):
+        raise NeedsKey("news", [], signed_in=bool(uid))
+    span = max(1, min(int(hours), 168))
+    since = (datetime.now(timezone.utc) - timedelta(hours=span)).isoformat()
+    rows = store.recent_articles(since, limit=6000, owner=news_owner(uid), body=False)
+    for r in rows:
+        r["kind"] = newskind.of_article(r)
+    wanted = {k.strip().lower() for k in (kinds or "").split(",") if k.strip()} or None
+    grouped = focus.scan_news(rows, wanted, int(min_stories))
+    page = grouped[:max(1, min(int(limit), 50))]
+    unavailable: dict[str, str] = {}
+    if page:
+        try:
+            priced = _http_errors(dashboard.api_quotes, symbols=",".join(r["symbol"] for r in page), fill="range,cap").get("quotes", {})
+            for r in page:
+                q = priced.get(r["symbol"]) or {}
+                r["day_change_pct"] = q.get("change_pct")
+                r["price"] = q.get("price")
+        except Exception as exc:
+            unavailable["quotes"] = str(exc)[:160]
+    return {"window_hours": span, "stories_read": len(rows), "names": len(grouped), "rows": page,
+            "truncated": len(rows) >= 6000, "unavailable": unavailable}
+
+
+@mcp.tool(annotations=READ_ONLY)
 def priced_in(symbol: str, since: str = "") -> dict:
     """THE FIGURES BEHIND "IS IT ALREADY PRICED IN" for one symbol. Whether a
     move is priced in is a judgement about expectations that no data feed

@@ -136,3 +136,19 @@ def test_a_gainer_with_no_news_and_an_unreliable_shape_says_only_what_it_knows()
     row = focus.build_row({"symbol": "BBB", "change_pct": 18.0}, [], [], halted=False,
                           shape={"reliable": False, "given_back_from_high_pct": 90})
     assert row["flags"] == ["no_story_of_its_own"]              # a shape that is not reliable raises no flag
+
+
+def test_the_news_scan_groups_by_name_and_skips_list_stories():
+    from alphadesk.desk import focus
+    arts = [
+        {"article_id": "1", "published_at": "2026-10-02T13:00:00+00:00", "title": "Alpha prices offering", "kind": "offering", "tickers": ["AAA"]},
+        {"article_id": "2", "published_at": "2026-10-02T15:00:00+00:00", "title": "Alpha wins contract", "kind": "release", "tickers": ["AAA", "BBB"]},
+        {"article_id": "3", "published_at": "2026-10-02T14:00:00+00:00", "title": "Beta upgraded", "kind": "rating", "tickers": ["BBB"]},
+        {"article_id": "4", "published_at": "2026-10-02T16:00:00+00:00", "title": "12 Industrials Moving", "kind": "movers", "tickers": list("ABCDEFGHIJKL")},
+    ]
+    got = focus.scan_news(arts)
+    assert [r["symbol"] for r in got] == ["AAA", "BBB"]               # two stories each, the same newest time: insertion order holds
+    assert got[0]["stories"] == 2 and got[0]["by_kind"] == {"release": 1, "offering": 1}
+    assert [r["symbol"] for r in focus.scan_news(arts, kinds={"offering"})] == ["AAA"]
+    assert focus.scan_news(arts, min_stories=3) == []
+    assert all(r["symbol"] not in set("CDEFGHIJKL") for r in got)       # the list story names none of them

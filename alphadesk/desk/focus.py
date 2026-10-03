@@ -77,3 +77,36 @@ def build_row(mover: dict, articles: list[dict], filings: list[dict], halted: bo
         "shape": ({k: shape.get(k) for k in ("session", "change_pct", "given_back_from_high_pct", "last_60min_change_pct",
                                               "minutes_since_high", "volume", "reliable")} if shape else None),
     }
+
+
+def scan_news(articles: list[dict], kinds: set[str] | None = None, min_stories: int = 1) -> list[dict]:
+    """Stories about a name itself, grouped by symbol across the whole window
+    (list-style stories naming many tickers are left out: they mention, they do
+    not explain). Ordered by how many distinct stories a name has, then how
+    recent the newest is — an order of ATTENTION, not of likelihood to rise or
+    fall. `kinds` keeps only stories of those publisher kinds."""
+    by: dict[str, list[dict]] = {}
+    for a in articles:
+        tickers = [str(t).upper() for t in (a.get("tickers") or []) if t]
+        if not tickers or len(tickers) >= LIST_STORY_TICKERS:
+            continue
+        if kinds and (a.get("kind") or "unlabelled") not in kinds:
+            continue
+        for sym in tickers:
+            by.setdefault(sym, []).append(a)
+    out = []
+    for sym, stories in by.items():
+        if len(stories) < max(1, min_stories):
+            continue
+        stories.sort(key=lambda s: s.get("published_at") or "", reverse=True)
+        counts: dict[str, int] = {}
+        for s in stories:
+            k = s.get("kind") or "unlabelled"
+            counts[k] = counts.get(k, 0) + 1
+        out.append({"symbol": sym, "stories": len(stories), "by_kind": counts,
+                    "first_story_at": stories[-1].get("published_at"),
+                    "newest": [{"published_at": s.get("published_at"), "title": s.get("title"), "kind": s.get("kind"),
+                                "source": s.get("source"), "article_id": s.get("article_id"),
+                                "with_other_tickers": len(s.get("tickers") or []) - 1} for s in stories[:3]]})
+    out.sort(key=lambda r: (r["stories"], r["newest"][0]["published_at"] or ""), reverse=True)
+    return out
