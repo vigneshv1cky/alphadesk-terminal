@@ -241,3 +241,5 @@ def test_a_companys_own_words_name_the_crypto_it_holds_and_the_companies_it_ment
     assert "SUI" not in assets                                           # "sui generis" is not the coin
     assert [c["ticker"] for c in got["companies"]] == ["SEZL"]           # its own ticker is left out
     assert related.extract_related([{"source": "x", "text": "ABC treasury is a heading."}], "SVRN")["crypto"] == []
+    lst = related.extract_related([{"source": "story:1", "text": "Here are 20 stocks: Foo Inc. (NASDAQ: FOO) rose."}], "SVRN")
+    assert lst["companies"] == []                                        # a story's tickers are a movers list, not a tie

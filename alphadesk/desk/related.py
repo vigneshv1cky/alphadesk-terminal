@@ -60,7 +60,10 @@ def extract_related(sources: list[dict], own_symbol: str, own_names: list[str] |
             if t in _NOT_COINS or t in own:
                 continue
             add_coin(t, t, src, text, m.start(), m.end())
-        for m in _LISTED.finditer(text):
+        # Other listed companies are read from FILINGS only: a news summary that
+        # names tickers is usually a movers list ("Here Are 20 Stocks Moving"),
+        # which ties the company to nothing.
+        for m in (_LISTED.finditer(text) if not str(src).startswith("story:") else ()):
             t = m.group(1)
             if t.upper() in own:
                 continue
