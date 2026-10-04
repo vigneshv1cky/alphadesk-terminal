@@ -321,7 +321,24 @@ _SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
 _COINS = {"BTC": "Bitcoin", "ETH": "Ethereum", "SOL": "Solana", "XRP": "XRP", "DOGE": "Dogecoin", "ADA": "Cardano",
           "AVAX": "Avalanche", "LINK": "Chainlink", "DOT": "Polkadot", "LTC": "Litecoin", "BCH": "Bitcoin Cash",
           "UNI": "Uniswap", "AAVE": "Aave", "SHIB": "Shiba Inu", "XLM": "Stellar", "XTZ": "Tezos", "FIL": "Filecoin",
-          "PEPE": "Pepe", "ARB": "Arbitrum", "HYPE": "Hyperliquid", "SUI": "Sui", "TRX": "TRON", "TON": "Toncoin"}
+          "PEPE": "Pepe", "ARB": "Arbitrum", "HYPE": "Hyperliquid", "SUI": "Sui", "TRX": "TRON", "TON": "Toncoin",
+          # Every coin Alpaca trades against the dollar (2026-10-04: the crypto
+          # movers listed these but searching their names found nothing), and
+          # the other large ones a reader types.
+          "USDT": "Tether", "USDC": "USD Coin", "USDG": "Global Dollar", "PAXG": "PAX Gold", "ONDO": "Ondo",
+          "SKY": "Sky", "POL": "Polygon", "RENDER": "Render", "CRV": "Curve DAO", "TRUMP": "Official Trump",
+          "LDO": "Lido DAO", "BONK": "Bonk", "GRT": "The Graph", "WIF": "dogwifhat", "BAT": "Basic Attention Token",
+          "SUSHI": "SushiSwap", "YFI": "yearn.finance", "BNB": "BNB", "NEAR": "NEAR Protocol", "ATOM": "Cosmos",
+          "ETC": "Ethereum Classic", "XMR": "Monero", "ALGO": "Algorand", "APT": "Aptos", "INJ": "Injective",
+          "MKR": "Maker", "COMP": "Compound", "SNX": "Synthetix", "ENA": "Ethena", "WLD": "Worldcoin"}
+
+
+def _with_coins(names: dict) -> dict:
+    """`names` with every listed coin pair present. Done on load as well as on
+    fetch, so a symbol list cached before a coin was added still finds it."""
+    for base, name in _COINS.items():
+        names.setdefault(f"{base}-USD", {"name": name, "exchange": "Crypto", "class": "crypto"})
+    return names
 
 
 def _fetch_sec_names() -> dict[str, dict]:
@@ -338,9 +355,7 @@ def _fetch_sec_names() -> dict[str, dict]:
                                  "class": "us_equity"})
         except (KeyError, IndexError, TypeError):
             continue
-    for base, name in _COINS.items():
-        out[f"{base}-USD"] = {"name": name, "exchange": "Crypto", "class": "crypto"}
-    return out
+    return _with_coins(out)
 
 
 def _sec_key(symbol: str) -> str:
@@ -396,6 +411,9 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "GOOGLE": ("GOOGL", "GOOG"),      # files as Alphabet
     "FACEBOOK": ("META",),            # renamed 2021
     "BOFA": ("BAC",),                 # files as Bank of America Corp
+    "RIPPLE": ("XRP-USD",), "MATIC": ("POL-USD",), "POLYGON": ("POL-USD",),   # what the market calls them
+    "DOGE": ("DOGE-USD",), "TETHER": ("USDT-USD",), "YEARN": ("YFI-USD",), "SUSHISWAP": ("SUSHI-USD",),
+    "TRUMP COIN": ("TRUMP-USD",), "BINANCE COIN": ("BNB-USD",),
 }
 
 
@@ -568,6 +586,8 @@ def _load_names() -> None:
     if _names is not None:
         return
     _names = _read_names_file()
+    if _names:
+        _with_coins(_names)
     if _names or _names_fetch_tried:
         return
     _names_fetch_tried = True

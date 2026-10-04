@@ -221,3 +221,24 @@ class TestCoinNames:
         syms = [r["symbol"] if isinstance(r, dict) else r for r in out]
         assert syms[0] == "BTC-USD"
         assert syms.index("MSTR") < syms.index("BIXI")
+
+
+class TestEveryAlpacaCoinIsSearchable:
+    """2026-10-04: the crypto movers listed coins that searching by name could not find."""
+
+    def test_the_movers_coins_are_in_the_coin_list(self):
+        from alphadesk.config import _COINS
+        alpaca = "AAVE ADA ARB AVAX BAT BCH BONK BTC CRV DOGE DOT ETH FIL GRT HYPE LDO LINK LTC ONDO PAXG PEPE POL RENDER SHIB SKY SOL SUSHI TRUMP UNI USDC USDG USDT WIF XRP XTZ YFI".split()
+        assert [c for c in alpaca if c not in _COINS] == []
+
+    def test_a_cache_written_before_a_coin_was_added_still_finds_it(self):
+        from alphadesk.config import _with_coins
+        names = _with_coins({"AAPL": {"name": "Apple Inc.", "exchange": "Nasdaq", "class": "us_equity"}})
+        assert names["BONK-USD"]["class"] == "crypto" and "AAPL" in names
+
+    def test_market_names_lead_to_the_coin(self, monkeypatch):
+        from alphadesk import config as cfg
+        monkeypatch.setattr(cfg, "_names", cfg._with_coins({}), raising=False)
+        monkeypatch.setattr(cfg, "_load_names", lambda: None, raising=False)
+        for word, sym in (("ripple", "XRP-USD"), ("tether", "USDT-USD"), ("matic", "POL-USD")):
+            assert [r["symbol"] for r in cfg.search_symbols(word, limit=3)][:1] == [sym]
