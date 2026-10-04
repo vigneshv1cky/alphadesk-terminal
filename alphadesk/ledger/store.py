@@ -234,6 +234,42 @@ CREATE TABLE IF NOT EXISTS social_posts_archive (
 );
 CREATE INDEX IF NOT EXISTS idx_social_archive_at ON social_posts_archive (at);
 
+-- EVERY TOOL CALL AN AGENT MAKES (2026-10-03): which tool, with what, how long,
+-- and how it ended, plus the caller's task id and one-line intent when it sent
+-- them. The raw material for improving the data layer (alphadesk/agent_log.py).
+-- Kept forever, like the rest.
+CREATE TABLE IF NOT EXISTS agent_calls (
+    id         TEXT PRIMARY KEY,
+    at         TEXT NOT NULL,
+    token_id   TEXT,
+    user_id    TEXT,
+    task_id    TEXT,
+    intent     TEXT,
+    tool       TEXT NOT NULL,
+    args       TEXT,
+    ms         INTEGER,
+    outcome    TEXT NOT NULL,
+    error_kind TEXT,
+    bytes      INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_agent_calls_at ON agent_calls (at);
+CREATE INDEX IF NOT EXISTS idx_agent_calls_tool ON agent_calls (tool, at);
+
+-- WHETHER A RESULT WAS USEFUL, in the agent's own words (2026-10-03): a call
+-- cannot tell us that, so the caller may say so (POST .../feedback), per tool
+-- or for a whole task, with what it was missing.
+CREATE TABLE IF NOT EXISTS agent_feedback (
+    id       TEXT PRIMARY KEY,
+    at       TEXT NOT NULL,
+    token_id TEXT,
+    task_id  TEXT,
+    tool     TEXT,
+    rating   INTEGER NOT NULL,
+    note     TEXT,
+    missing  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_feedback_at ON agent_feedback (at);
+
 -- WHAT A VENDOR LAST ANSWERED (2026-10-03). The price cache lived in memory
 -- only, so every restart began cold and the slow-changing answers (history,
 -- fundamentals, profiles, ratings) were asked of the vendor again every few
@@ -2166,6 +2202,41 @@ def archived_social_posts(limit: int = 5000, since_iso: str | None = None) -> li
         return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
 
+def save_agent_call(row: dict) -> None:
+    """File one agent tool call (alphadesk/agent_log.py)."""
+    with _lock, _connect() as conn:
+        conn.execute(
+            "INSERT INTO agent_calls (id, at, token_id, user_id, task_id, intent, tool, args, ms, outcome, error_kind, bytes)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING",
+            (row["id"], row["at"], row.get("token_id"), row.get("user_id"), row.get("task_id"), row.get("intent"),
+             row["tool"], row.get("args"), row.get("ms"), row["outcome"], row.get("error_kind"), row.get("bytes")))
+
+
+def save_agent_feedback(row: dict) -> None:
+    with _lock, _connect() as conn:
+        conn.execute(
+            "INSERT INTO agent_feedback (id, at, token_id, task_id, tool, rating, note, missing) VALUES (?,?,?,?,?,?,?,?)"
+            " ON CONFLICT (id) DO NOTHING",
+            (row["id"], row["at"], row.get("token_id"), row.get("task_id"), row.get("tool"), int(row["rating"]),
+             row.get("note"), row.get("missing")))
+
+
+def agent_feedback_since(since_iso: str, limit: int = 20_000) -> list[dict]:
+    with _connect() as conn:
+        rows = conn.execute("SELECT id, at, token_id, task_id, tool, rating, note, missing FROM agent_feedback"
+                            " WHERE at >= ? ORDER BY at ASC LIMIT ?", (since_iso, int(limit))).fetchall()
+    return [dict(r) for r in rows]
+
+
+def agent_calls_since(since_iso: str, limit: int = 100_000) -> list[dict]:
+    """Logged calls from `since_iso` on, oldest first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, at, token_id, user_id, task_id, intent, tool, args, ms, outcome, error_kind, bytes"
+            " FROM agent_calls WHERE at >= ? ORDER BY at ASC LIMIT ?", (since_iso, int(limit))).fetchall()
+    return [dict(r) for r in rows]
+
+
 def scraped_freshness() -> list[dict]:
     """How old each scraped kind is, newest first — what the loop and the
     Account page report instead of guessing."""
@@ -2384,7 +2455,7 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
 # tests/test_accounts.py checks the schema against this list.
 _ACCOUNT_TABLES_BY_USER = ("user_sign_ins", "user_api_keys", "user_views", "user_baskets",
                            "user_boards", "user_layouts", "agent_access_tokens", "oauth_codes",
-                           "oauth_grants", "user_chart_state", "warm_paths")
+                           "oauth_grants", "user_chart_state", "warm_paths", "agent_calls")
 _ACCOUNT_TABLES_BY_OWNER = ("news_articles", "news_tickers", "vendor_cache", "news_vectors", "earnings_announcements", "release_habits",
                             "press_release_checks", "earnings_forecasts", "reader_dollar_pools")
 

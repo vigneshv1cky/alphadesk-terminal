@@ -301,6 +301,8 @@ def main() -> None:
     p_back = sub.add_parser("backfill")
     p_back.add_argument("--hours", type=float, default=72)
     sub.add_parser("earnings", help="stamp today's EDGAR results releases and list the last three days")
+    p_use = sub.add_parser("agent-usage", help="what agents asked the data layer, how it went, and what they said of it")
+    p_use.add_argument("--days", type=int, default=30)
     p_acc = sub.add_parser("calendar-accuracy", help="score the local account's calendar vendors against EDGAR release days")
     p_acc.add_argument("--days", type=int, default=30)
     p_mcp = sub.add_parser("mcp", help="serve the terminal's data to agents over MCP")
@@ -412,6 +414,27 @@ def main() -> None:
         done = envkeys.load(store.ensure_local_user())
         names = done["sealed"] + done["current"]
         print(f"sealed into the local account: {', '.join(names) or 'nothing (no vendor keys in the environment)'}")
+    elif args.cmd == "agent-usage":
+        from alphadesk import agent_log
+        from alphadesk.ledger import store
+        store.init()
+        r = agent_log.report(args.days)
+        print(f"last {r['days']} days: {r['calls']} calls in {r['tasks']} tasks")
+        print(f"{'tool':24} {'calls':>6} {'ok%':>5} {'empty%':>7} {'part%':>6} {'err%':>5} {'p50ms':>6} {'p95ms':>6}  feedback")
+        for t in r["tools"]:
+            fb = t["feedback"]
+            print(f"{t['tool']:24} {t['calls']:>6} {t['answered_pct']:>5} {t['empty_pct']:>7} {t['incomplete_pct']:>6} "
+                  f"{t['error_pct']:>5} {t['p50_ms'] or '':>6} {t['p95_ms'] or '':>6}  "
+                  + (f"{fb['useful']}/{fb['n']} useful" if fb else "") + (f"  errors: {t['error_kinds']}" if t["error_kinds"] else ""))
+        print("never called:", ", ".join(r["never_called"]) or "none")
+        print("struggling (30%+ empty, partial or failed):", ", ".join(r["worst"]) or "none")
+        print("slow (p95 over 3s):", ", ".join(r["slowest"]) or "none")
+        for c in r["repeated_chains"]:
+            print(f"repeated chain x{c['times']}: {c['chain']}")
+        for m in r["feedback"]["missing"]:
+            print(f"agent was missing ({m['tool'] or 'general'}): {m['missing']}")
+        sys.exit(0)
+
     elif args.cmd == "calendar-accuracy":
         from alphadesk.ingest import calendar_accuracy
         from alphadesk.ledger import store

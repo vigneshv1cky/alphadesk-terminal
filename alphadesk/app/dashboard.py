@@ -701,6 +701,14 @@ def api_agent_connections(request: Request):
     return {"connections": store.list_oauth_grants(_key_user(request))}
 
 
+@app.get("/api/agent/usage")
+def api_agent_usage(request: Request, days: int = 30):
+    """What agents asked and got back, and what they said of it (alphadesk/agent_log.py)."""
+    _key_user(request)
+    from alphadesk import agent_log
+    return agent_log.report(days)
+
+
 @app.delete("/api/agent/connections/{grant_id}")
 def api_agent_connection_revoke(grant_id: str, request: Request):
     if not store.revoke_oauth_grant(grant_id, _key_user(request)):

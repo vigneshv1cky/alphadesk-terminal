@@ -36,6 +36,7 @@ import json
 
 import anyio
 
+from alphadesk import agent_log
 from alphadesk.identity import reset_request_user, set_request_user
 from alphadesk.app import agent_access, agent_oauth
 
@@ -54,6 +55,15 @@ def client_address(scope) -> str:
     return forwarded[-1] if forwarded else (scope.get("client") or ("",))[0]
 
 
+def _host_ok(headers: dict) -> bool:
+    """The Host header is one this server answers to (the same list the tool
+    server's rebinding guard uses)."""
+    import fnmatch
+    host = (headers.get("host") or "").lower()
+    hosts, _ = agent_access.allowed_hosts()
+    return any(fnmatch.fnmatch(host, h.lower()) for h in hosts)
+
+
 class TokenGate:
     """ASGI wrapper: no valid token, no tool. A valid one runs the whole
     request as its reader — the tool functions resolve their data router from
@@ -61,6 +71,42 @@ class TokenGate:
 
     def __init__(self, app):
         self.app = app
+
+    async def _feedback(self, scope, receive, send, headers, uid, limit_key):
+        """POST .../feedback: an agent says whether a result was useful. It
+        writes one row to our own usage log and nothing else (2026-10-03)."""
+        if not _host_ok(headers):
+            await _json(send, 421, {"detail": "unknown host"})
+            return
+        chunks, size = [], 0
+        while True:
+            message = await receive()
+            chunk = message.get("body", b"")
+            size += len(chunk)
+            if size > 8192:
+                await _json(send, 413, {"detail": "too large"})
+                return
+            chunks.append(chunk)
+            if not message.get("more_body"):
+                break
+        try:
+            body = json.loads(b"".join(chunks) or b"{}")
+            if not isinstance(body, dict):
+                raise ValueError("a JSON object is required")
+        except ValueError:
+            await _json(send, 400, {"detail": "a JSON object is required"})
+            return
+        held = set_request_user(uid)
+        said = agent_log.set_context(limit_key, headers.get("x-agent-task"), headers.get("x-agent-intent"))
+        try:
+            out = await anyio.to_thread.run_sync(agent_log.record_feedback, body)
+        except ValueError as exc:
+            await _json(send, 400, {"detail": str(exc)})
+            return
+        finally:
+            agent_log.reset_context(said)
+            reset_request_user(held)
+        await _json(send, 200, out)
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") != "http":
@@ -112,11 +158,26 @@ class TokenGate:
                     (b"x-ratelimit-window", str(int(agent_access.limiter.window_s)).encode())]}
             await send(message)
 
+        if scope.get("method") == "POST" and scope.get("path", "").rstrip("/").endswith("/feedback"):
+            await self._feedback(scope, receive, send_with_limits, headers, uid, limit_key)
+            return
         held = set_request_user(uid)
+        # WHY THE CALLS ARE BEING MADE, as far as the caller says (2026-10-03):
+        # an optional task id and a one-line intent, kept beside each call.
+        said = agent_log.set_context(limit_key, headers.get("x-agent-task"), headers.get("x-agent-intent"),
+                                     headers.get("user-agent"))
         try:
             await self.app(scope, receive, send_with_limits)
         finally:
+            agent_log.reset_context(said)
             reset_request_user(held)
+
+
+async def _json(send, status: int, payload: dict) -> None:
+    body = json.dumps(payload).encode("utf-8")
+    await send({"type": "http.response.start", "status": status, "headers": [
+        (b"content-type", b"application/json"), (b"content-length", str(len(body)).encode("ascii"))]})
+    await send({"type": "http.response.body", "body": body})
 
 
 async def _forbidden_account(send) -> None:

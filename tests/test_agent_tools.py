@@ -284,3 +284,89 @@ def test_a_gated_response_says_how_much_of_the_limit_is_left(reader_client):
     assert r.headers["x-ratelimit-limit"] == "120" and r.headers["x-ratelimit-window"] == "60"
     assert r.headers["x-ratelimit-remaining"] == "119"        # this call is counted
     assert _mcp(reader_client, token=token).headers["x-ratelimit-remaining"] == "118"
+
+
+# ── what agents ask and how it went (2026-10-03) ────────────────────────────
+
+
+def test_a_tool_call_is_filed_with_its_task_and_how_it_ended(tools_client, monkeypatch, store):
+    from alphadesk.ledger import store as ledger
+
+    class FakeRouter:
+        def ask(self, name, *a, **k):
+            return [{"symbol": "SPY"}]
+    monkeypatch.setattr("alphadesk.providers.get_prices", lambda: FakeRouter())
+    token = _token_for(store, "reader-9")
+    headers = {"content-type": "application/json", "accept": "application/json, text/event-stream",
+               "host": "127.0.0.1:8000", "authorization": f"Bearer {token}",
+               "x-agent-task": "task-77", "x-agent-intent": "why did GRML move on Sep 21"}
+    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "index_board", "arguments": {}}}
+    resp = tools_client.post("/api/agent/tools/mcp", headers=headers, content=json.dumps(body))
+    assert resp.status_code == 200, resp.text[:300]
+    rows = [r for r in ledger.agent_calls_since("2000-01-01") if r["tool"] == "index_board"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["task_id"] == "task-77" and row["intent"] == "why did GRML move on Sep 21"
+    assert row["outcome"] == "answered" and row["user_id"] == "reader-9" and row["ms"] is not None
+    assert row["token_id"] and token not in json.dumps(row)                 # a token never reaches the log
+
+
+def test_a_caller_can_say_a_result_was_useful_or_what_it_was_missing(tools_client, store):
+    from alphadesk.ledger import store as ledger
+    token = _token_for(store, "reader-10")
+    url = "/api/agent/tools/feedback"
+    base = {"host": "127.0.0.1:8000", "content-type": "application/json"}
+    assert tools_client.post(url, headers=base, content="{}").status_code == 401              # no token, no feedback
+    auth = {**base, "authorization": f"Bearer {token}", "x-agent-task": "t1"}
+    ok = tools_client.post(url, headers=auth, content=json.dumps(
+        {"tool": "what_moved", "useful": "no", "note": "no story for the big day", "missing": "social post for that morning"}))
+    assert ok.status_code == 200 and ok.json() == {"ok": True}
+    assert tools_client.post(url, headers=auth, content=json.dumps({"useful": "maybe"})).status_code == 400
+    assert tools_client.post(url, headers=auth, content="not json").status_code == 400
+    assert tools_client.post(url, headers={**auth, "host": "evil.example"}, content=json.dumps({"useful": "yes"})).status_code != 200
+    got = ledger.agent_feedback_since("2000-01-01")
+    assert len(got) == 1 and got[0]["tool"] == "what_moved" and got[0]["rating"] == -1
+    assert got[0]["task_id"] == "t1" and got[0]["missing"] == "social post for that morning"
+
+
+def test_outcomes_are_told_apart():
+    from alphadesk import agent_log as al
+    from alphadesk.providers.base import NeedsKey
+    assert al.classify({"rows": [1]}, None) == ("answered", None)
+    assert al.classify({"rows": []}, None) == ("empty", None)
+    assert al.classify([], None) == ("empty", None)
+    assert al.classify({"count": 0, "candidates": []}, None) == ("empty", None)
+    assert al.classify({"rows": [1], "unavailable": {"news": "no feed"}}, None) == ("incomplete", None)
+    assert al.classify({"reliable": False}, None) == ("incomplete", None)
+    assert al.classify(None, NeedsKey("analyst_ratings", [], connected=["finnhub"])) == ("error", "no_coverage")
+    assert al.classify(None, NeedsKey("analyst_ratings", ["finnhub"], connected=["finnhub"])) == ("error", "plan_limit")
+    assert al.classify(None, NeedsKey("analyst_ratings")) == ("error", "no_key")
+    assert al.classify(None, ValueError("no daily bars for XYZ")) == ("error", "no_data")
+    assert al.classify(None, ValueError("range must be one of 1M")) == ("error", "rejected")
+
+
+def test_the_report_groups_calls_into_tasks_and_finds_what_to_fix():
+    from alphadesk import agent_log as al
+
+    def call(sec, tool, outcome="answered", ms=100, task=None, token="t", kind=None):
+        return {"id": f"{sec}{tool}", "at": f"2026-10-03T12:{sec // 60:02d}:{sec % 60:02d}+00:00", "token_id": token, "user_id": "u",
+                "task_id": task, "intent": None, "tool": tool, "args": "{}", "ms": ms, "outcome": outcome,
+                "error_kind": kind, "bytes": 500}
+    rows = [call(0, "news_search"), call(5, "news_story"), call(9, "list_filings"),          # one task: gaps under a minute
+            call(300, "news_search"), call(304, "news_story"), call(309, "list_filings"),      # another, the same chain
+            call(400, "analyst_view", "error", kind="no_coverage"), call(401, "analyst_view", "error", kind="no_coverage"),
+            call(402, "analyst_view", "error", kind="no_coverage"), call(500, "price_chart", ms=9000)]
+    rep = al.summarize(rows, known_tools=["news_search", "news_story", "list_filings", "analyst_view", "price_chart", "peers"],
+                       feedback=[{"at": "2026-10-03T12:09:00+00:00", "tool": "news_search", "rating": -1, "note": "thin",
+                                  "missing": "second news feed"}])
+    assert rep["calls"] == 10 and rep["tasks"] == 4
+    assert rep["never_called"] == ["peers"]
+    assert rep["worst"] == ["analyst_view"]
+    assert rep["slowest"] == ["price_chart"]
+    assert rep["repeated_chains"] == [{"chain": "news_search → news_story → list_filings", "times": 2}]
+    tool = {t["tool"]: t for t in rep["tools"]}
+    assert tool["analyst_view"]["error_kinds"] == {"no_coverage": 3}
+    assert tool["news_search"]["feedback"] == {"n": 1, "useful": 0, "partly": 0, "not_useful": 1}
+    assert rep["feedback"]["not_useful_tools"] == ["news_search"] and rep["feedback"]["missing"][0]["missing"] == "second news feed"
+    given = al.assign_tasks([call(0, "a", task="x"), call(500, "b", task="x")])
+    assert given[0]["task"] == given[1]["task"]                                                 # a task id beats the time gap
