@@ -97,8 +97,9 @@ What to know about the Postgres path:
 - **Version.** It is built and run against Postgres 16. The driver is a pure-Python
   one that comes with the install, so there is nothing to compile.
 - **The database.** `init --like-cloud` creates the database if the server is running and
-  the user may create databases; otherwise create it first (`createdb alphadesk`) and run
-  `init` again. Tables are created at the first start, and starting again is safe.
+  the user may create databases. If it cannot, it still writes the settings and prints
+  what to do, usually `createdb alphadesk` (or start Postgres first). Tables are created
+  at the first start, and starting again is safe.
 - **The word-search index.** The first start also tries to create the `pg_trgm`
   extension and the indexes that make word search fast. If the database user may not
   create extensions (some managed services), the log says so once and search still
