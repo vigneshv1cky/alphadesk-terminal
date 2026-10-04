@@ -1,6 +1,6 @@
 """Market movers by CATEGORY, from the user's own vendors (2026-09-13 — the
-Yahoo screeners, the keyless CoinGecko page and the fixed Yahoo universes
-are gone).
+Yahoo screeners and the fixed Yahoo universes are gone; crypto was
+removed on 2026-10-03, the product being equities only).
 
 Every category answers the same shape so one tile draws all of them:
 
@@ -16,7 +16,6 @@ Where the rows come from:
               quote vendor (Alpaca), or Polygon's snapshot.
   indices     market ETFs standing in for the indices — an index level is
               licensed data no free key carries — labelled as the funds.
-  crypto      CoinGecko by market cap on the user's key, or Alpaca's coins.
   currencies  Polygon's forex snapshot (paid).
   options     Polygon's option snapshots, busiest contracts (paid).
   bonds       the US Treasury's daily par yield curve — public government
@@ -54,16 +53,12 @@ _lock = threading.Lock()
 _inflight: dict[str, threading.Event] = {}
 
 CATEGORIES: dict[str, str] = {
-    "stocks": "Stocks", "etfs": "ETFs", "indices": "Market ETFs", "crypto": "Crypto",
+    "stocks": "Stocks", "etfs": "ETFs", "indices": "Market ETFs",
     "currencies": "Currencies", "options": "Options", "bonds": "Treasury yields",
 }
-CHANGE_LABEL = {"crypto": "24h", "bonds": "1D bp"}
+CHANGE_LABEL = {"bonds": "1D bp"}
 
-TTL_S = {"stocks": 30, "crypto": 30, "indices": 30, "etfs": 60, "currencies": 120, "options": 120, "bonds": 900}
-# CoinGecko's free Demo key allows 10,000 calls a month; rebuilding every 30s
-# while a tab is open eight hours a day spends ~21,000. Its payload is kept
-# two minutes instead (~5,000).
-SOURCE_TTL_S = {"coingecko": 120}
+TTL_S = {"stocks": 30, "indices": 30, "etfs": 60, "currencies": 120, "options": 120, "bonds": 900}
 # How long a request past the lifetime waits for the rebuild before it takes
 # the old payload (2026-09-15). Handing the old copy back at once and
 # rebuilding behind it meant the tile, which asks every 30 seconds, showed a
@@ -92,7 +87,7 @@ STOCK_MIN_TURNOVER = 1_000_000
 
 DEFAULT_FLOORS: dict[str, tuple[float, float]] = {
     "stocks": (STOCK_MIN_PRICE, STOCK_MIN_TURNOVER), "etfs": (STOCK_MIN_PRICE, STOCK_MIN_TURNOVER),
-    "crypto": (0.0, STOCK_MIN_TURNOVER), "options": (0.0, 0.0), "indices": (0.0, 0.0),
+    "options": (0.0, 0.0), "indices": (0.0, 0.0),
     "bonds": (0.0, 0.0), "currencies": (0.0, 0.0),
 }
 
@@ -140,8 +135,7 @@ def stats_from_bars(closes: list[float], volumes: list[float], periods: int = 25
     """{volatility, liquidity} from daily closes and volumes, oldest first.
     Volatility is the annualised standard deviation of daily log returns
     over the last STATS_DAYS sessions, in percent, None under six returns —
-    annualised over `periods` a year: 252 sessions for stocks, 365 days for
-    coins, which trade every day;
+    annualised over `periods` a year (252 sessions for stocks);
     liquidity the mean of close × volume over the same window, None when
     there is no volume at all."""
     cs = [c for c in closes if c is not None and c > 0][-(STATS_DAYS + 1):]
@@ -186,7 +180,7 @@ def apply_floors(tabs: list[dict], min_price: float, min_turnover: float,
     """Drop, in place, every row under the floors. A row with no figure
     passes a floor of zero and fails any other — except a row whose volume
     the vendor sent and was discarded as a data error (`volume_suspect`): the
-    turnover floor does not apply to it, so a coin is not dropped for the
+    turnover floor does not apply to it, so a row is not dropped for the
     vendor's mistake."""
     if min_price <= 0 and min_turnover <= 0 and min_liquidity <= 0 and min_volatility <= 0:
         return
@@ -266,15 +260,12 @@ def _treasury() -> dict:
 
 
 def _normalize_tabs(got: dict, category: str) -> list[dict]:
-    coin = category == "crypto"
     tabs: list[dict] = []
     for t in got.get("tabs") or []:
         rows = []
         for r in t.get("rows") or []:
             row = _row(r["symbol"], r.get("price"), r.get("change_pct"), r.get("volume"), name=r.get("name"),
-                       display=r.get("display") or (r["symbol"].split("-")[0] if coin else r["symbol"]),
-                       # CoinGecko states volume in dollars; Alpaca's crypto
-                       # volume is in coins, so its turnover is price × volume.
+                       display=r.get("display") or r["symbol"],
                        turnover_is_volume=bool(r.get("volume_is_dollars")))
             # An option row keeps its underlying and expiry: a click opens the
             # chain there, and without them the row opened nothing.
@@ -293,10 +284,7 @@ def _normalize_tabs(got: dict, category: str) -> list[dict]:
     return tabs
 
 
-def _enrich_stats(router, tabs: list[dict], category: str, venue: bool = False) -> None:
-    if category == "crypto":
-        _enrich_coins(router, tabs, venue)
-        return
+def _enrich_stats(router, tabs: list[dict], category: str) -> None:
     if category == "currencies":
         _enrich_currencies(router, tabs)
         return
@@ -358,23 +346,6 @@ def _enrich_session_stats(router, tabs: list[dict], day: str) -> None:
             st = stats_from_bars([b["close"] for b in kept], [b["volume"] for b in kept])
             r["volatility"], r["liquidity"] = st["volatility"], st["liquidity"]
 
-def only_tradable_coins(router, tabs: list[dict], got: dict) -> None:
-    """With an Alpaca key connected, a crypto list from another vendor keeps
-    only the coins that account can trade against the dollar (2026-09-19,
-    the owner: "only show crypto I can trade in alpaca" — 29 of CoinGecko's
-    top 47 were not on Alpaca and had no volatility either). Without Alpaca
-    the list stands: nothing says what the reader can trade."""
-    try:
-        coins = router.get("crypto_symbols")
-    except Exception:
-        coins = None
-    if not coins:
-        return
-    for t in tabs:
-        t["rows"] = [r for r in t["rows"] if str(r.get("display") or r["symbol"].split("-")[0]).upper() in coins]
-    got["note"] = "coins you can trade on Alpaca"
-
-
 def _enrich_currencies(router, tabs: list[dict]) -> None:
     """A pair's volatility from its last twenty daily closes (2026-09-19),
     annualised by the bars a year its own dates show. No liquidity: currency
@@ -388,28 +359,6 @@ def _enrich_currencies(router, tabs: list[dict]) -> None:
             if b and r.get("volatility") is None:
                 r["volatility"] = stats_from_bars([x["close"] for x in b], [None] * len(b),
                                                   periods=periods_a_year([x["date"] for x in b]))["volatility"]
-
-
-def _enrich_coins(router, tabs: list[dict], venue: bool) -> None:
-    """Coins' volatility and liquidity (2026-09-19, the owner's request).
-    Volatility from the last twenty DAILY closes, annualised over 365 days.
-    Liquidity: a vendor whose volume is worldwide dollars (CoinGecko) keeps
-    its 24-hour turnover; a venue's (Alpaca, `venue`) is the twenty-day mean
-    of close × volume ON THAT VENUE — Bitcoin about $1.2M a day there against
-    tens of billions worldwide, so the payload marks it and the column says
-    so (the owner's pick of three, 2026-09-19: fill it, labelled)."""
-    syms = sorted({r["symbol"] for t in tabs for r in t["rows"]})
-    bars = (router.get("crypto_daily_history", syms, STATS_DAYS + 1) or {}) if syms else {}
-    for t in tabs:
-        for r in t["rows"]:
-            b = bars.get(r["symbol"])
-            st = stats_from_bars([x["close"] for x in b], [x["volume"] for x in b], periods=365) if b else {}
-            if r.get("volatility") is None:
-                r["volatility"] = st.get("volatility")
-            if venue:
-                r["liquidity"] = st.get("liquidity")
-            elif r.get("liquidity") is None:
-                r["liquidity"] = r["turnover"] or None
 
 
 # ── funds and stocks ──────────────────────────────────────────────────────
@@ -478,21 +427,11 @@ def _build(router, key: str, cat: str, top: int, mp: float, ml_floor: tuple[Opti
         tabs = _normalize_tabs(got, cat)
         if got.get("funds") in ("only", "exclude"):
             split_funds(tabs, got["funds"], fund_list(router))
-        if cat == "crypto" and source != "alpaca":
-            only_tradable_coins(router, tabs, got)
-    # A vendor whose volume is one venue's (Alpaca's crypto: Bitcoin about
-    # $1.2M a day there, 2026-09-15) cannot meet a market-wide turnover
-    # floor — the default $1M left Crypto movers one row. Its default is
-    # none. Its liquidity is the venue's own twenty-day figure, marked as
-    # such (`liquidity_scope`, 2026-09-19) — not its one-day turnover.
-    venue = bool(isinstance(got, dict) and got.get("venue_volume"))
-    if venue:
-        d_turn = 0.0
     mt = d_turn if mt_asked is None else mt_asked
     apply_floors(tabs, mp, mt)
     for t in tabs:
         t["rows"] = t["rows"][:max(top, 50) if (ml > 0 or mv > 0) else top]
-    _enrich_stats(router, tabs, cat, venue)
+    _enrich_stats(router, tabs, cat)
     apply_floors(tabs, 0.0, 0.0, ml, mv)
     for t in tabs:
         t["rows"] = t["rows"][:top]
@@ -514,8 +453,6 @@ def _build(router, key: str, cat: str, top: int, mp: float, ml_floor: tuple[Opti
               "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
                          "default_min_price": d_price, "default_min_turnover": d_turn},
               "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": tabs}
-    if venue:
-        result["liquidity_scope"] = "venue"
     if result["note"] is None:
         result["note"] = floors_note(mp, mt, ml, mv)
     with _lock:
@@ -563,8 +500,7 @@ def category_movers(category: str, top: int = 20, min_price: Optional[float] = N
     top = max(1, min(int(top), 50))
     d_price, d_turn = DEFAULT_FLOORS.get(cat, (0.0, 0.0))
     mp = max(0.0, float(min_price)) if min_price is not None else d_price
-    # None = the category's default, settled in _build: a vendor whose volume
-    # is one venue's gets none (see _build).
+    # None = the category's default, settled in _build.
     mt: Optional[float] = max(0.0, float(min_turnover)) if min_turnover is not None else None
     ml = max(0.0, float(min_liquidity or 0.0))
     mv = max(0.0, float(min_volatility or 0.0))
@@ -573,7 +509,7 @@ def category_movers(category: str, top: int = 20, min_price: Optional[float] = N
     with _lock:
         hit = _cache.get(key)
     if hit:
-        ttl = max(TTL_S.get(cat, 60), SOURCE_TTL_S.get(hit[1].get("source") or "", 0))
+        ttl = TTL_S.get(cat, 60)
         if hit[1].get("filling"):
             ttl = FILLING_TTL_S
         if time.time() - hit[0] >= ttl:

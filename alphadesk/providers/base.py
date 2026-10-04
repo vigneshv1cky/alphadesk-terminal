@@ -265,7 +265,7 @@ class PriceProvider(Protocol):
 
     def category_movers(self, category: str, top: int = 20) -> dict | None:
         """A movers category on this provider's own feed — "stocks",
-        "crypto", "etfs", "mutual_funds", "options", "indices", "futures",
+        "etfs", "mutual_funds", "options", "indices", "futures",
         "bonds" or "currencies": {tabs: [{id, label, rows: [{symbol, display,
         name, price, change_pct, volume}]}]}. None for a category the feed
         does not carry — the free path (ingest/movers.py) then answers it
@@ -304,7 +304,7 @@ class PriceProvider(Protocol):
         ...
 
     def market_tape(self) -> list[dict]:
-        """The index/commodity/crypto strip: [{symbol, label, price, change_pct}].
+        """The index/commodity strip: [{symbol, label, price, change_pct}].
         Omit a symbol you cannot price rather than reporting it as zero — a tape
         showing 0.00 reads as a crashed market, not a missing quote."""
         ...
@@ -323,11 +323,4 @@ class PriceProvider(Protocol):
         """{symbol, expiry, calls, puts}, each row {strike, bid, ask, last, mid,
         open_interest}. Order by STRIKE ascending on both sides: a chain is a
         price ladder and any other order destroys its only structure."""
-        ...
-
-    def crypto_movers(self, top: int = 20) -> dict:
-        """{all, most_active, gainers, losers} for crypto, each
-        [{symbol, name, price, change_pct, volume, spark}]. Measure change over
-        a rolling 24 hours: a 24/7 market has no close, so a previous-close
-        figure would disagree with every venue the reader can check."""
         ...

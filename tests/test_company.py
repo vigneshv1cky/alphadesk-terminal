@@ -47,7 +47,7 @@ def test_profile_shape_and_cache(monkeypatch):
     assert p["edgar"]["legal_name"] == "ACME CORP"
     assert p["officers"][0]["title"] == "CEO"
     assert p["tenk"]["business"].startswith("Item 1")
-    assert p["coin"] is None
+    assert "coin" not in p
 
 
 def test_unknown_symbol_is_none(monkeypatch):
@@ -104,9 +104,9 @@ def test_every_profile_cites_outside_sources():
     labels = [x["label"] for x in reg]
     assert labels[0] == "SEC EDGAR filings" and "CIK=0001045810" in reg[0]["url"]
     assert "Official site (www.nvidia.com)" in labels and "Investor relations" in labels
-    coin = company._sources("BTC-USD", "Bitcoin USD", None, {"website": "https://bitcoin.org", "quote_type": "CRYPTOCURRENCY"})
-    assert [x["label"] for x in coin] == ["Official site (bitcoin.org)", "CoinGecko (search)", "CoinMarketCap (search)"]
-    assert "query=BTC" in coin[1]["url"]
+    # No coin trackers: the product is equities only (2026-10-03).
+    other = company._sources("BTC-USD", "Bitcoin USD", None, {"website": "https://bitcoin.org", "quote_type": "CRYPTOCURRENCY"})
+    assert [x["label"] for x in other] == ["Official site (bitcoin.org)"]
 
 
 # ── a foreign private issuer files a 20-F, not a 10-K ────────────────────

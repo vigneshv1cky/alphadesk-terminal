@@ -66,9 +66,9 @@ mcp = FastMCP(
         "and flags, never a verdict, and none places an order. Read "
         "data_freshness in a reply first: a free plan's volume is one "
         "exchange's alone.\n"
-        "* Another asset class: movers takes a category — stocks, etfs, "
-        "indices, crypto, currencies, options, bonds. Do not reach for a "
-        "per-class tool; there is one.\n"
+        "* Another market: movers takes a category — stocks, etfs, indices, "
+        "currencies, options, bonds. AlphaDesk is for equities: it carries no "
+        "cryptocurrency data. Do not reach for a per-class tool; there is one.\n"
         "* A PAST session's movers: movers(session=...), stocks and ETFs "
         "only, and take the date from market_sessions — a weekend or a "
         "holiday is not a session and guessing one wastes a vendor call.\n\n"
@@ -156,17 +156,8 @@ def quote(symbol: str) -> dict:
 def movers(category: str = "stocks", top: int = 20, session: str = "") -> dict:
     """Most active, gainers and losers, for one asset class.
 
-    `category` is one of: stocks, etfs, indices, crypto, currencies, options,
-    bonds.
-
-    CRYPTO IS A CATEGORY HERE, not a separate tool (2026-09-30). A
-    `crypto_movers` tool answered the same question from the same provider
-    method with none of the work below — no tradable filter, no volatility,
-    no liquidity — so it was two tools for one question and the smaller one
-    gave the poorer answer. Over a rolling 24 hours: with an Alpaca key the
-    list is only the coins THAT ACCOUNT CAN TRADE, the tradable universe
-    rather than the market's, and the liquidity may be that one venue's
-    rather than worldwide — `liquidity_scope` says which.
+    `category` is one of: stocks, etfs, indices, currencies, options, bonds.
+    There is no crypto category: AlphaDesk covers equities only.
 
     Filtered for tradeability: warrants, rights and units are excluded, and
     rows must clear a price and dollar-volume floor. Gainers and losers skew
@@ -365,8 +356,9 @@ def find_symbol(name: str, limit: int = 8) -> dict:
     then all your words present; an exchange listing outranks an
     over-the-counter one and a derivative is demoted.
 
-    Keyless: this is the SEC's own ticker list plus the coin pairs that can be
-    charted, so it answers whatever the reader has connected. An empty result
+    Keyless: this is the SEC's own ticker list, so it answers whatever the reader
+    has connected. Cryptocurrencies are not in it: a search for "bitcoin" finds the
+    listed companies and funds with Bitcoin in their name. An empty result
     means no US listing matched — it does not mean the company does not exist,
     only that it is not in the SEC's list (a foreign line, or a private one).
     """
@@ -682,38 +674,20 @@ def price_history(symbol: str, range: str = "1Y") -> dict:
     return summarize_history(sym, key, bars, vendor)
 
 
-_RANGE_DAYS = {"1M": 31, "3M": 93, "6M": 186, "YTD": 366, "1Y": 365, "5Y": 365, "MAX": 365}
-
-
 def _daily_bars(sym: str, key: str) -> tuple[list[dict], str | None]:
-    """(daily bars oldest first, the vendor that gave them). The reader's chart
-    vendor first; for a coin pair that vendor does not list ("NEAR-USD" on
-    Alpaca), CoinGecko's daily series on the reader's own key. Raises
-    ValueError when neither has any (2026-10-03)."""
+    """(daily bars oldest first, the vendor that gave them). Raises ValueError,
+    in the app's own plain words, when there are none."""
+    from fastapi import HTTPException
+
     from alphadesk.app import dashboard
-    from alphadesk.providers.alpaca import coin_pair
-    err: Exception | None = None
     try:
         series = dashboard.api_chart(sym, range=key, interval="1d")
-        bars = [b for b in (series.get("bars") or []) if b.get("c") is not None]
-        if bars:
-            return bars, series.get("vendor") or series.get("source")
-    except Exception as exc:                      # a pair the vendor does not list
-        err = exc
-    if coin_pair(sym):
-        from alphadesk.ingest import coingecko
-        from alphadesk.ingest.company import _crypto_key
-        api_key = _crypto_key()
-        if api_key:
-            got = coingecko.daily_bars(sym, _RANGE_DAYS.get(key, 365), api_key)
-            if got:
-                return got, "coingecko"
-    if err is not None and not coin_pair(sym):
-        from fastapi import HTTPException
-        if isinstance(err, HTTPException):
-            raise ValueError(str(err.detail)) from err           # the app's own plain message
-        raise err
-    raise ValueError(f"no daily bars for {sym}")
+    except HTTPException as exc:
+        raise ValueError(str(exc.detail)) from exc
+    bars = [b for b in (series.get("bars") or []) if b.get("c") is not None]
+    if not bars:
+        raise ValueError(f"no daily bars for {sym}")
+    return bars, series.get("vendor") or series.get("source")
 
 
 def summarize_history(sym: str, range_key: str, bars: list[dict], vendor) -> dict:
@@ -1441,10 +1415,8 @@ def related_assets(symbol: str) -> dict:
     * `from_own_words.crypto` — crypto assets the text names, with a mention
       count, `strength` ("repeated", or "single_passing_mention" — often a
       director's biography, not a tie to the company), the first source (an accession for `filing_text`, or a story) and
-      the sentence. Each carries `price_symbol` and `priceable`: true means
-      `price_history` works for it; false means the reader's price vendors do
-      not carry it (a CoinGecko key on the Account page adds many coins, with
-      daily closes and volume only: no daily high or low).
+      the sentence. They are NAMED, not priced: AlphaDesk covers equities and
+      carries no cryptocurrency prices.
     * `from_own_words.companies` — other listed companies the text names, with
       tickers (a counterparty, an acquirer, a partner).
     * `vendor_peers`, `funds` and `baskets` — the vendor's peers (check them
@@ -1485,15 +1457,6 @@ def related_assets(symbol: str) -> dict:
         unavailable["news"] = "no news feed is connected"
     names = [n for n in ((attempt("name", lambda: (company_profile(sym) or {}).get("name"))),) if n]
     found = related.extract_related(sources, sym, names)
-    for c in found["crypto"]:
-        pair = f"{c['asset']}-USD"
-        c["price_symbol"] = pair
-        try:
-            _bars, c["priced_by"] = _daily_bars(pair, "1M")
-            c["priceable"] = True
-        except Exception:
-            c["priceable"] = False
-            c["priced_by"] = None
     return {"symbol": sym, "from_own_words": {**found, "read": read},
             "vendor_peers": attempt("peers", lambda: peers(sym)),
             "funds": attempt("funds", lambda: related_funds(sym)),

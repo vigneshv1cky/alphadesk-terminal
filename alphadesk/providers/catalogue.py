@@ -38,7 +38,7 @@ class Vendor:
 VENDORS: dict[str, Vendor] = {
     v.name: v for v in (
         Vendor("alpaca", "Alpaca", "https://app.alpaca.markets/signup", needs_secret=True,
-               note="Free key: live US stock prices from one exchange (IEX), charts 15 minutes behind, movers, options, crypto. "
+               note="Free key: live US stock prices from one exchange (IEX), charts 15 minutes behind, movers, options. "
                     "Algo Trader Plus: real-time prices, charts and options from every exchange."),
         Vendor("finnhub", "Finnhub", "https://finnhub.io/register",
                note="Free key: quotes, company profile, key metrics, earnings calendar and record, peers, analyst ratings."),
@@ -49,8 +49,6 @@ VENDORS: dict[str, Vendor] = {
         Vendor("fmp", "Financial Modeling Prep", "https://site.financialmodelingprep.com/register",
                note="Paid plans: analyst targets and rating changes, estimates, fund holdings, institutional ownership, "
                     "earnings and economic calendars."),
-        Vendor("coingecko", "CoinGecko", "https://www.coingecko.com/en/developers/dashboard",
-               note="Free demo key: crypto markets by market cap, coin profiles."),
         # SCRAPED, and listed on no surface above, so the router reaches it
         # only after every keyed vendor the reader connected (2026-09-22).
         Vendor("nasdaq", "Nasdaq calendars", "", official=False,
@@ -110,7 +108,6 @@ SURFACES: dict[str, Surface] = {
         Surface("market_day", "A past session's whole market", (("polygon", FREE),)),
         Surface("etf_movers", "ETF movers", (("alpaca", FREE), ("polygon", PAID))),
         Surface("index_board", "Market tape", (("alpaca", FREE), ("polygon", PAID))),
-        Surface("crypto", "Crypto", (("coingecko", FREE), ("alpaca", FREE))),
         # FMP first: its quotes answer on Premium (2026-09-15, 12 pairs in
         # 0.09s); Polygon's forex snapshot has not been run on a paid key.
         Surface("currencies", "Currencies", (("fmp", PAID), ("polygon", PAID))),
@@ -163,10 +160,7 @@ SURFACES: dict[str, Surface] = {
         Surface("sp500", "S&P 500 members", (("fmp", PAID),)),
         Surface("day_changes", "Today's change for many stocks at once", (("alpaca", FREE),)),
         Surface("ipo_calendar", "IPO calendar", (("fmp", PAID),)),
-        Surface("company_profile", "Company profile", (("fmp", PAID), ("alphavantage", FREE), ("finnhub", FREE), ("coingecko", FREE))),
-        # A COIN's record comes from a coin vendor alone: naming the company
-        # feeds would send a reader to a key that cannot answer (2026-09-15).
-        Surface("coin_profile", "Coin profile", (("coingecko", FREE),)),
+        Surface("company_profile", "Company profile", (("fmp", PAID), ("alphavantage", FREE), ("finnhub", FREE))),
         # Alpaca first: the reader's chain snapshots over the most traded
         # option markets (OPRA on a paid plan, the indicative feed otherwise).
         Surface("option_movers", "Option movers", (("alpaca", FREE), ("polygon", PAID))),
@@ -207,7 +201,7 @@ METHOD_SURFACE: dict[str, str] = {
     "quote": "quote", "quotes": "quote", "context": "quote", "asset_info": "quote",
     "movers": "stock_movers", "market_day": "market_day",
     "market_tape": "index_board", "index_board": "index_board",
-    "crypto_movers": "crypto", "crypto_bars": "crypto", "crypto_daily_history": "crypto", "crypto_symbols": "crypto", "fx_daily_history": "currencies",
+    "fx_daily_history": "currencies",
     "option_expirations": "options", "option_chain": "options", "option_active_contracts": "options",
     "option_trades": "options", "option_latest_quotes": "options", "option_movers": "option_movers",
     "fundamentals": "key_stats", "key_stats": "key_stats", "compare_metrics": "compare",
@@ -227,7 +221,7 @@ METHOD_SURFACE: dict[str, str] = {
 
 # Category movers route to their own surface.
 MOVER_SURFACE: dict[str, str] = {
-    "stocks": "stock_movers", "etfs": "etf_movers", "indices": "index_board", "crypto": "crypto",
+    "stocks": "stock_movers", "etfs": "etf_movers", "indices": "index_board",
     "currencies": "currencies", "options": "option_movers", "bonds": "",   # bonds: US Treasury, keyless
 }
 

@@ -5,7 +5,7 @@ what should I look at" — and the agent needs the day's facts in ONE call,
 small enough for a connector (Claude.ai, ChatGPT) to take whole. This
 composes what the terminal already has, on the reader's own keys:
 
-  * the market tape (indexes, rates, commodities, crypto)
+  * the market tape (indexes, rates, commodities)
   * top movers: gainers, losers and most active
   * sector funds' moves today
   * news activity: the symbols with the most stories today, each with its

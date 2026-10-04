@@ -92,12 +92,12 @@ def _stream_class(kind: str = "stock") -> Any:
     SDK import is lazy: an instance nobody streams from never imports it."""
     if kind in _stream_cls:
         return _stream_cls[kind]
-    from alpaca.data.live import CryptoDataStream, StockDataStream
+    from alpaca.data.live import StockDataStream
     if kind == "news":
         from alpaca.data.live.news import NewsDataStream
         base = NewsDataStream
     else:
-        base = CryptoDataStream if kind == "crypto" else StockDataStream
+        base = StockDataStream
 
     class _BackoffStream(base):  # type: ignore[misc,valid-type]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -227,28 +227,12 @@ class _MarketStream:
             self._stream.subscribe_news(self._on_news, sym)
             return
         self._stream.subscribe_trades(self._on_trade, sym)
-        if self._kind == "crypto":
-            # Crypto prints are sparse on this feed; the quote midpoint is
-            # what moves between them.
-            self._stream.subscribe_quotes(self._on_quote, sym)
 
     def _unsubscribe(self, stream: Any, sym: str) -> None:
         if self._kind == "news":
             stream.unsubscribe_news(sym)
             return
         stream.unsubscribe_trades(sym)
-        if self._kind == "crypto":
-            stream.unsubscribe_quotes(sym)
-
-    async def _on_quote(self, q: Any) -> None:
-        try:
-            bid, ask = float(q.bid_price), float(q.ask_price)
-            if bid > 0 and ask > 0:
-                self._last[str(q.symbol).upper()] = {
-                    "symbol": str(q.symbol).upper(), "price": round((bid + ask) / 2, 8), "size": 0,
-                    "at": str(getattr(q, "timestamp", "")), "received": time.time(), "mid": True}
-        except Exception:
-            pass
 
     async def _on_news(self, n: Any) -> None:
         """A story from the real-time feed: stored for every reader watching
@@ -557,10 +541,9 @@ RELEASE_GRACE_S = 5.0
 
 # What one connection may carry. Quotes are the panels' rows (movers,
 # watchlist, market ETFs) unioned; trades are the charts and quote blocks on
-# screen; coins are the tape and crypto movers.
+# screen.
 LIVE_TRADES_MAX = 12
 LIVE_QUOTES_MAX = 120
-LIVE_COINS_MAX = 40
 
 
 class LiveMux:
@@ -568,28 +551,26 @@ class LiveMux:
     connection (2026-09-15).
 
     A tab used to open a connection per chart symbol, one per quotes panel
-    and one for crypto. Over HTTP/1.1 — a local server — a browser keeps six
+    (and, until 2026-10-03, one for crypto). Over HTTP/1.1 — a local server — a browser keeps six
     connections to an origin, and the Markets board held five or six open
     streams, so a chart request could wait indefinitely for a free one. Now
-    the tab holds one, and three channels share it:
+    the tab holds one, and these channels share it:
 
     - trades: every new print for a charted symbol (the chart's live edge),
       each frame one tick, as `event: trade`;
     - quotes: the latest price per row symbol, deduped on price and pushed at
       most every `panel_push_s` per symbol, as `event: quotes`;
-    - coins: the same for crypto, at `coin_push_s`, as `event: crypto`.
 
     Pure bookkeeping over the reader's market streams: `open` takes the
     references and says what is live, `frames` is called on a clock and
     returns the frames to send, `close` hands every reference to `release`
     (which the endpoint delays by RELEASE_GRACE_S)."""
 
-    def __init__(self, stock: Optional["_MarketStream"], crypto: Optional["_MarketStream"],
-                 trades: list[str], quotes: list[str], coins: list[str],
-                 *, panel_push_s: float, coin_push_s: float, pair_of,
+    def __init__(self, stock: Optional["_MarketStream"], trades: list[str], quotes: list[str],
+                 *, panel_push_s: float,
                  news: Optional["_MarketStream"] = None, news_owner: Optional[str] = None,
                  news_seq=None) -> None:
-        self._stock, self._crypto, self._pair_of = stock, crypto, pair_of
+        self._stock = stock
         # The news channel: this reader's real-time feed, and how to read the
         # count of stories stored for them (ingest/news.py stream_seq).
         self._news, self._news_owner, self._news_seq = news, news_owner, news_seq
@@ -598,13 +579,11 @@ class LiveMux:
         self._want_trades = trades[:LIVE_TRADES_MAX]
         self._want_quotes = quotes[:LIVE_QUOTES_MAX]
         self.skipped_quotes = quotes[LIVE_QUOTES_MAX:]
-        self._want_coins = [c for c in coins if pair_of(c)][:LIVE_COINS_MAX]
-        self._panel_push_s, self._coin_push_s = panel_push_s, coin_push_s
+        self._panel_push_s = panel_push_s
         # (market, upstream symbol) per reference taken, for close().
         self._held: list[tuple["_MarketStream", str]] = []
         self._trades: list[tuple[str, "_MarketStream", str]] = []
         self._quotes: list[str] = []
-        self._coins: list[tuple[str, str]] = []
         self._trade_at: dict[str, Any] = {}
         self._price: dict[tuple[str, str], float] = {}
         self._sent: dict[tuple[str, str], float] = {}
@@ -619,14 +598,11 @@ class LiveMux:
         """Take the references; the hello frame's body."""
         live_trades: dict[str, bool] = {}
         for sym in self._want_trades:
-            pair = self._pair_of(sym)
-            market, upstream = (self._crypto, pair) if pair else (self._stock, sym)
-            ok = self._take(market, upstream)
+            ok = self._take(self._stock, sym)
             live_trades[sym] = ok
             if ok:
-                self._trades.append((sym, market, upstream))
+                self._trades.append((sym, self._stock, sym))
         self._quotes = [s for s in self._want_quotes if self._take(self._stock, s)]
-        self._coins = [(c, self._pair_of(c)) for c in self._want_coins if self._take(self._crypto, self._pair_of(c))]
         if self._news is not None and self._news_owner:
             self._news.add_owner(self._news_owner)
             self._news_live = self._take(self._news, "*")
@@ -636,14 +612,11 @@ class LiveMux:
             "news": self._news_live,
             "trades": live_trades,
             "quotes": {"symbols": self._quotes, "skipped": self.skipped_quotes, "live": bool(self._quotes)},
-            "crypto": {"products": [c for c, _ in self._coins], "live": bool(self._coins)},
             "feed": self._stock.feed if self._stock else None,
         }
 
     def _moved(self, channel: str, key: str, tick: Optional[dict], now: float, every: float,
                skip_stale: bool = True) -> bool:
-        # Coins are left their last quote midpoint however old: the tape
-        # shows a price, and crypto trades around the clock.
         if not tick or (skip_stale and tick.get("stale")) or tick.get("price") == self._price.get((channel, key)):
             return False
         if now - self._sent.get((channel, key), float("-inf")) < every:
@@ -653,7 +626,7 @@ class LiveMux:
 
     def frames(self, now: float) -> list[str]:
         """The frames to send this turn: one per new trade, one quotes frame
-        and one crypto frame when anything moved."""
+        when anything moved."""
         import json as _json
         out: list[str] = []
         for sym, market, upstream in self._trades:
@@ -670,10 +643,6 @@ class LiveMux:
             if seq != self._news_at:
                 self._news_at = seq
                 out.append(f"event: news\ndata: {_json.dumps({'seq': seq})}\n\n")
-        coins = [{**t, "symbol": c, "product": c} for c, pair in self._coins
-                 if self._moved("c", c, t := self._crypto.latest(pair), now, self._coin_push_s, skip_stale=False)]
-        if coins:
-            out.append(f"event: crypto\ndata: {_json.dumps({'ticks': coins})}\n\n")
         return out
 
     def close(self, release) -> None:

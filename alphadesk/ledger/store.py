@@ -792,15 +792,9 @@ def init() -> None:
         except db.schema_errors():
             pass  # already migrated
 
-    # The CoinGecko key moved from its own "crypto" seam into market data
-    # (2026-09-13), where every data vendor now lives. Idempotent: once the
-    # rows are moved there is nothing left to move.
+    # The old "crypto" seam (a CoinGecko key) is gone with crypto itself
+    # (2026-10-03, equities only); any rows left under it are dropped.
     with _lock, _connect() as conn:
-        conn.execute(
-            "INSERT INTO user_api_keys (user_id, seam, provider, config, key_hint, created_at, last_used_at)"
-            " SELECT user_id, 'prices', provider, config, key_hint, created_at, last_used_at"
-            " FROM user_api_keys WHERE seam = 'crypto'"
-            " ON CONFLICT (user_id, seam, provider) DO NOTHING")
         conn.execute("DELETE FROM user_api_keys WHERE seam = 'crypto'")
 
     with _lock, _connect() as conn:

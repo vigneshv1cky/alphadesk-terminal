@@ -155,7 +155,7 @@ class TestMetadataSelfHeal:
         hits = cfg.search_symbols("apple", limit=5)
         assert [h["symbol"] for h in hits][:2] == ["AAPL", "AAPI"]           # an exchange listing before OTC
         assert hits[0] == {"symbol": "AAPL", "name": "Apple Inc.", "exchange": "Nasdaq", "asset_class": "Equity"}
-        assert cfg.symbol_meta("BTC-USD")["asset_class"] == "Cryptocurrency"
+        assert cfg.symbol_meta("BTC-USD") is None                      # no coin pairs: equities only (2026-10-03)
 
 
 class TestNamesTheMarketUses:

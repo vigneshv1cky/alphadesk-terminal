@@ -310,18 +310,15 @@ def session_label(dt: datetime | None = None) -> str:
 # The symbol list search draws from is the SEC's own ticker file with each
 # registrant's exchange (company_tickers_exchange.json) — public government
 # data, keyless (2026-09-13: it replaced the Alpaca asset list read with the
-# server's key). Cached a week on disk. Crypto pairs a user can chart are
-# listed alongside so a search for a coin finds it.
+# server's key). Cached a week on disk. Equities only: coin pairs were
+# listed alongside until 2026-10-03, which put Bitcoin Cash above the Bitcoin
+# funds in a search for "bitcoin".
 
 _NAMES_CACHE = DATA_DIR / "symbol_meta_sec.json"
 _NAMES_MAX_AGE_S = 7 * 24 * 3600
 _names: dict[str, dict] | None = None
 _names_fetch_tried = False
 _SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
-_COINS = {"BTC": "Bitcoin", "ETH": "Ethereum", "SOL": "Solana", "XRP": "XRP", "DOGE": "Dogecoin", "ADA": "Cardano",
-          "AVAX": "Avalanche", "LINK": "Chainlink", "DOT": "Polkadot", "LTC": "Litecoin", "BCH": "Bitcoin Cash",
-          "UNI": "Uniswap", "AAVE": "Aave", "SHIB": "Shiba Inu", "XLM": "Stellar", "XTZ": "Tezos", "FIL": "Filecoin",
-          "PEPE": "Pepe", "ARB": "Arbitrum", "HYPE": "Hyperliquid", "SUI": "Sui", "TRX": "TRON", "TON": "Toncoin"}
 
 
 def _fetch_sec_names() -> dict[str, dict]:
@@ -338,8 +335,6 @@ def _fetch_sec_names() -> dict[str, dict]:
                                  "class": "us_equity"})
         except (KeyError, IndexError, TypeError):
             continue
-    for base, name in _COINS.items():
-        out[f"{base}-USD"] = {"name": name, "exchange": "Crypto", "class": "crypto"}
     return out
 
 
@@ -350,13 +345,12 @@ def _sec_key(symbol: str) -> str:
 
 
 def in_universe(symbol: str) -> bool:
-    """Whether a symbol is on the SEC's ticker list or a listed coin pair."""
+    """Whether a symbol is on the SEC's ticker list."""
     _load_names()
     return _sec_key(symbol) in (_names or {})
 
 
-_CLASS_LABEL = {"us_equity": "Equity", "crypto": "Cryptocurrency",
-                "us_option": "Option", "crypto_perp": "Crypto perpetual"}
+_CLASS_LABEL = {"us_equity": "Equity", "us_option": "Option"}
 
 
 def _row(sym: str, meta: dict) -> dict:
@@ -721,16 +715,3 @@ def _load_themes() -> list[dict]:
 
 
 THEMES = _load_themes()
-
-
-CRYPTO_UNIVERSE = [
-    s.strip() for s in os.environ.get(
-        "CRYPTO_UNIVERSE", "BTC/USD:Bitcoin,ETH/USD:Ethereum,SOL/USD:Solana,"
-                           "XRP/USD:XRP,DOGE/USD:Dogecoin,ADA/USD:Cardano,"
-                           "AVAX/USD:Avalanche,LINK/USD:Chainlink,DOT/USD:Polkadot,"
-                           "LTC/USD:Litecoin,BCH/USD:Bitcoin Cash,UNI/USD:Uniswap,"
-                           "AAVE/USD:Aave,SHIB/USD:Shiba Inu,PEPE/USD:Pepe,"
-                           "ARB/USD:Arbitrum,POL/USD:Polygon,FIL/USD:Filecoin,"
-                           "RENDER/USD:Render,ONDO/USD:Ondo"
-    ).split(",") if s.strip()
-]

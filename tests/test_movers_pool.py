@@ -177,23 +177,6 @@ def test_coin_volatility_is_annualised_over_365_days():
     assert abs(coin["volatility"] / stock["volatility"] - (365 / 252) ** 0.5) < 0.01
 
 
-def test_venue_liquidity_is_the_twenty_day_figure_not_one_days_turnover():
-    bars = [{"close": 100.0 + i, "volume": 10.0} for i in range(21)]
-    tabs = _coin_tabs()
-    movers._enrich_coins(_CoinRouter({"BTC-USD": bars}), tabs, venue=True)
-    btc, usdg = tabs[0]["rows"]
-    want = movers.stats_from_bars([b["close"] for b in bars], [b["volume"] for b in bars], periods=365)
-    assert btc["volatility"] == want["volatility"] and btc["liquidity"] == want["liquidity"]
-    # A coin with no bars shows neither, never its turnover.
-    assert usdg["volatility"] is None and usdg["liquidity"] is None
-
-
-def test_worldwide_volume_keeps_its_turnover_as_liquidity():
-    tabs = _coin_tabs()
-    movers._enrich_coins(_CoinRouter({}), tabs, venue=False)
-    assert tabs[0]["rows"][0]["liquidity"] == tabs[0]["rows"][0]["turnover"]
-
-
 # ── currencies and Treasury yields (2026-09-19) ──
 
 def test_yield_volatility_is_basis_points_a_year():
@@ -224,35 +207,3 @@ def test_currencies_get_volatility_and_no_liquidity():
     assert jpy["volatility"] is None and jpy["liquidity"] is None
 
 
-def test_a_coingecko_list_keeps_only_coins_alpaca_trades():
-    class R:
-        def get(self, method):
-            assert method == "crypto_symbols"
-            return frozenset({"BTC", "ETH"})
-    tabs = [{"id": "all", "label": "All", "rows": [
-        movers._row("BTC-USD", 1.0, 1.0, display="BTC"), movers._row("BNB-USD", 1.0, 1.0, display="BNB"),
-        movers._row("FIGR_HELOC-USD", 1.0, 1.0, display="FIGR_HELOC"), movers._row("ETH-USD", 1.0, 1.0, display="ETH")]}]
-    got: dict = {}
-    movers.only_tradable_coins(R(), tabs, got)
-    assert [r["display"] for r in tabs[0]["rows"]] == ["BTC", "ETH"]
-    assert got["note"] == "coins you can trade on Alpaca"
-
-
-def test_without_alpaca_the_coin_list_stands():
-    class R:
-        def get(self, method):
-            return None
-    tabs = [{"id": "all", "label": "All", "rows": [movers._row("BNB-USD", 1.0, 1.0, display="BNB")]}]
-    movers.only_tradable_coins(R(), tabs, {})
-    assert len(tabs[0]["rows"]) == 1
-
-
-def test_a_coin_with_only_a_coingecko_record_still_has_a_profile(monkeypatch):
-    from alphadesk.ingest import company
-    monkeypatch.setattr(company, "_edgar_facts", lambda s: None)
-    monkeypatch.setattr(company, "_vendor_profile", lambda s: (None, []))
-    monkeypatch.setattr(company, "_coin", lambda s: {"name": "Tezos", "market_cap_rank": 126})
-    got = company.profile("XTZ-USD")
-    assert got and got["name"] == "Tezos" and got["coin"]["market_cap_rank"] == 126
-    monkeypatch.setattr(company, "_coin", lambda s: None)
-    assert company.profile("XTZ-USD") is None

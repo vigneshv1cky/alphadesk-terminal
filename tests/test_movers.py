@@ -11,7 +11,7 @@ import pytest
 
 from alphadesk.ingest import movers
 from alphadesk.providers.base import NeedsKey
-from alphadesk.providers.prices import CoinGeckoPrices, PolygonPrices
+from alphadesk.providers.prices import PolygonPrices
 
 
 @pytest.fixture(autouse=True)
@@ -107,21 +107,6 @@ def test_bonds_need_no_key(vendors, monkeypatch):
     assert out["tabs"][0]["rows"][0]["price"] == 4.96
 
 
-def test_coingecko_markets_on_the_users_key(monkeypatch):
-    from alphadesk.providers import prices as pp
-    seen = {}
-    def get_json(url, headers, timeout=20.0):
-        seen.update(url=url, headers=headers)
-        return [{"symbol": "btc", "name": "Bitcoin", "current_price": 77300.0, "price_change_percentage_24h": 0.4, "total_volume": 2.1e10},
-                {"symbol": "eth", "name": "Ethereum", "current_price": 2508.0, "price_change_percentage_24h": -0.5, "total_volume": 9e9}]
-    monkeypatch.setattr(pp, "_get_json", get_json)
-    out = CoinGeckoPrices(api_key="CG-key").category_movers("crypto", 20)
-    assert seen["headers"] == {"x-cg-demo-api-key": "CG-key"}
-    assert [r["symbol"] for r in out["tabs"][0]["rows"]] == ["BTC-USD", "ETH-USD"]
-    assert out["tabs"][0]["rows"][0]["turnover"] == 2.1e10
-    assert CoinGeckoPrices(api_key="k").category_movers("stocks") is None
-
-
 def test_polygon_option_movers_from_the_chain_snapshot(monkeypatch):
     from alphadesk.providers import prices as pp
     payload = {"results": [
@@ -136,12 +121,6 @@ def test_polygon_option_movers_from_the_chain_snapshot(monkeypatch):
     row = out["tabs"][0]["rows"][0]
     assert row["display"] == "SPY 750P 09-18" and row["volatility"] == 18.2 and row["liquidity"] == round(100_820 * 1.8 * 100)
     assert len(out["tabs"][0]["rows"]) == 1                    # no volume, no row
-
-
-def test_alpaca_crypto_volume_is_in_coins_so_turnover_is_price_times_volume():
-    got = {"tabs": [{"id": "all", "label": "All", "rows": [{"symbol": "SHIB-USD", "price": 5.25e-06, "change_pct": -0.76, "volume": 3.8e13}]}]}
-    row = movers._normalize_tabs(got, "crypto")[0]["rows"][0]
-    assert row["turnover"] == pytest.approx(5.25e-06 * 3.8e13) and row["display"] == "SHIB"
 
 
 def test_a_list_past_its_lifetime_comes_back_rebuilt_not_a_cycle_late(vendors, monkeypatch):
@@ -235,33 +214,6 @@ def test_without_a_fund_list_a_funds_name_decides(vendors):
     assert movers.is_fund({"symbol": "IBIT", "name": "iShares Bitcoin Trust ETF"}, None) is True
 
 
-
-class _AlpacaCoins:
-    """Alpaca's crypto: volume from its own venue only."""
-    name = "alpaca"
-    def category_movers(self, category, top=20):
-        if category != "crypto":
-            return None
-        rows = [{"symbol": "BTC-USD", "name": "BTC", "price": 76283.0, "change_pct": -2.4, "volume": 16},
-                {"symbol": "ETH-USD", "name": "ETH", "price": 2413.0, "change_pct": -4.0, "volume": 9},
-                {"symbol": "SOL-USD", "name": "SOL", "price": 99.0, "change_pct": 1.1, "volume": 135}]
-        return {"tabs": [{"id": "all", "label": "All", "rows": rows},
-                         {"id": "gainers", "label": "Gainers", "rows": [rows[2]]}], "source": "alpaca", "venue_volume": True}
-
-
-def test_one_venues_crypto_volume_sets_no_default_turnover_floor(vendors):
-    """2026-09-15: the $1M default left Alpaca's crypto list one row, since
-    its volume counts only Alpaca's own venue."""
-    vendors(alpaca=_AlpacaCoins())
-    out = movers.category_movers("crypto")
-    assert [r["symbol"] for r in out["tabs"][0]["rows"]] == ["BTC-USD", "ETH-USD", "SOL-USD"]
-    assert [r["symbol"] for r in out["tabs"][1]["rows"]] == ["SOL-USD"]
-    assert out["floors"]["min_turnover"] == 0 and out["floors"]["default_min_turnover"] == 0
-    assert all(r["liquidity"] is None for r in out["tabs"][0]["rows"])   # one venue's turnover is not liquidity
-    # The reader's own floor still applies.
-    assert [r["symbol"] for r in movers.category_movers("crypto", min_turnover=1_000_000)["tabs"][0]["rows"]] == ["BTC-USD"]
-
-
 def test_option_rows_keep_the_underlying_and_expiry_a_click_opens(vendors):
     class _Opts:
         name = "alpaca"
@@ -275,44 +227,6 @@ def test_option_rows_keep_the_underlying_and_expiry_a_click_opens(vendors):
     vendors(alpaca=_Opts())
     row = movers.category_movers("options")["tabs"][0]["rows"][0]
     assert row["underlying"] == "SPY" and row["expiry"] == "2026-09-18" and row["turnover"] == 18_900_000
-
-
-def test_a_coins_impossible_volume_is_discarded_without_dropping_the_coin(vendors, monkeypatch):
-    """2026-09-15: CoinGecko sent Ethereum's 24h volume as ~$1.19e19 beside a
-    ~$290B market cap; the tile printed $11,899,776.32T as its liquidity."""
-    from alphadesk.providers import prices as pp
-    assert pp.coingecko_volume(3.47e10, 1.5e12) == (3.47e10, False)
-    assert pp.coingecko_volume(1.19e19, 2.9e11) == (0.0, True)
-    assert pp.coingecko_volume(5e6, None) == (5e6, False)          # no cap to judge by
-    monkeypatch.setattr(pp, "_get_json", lambda url, headers, timeout=20.0: [
-        {"symbol": "btc", "name": "Bitcoin", "current_price": 76219.0, "price_change_percentage_24h": -3.3,
-         "total_volume": 3.475e10, "market_cap": 1.5e12},
-        {"symbol": "eth", "name": "Ethereum", "current_price": 2415.8, "price_change_percentage_24h": -4.6,
-         "total_volume": 1.19e19, "market_cap": 2.9e11},
-    ])
-    vendors(coingecko=CoinGeckoPrices(api_key="CG-key"))
-    rows = {r["symbol"]: r for r in movers.category_movers("crypto")["tabs"][0]["rows"]}
-    assert set(rows) == {"BTC-USD", "ETH-USD"}                     # the $1M floor keeps ETH
-    assert rows["ETH-USD"]["liquidity"] is None and rows["BTC-USD"]["liquidity"] == 3.475e10
-
-
-def test_a_coingecko_list_is_rebuilt_every_two_minutes_not_thirty_seconds(vendors, monkeypatch):
-    """The free Demo key allows 10,000 calls a month."""
-    from alphadesk.providers import prices as pp
-    calls = []
-    monkeypatch.setattr(pp, "_get_json", lambda url, headers, timeout=20.0: calls.append(url) or [
-        {"symbol": "btc", "name": "Bitcoin", "current_price": 76219.0, "price_change_percentage_24h": -3.3,
-         "total_volume": 3.475e10, "market_cap": 1.5e12}])
-    vendors(coingecko=CoinGeckoPrices(api_key="CG-key"))
-    movers.category_movers("crypto")
-    key = next(iter(movers._cache))
-    stamp, payload = movers._cache[key]
-    movers._cache[key] = (stamp - 60, payload)                      # a minute old: past crypto's 30s
-    movers.category_movers("crypto")
-    assert len(calls) == 1
-    movers._cache[key] = (stamp - 121, payload)
-    movers.category_movers("crypto")
-    assert len(calls) == 2
 
 
 def test_the_currency_day_turns_at_5pm_new_york_and_skips_the_weekend():
