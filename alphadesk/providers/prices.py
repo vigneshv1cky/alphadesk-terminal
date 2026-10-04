@@ -1315,10 +1315,17 @@ class CoinGeckoPrices:
                          f"&per_page={per}&page=1&sparkline=false&price_change_percentage=24h",
                          {"x-cg-demo-api-key": self.api_key}, timeout=20)
         rows = []
+        seen: set[str] = set()
         for c in data or []:
             sym = str(c.get("symbol") or "").upper()
             if not sym or c.get("current_price") is None:
                 continue
+            # Tickers are not unique across coins (a small token can reuse a big
+            # one's). The list runs largest market cap first and Alpaca trades
+            # the established coin, so the first row for a ticker is the one.
+            if sym in seen:
+                continue
+            seen.add(sym)
             vol, suspect = coingecko_volume(c.get("total_volume"), c.get("market_cap"))
             rows.append({"symbol": f"{sym}-USD", "display": sym, "name": c.get("name"), "price": c.get("current_price"),
                          "change_pct": c.get("price_change_percentage_24h"), "volume": vol,

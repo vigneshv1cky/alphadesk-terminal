@@ -370,8 +370,9 @@ def only_tradable_coins(router, tabs: list[dict], got: dict) -> None:
         coins = None
     if not coins:
         return
+    pairs = {f"{c}-USD" for c in coins}               # the dollar pair, as Alpaca lists it
     for t in tabs:
-        t["rows"] = [r for r in t["rows"] if str(r.get("display") or r["symbol"].split("-")[0]).upper() in coins]
+        t["rows"] = [r for r in t["rows"] if f"{str(r.get('display') or r['symbol'].split('-')[0]).upper()}-USD" in pairs]
     got["note"] = "coins you can trade on Alpaca"
 
 

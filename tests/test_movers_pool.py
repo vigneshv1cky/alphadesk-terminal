@@ -256,3 +256,17 @@ def test_a_coin_with_only_a_coingecko_record_still_has_a_profile(monkeypatch):
     assert got and got["name"] == "Tezos" and got["coin"]["market_cap_rank"] == 126
     monkeypatch.setattr(company, "_coin", lambda s: None)
     assert company.profile("XTZ-USD") is None
+
+
+def test_a_reused_ticker_keeps_only_the_largest_coin(monkeypatch):
+    """CoinGecko lists largest first; a small token reusing BTC's ticker must not
+    pass the Alpaca filter in the real coin's place."""
+    from alphadesk.providers import prices
+    data = [{"symbol": "btc", "name": "Bitcoin", "current_price": 86000, "price_change_percentage_24h": 2.0,
+             "total_volume": 1e10, "market_cap": 1.7e12},
+            {"symbol": "btc", "name": "Fake BTC", "current_price": 0.01, "price_change_percentage_24h": 90.0,
+             "total_volume": 1e5, "market_cap": 1e6}]
+    monkeypatch.setattr(prices, "_get_json", lambda *a, **k: data)
+    got = prices.CoinGeckoPrices(api_key="k").category_movers("crypto")
+    names = [r["name"] for t in got["tabs"] for r in t["rows"]]
+    assert "Fake BTC" not in names and "Bitcoin" in names
