@@ -399,6 +399,26 @@ _ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
+#: Names that mark a shell company built to buy another ("Bitcoin
+#: Infrastructure Acquisition Corp"). Demoted like a derivative: nobody types
+#: "bitcoin" to find a blank cheque.
+_SHELL_MARKERS = (" ACQUISITION CORP", " ACQUISITION CO", " ACQUISITION HOLDINGS", " ACQUISITION LTD",
+                  " ACQUISITION INC", " ACQUISITION PLC")
+
+#: The coins named by their usual words, and the editorial basket whose stocks
+#: move with them. Typing one of these finds the coin first, then the stocks
+#: that follow it (2026-10-04: "bitcoin" answered a shell company and Bitcoin
+#: Cash before Bitcoin itself).
+_COIN_BASKETS = {"BITCOIN": "bitcoin", "ETHEREUM": "bitcoin", "ETHER": "bitcoin"}
+
+
+def _is_warrant_unit_or_right(sym: str) -> bool:
+    """A five-letter symbol whose fifth letter marks a warrant (W), unit (U),
+    right (R) or preferred (P, Q): "BIXIW", "BIXIU". Rarely what a search
+    for the company means."""
+    return len(sym) == 5 and sym.isalpha() and sym[-1] in "WURPQ"
+
+
 def _initials(name_norm: str) -> str:
     """The first letter of each word: "TAIWAN SEMICONDUCTOR MANUFACTURING CO
     LTD" becomes TSMCL, which is how TSMC is reachable at all. Pure."""
@@ -435,11 +455,17 @@ def _rank(sym: str, name: str, q: str, q_norm: str, tokens: list[str]) -> int | 
     if not penalty:
         q_padded = f" {q_norm} "
         penalty = 50 if any(m in padded and m not in q_padded for m in _VEHICLE_MARKERS) else 0
+    if not penalty and (_is_warrant_unit_or_right(sym) or any(m in padded for m in _SHELL_MARKERS)):
+        penalty = 50
 
     if sym == q:
         return 0
     if sym.startswith(q):
         return 100 + len(sym)
+    # A name that IS the query: "bitcoin" is Bitcoin, ahead of the companies
+    # whose names merely begin with the word and win on a shorter ticker.
+    if name_norm and name_norm == q_norm:
+        return 150 + len(sym)
     if name_norm.startswith(q_norm):
         return 200 + penalty + len(sym)
     # The ticker CONTAINS the query. Typing "fd" should reach CLFD and BZFD,
@@ -512,7 +538,16 @@ def search_symbols(query: str, limit: int = 12) -> list[dict]:
             otc = 1 if str((meta or {}).get("exchange") or "").upper() == "OTC" else 0
             scored.append((r * 2 + otc, sym, name))
     scored.sort(key=lambda t: (t[0], t[1]))
-    ordered = lead + [sym for _r, sym, _n in scored if sym not in lead]
+    # A coin's name: the coin first (the exact-name tier above), then the
+    # editorial basket of the stocks that move with it, then the rest.
+    follow: list[str] = []
+    basket = _COIN_BASKETS.get(q_norm)
+    if basket:
+        theme = next((t for t in THEMES if t.get("id") == basket), None)
+        follow = [s for s in (theme or {}).get("symbols", []) if s in (_names or {})]
+    top = [sym for r, sym, _n in scored if r < 400 and sym not in lead]       # exact name or a ticker match
+    rest = [sym for r, sym, _n in scored if r >= 400 and sym not in lead]
+    ordered = lead + top + [s for s in follow if s not in lead and s not in top] + [s for s in rest if s not in follow]
     return [_row(sym, (_names or {}).get(sym) or {}) for sym in ordered[:limit]]
 
 

@@ -194,3 +194,30 @@ class TestNamesTheMarketUses:
         assert config.search_symbols("bofa", limit=1)[0]["symbol"] == "BAC"
         # An alias leads, it does not replace: the ranking still fills the list.
         assert config.search_symbols("bank of america", limit=1)[0]["symbol"] == "BAC"
+
+
+class TestCoinNames:
+    """2026-10-04: "bitcoin" answered a shell company and Bitcoin Cash before Bitcoin."""
+
+    def test_a_name_that_is_the_query_beats_a_longer_name_with_a_shorter_ticker(self):
+        coin = rank("BTC-USD", "Bitcoin", "bitcoin")
+        shell = rank("BIXI", "Bitcoin Infrastructure Acquisition Corp", "bitcoin")
+        cash = rank("BCH-USD", "Bitcoin Cash", "bitcoin")
+        assert better(coin, shell) and better(coin, cash)
+
+    def test_shell_company_and_warrant_are_demoted(self):
+        plain = rank("BIXX", "Bitcoin Mining Holdings", "bitcoin")
+        shell = rank("BIXI", "Bitcoin Infrastructure Acquisition Corp", "bitcoin")
+        warrant = rank("BIXIW", "Bitcoin Mining Holdings", "bitcoin")
+        assert better(plain, shell) and better(plain, warrant)
+
+    def test_search_leads_with_the_coin_then_the_bitcoin_stocks(self, monkeypatch):
+        from alphadesk import config as cfg
+        names = {"BTC-USD": "Bitcoin", "BCH-USD": "Bitcoin Cash", "BIXI": "Bitcoin Infrastructure Acquisition Corp",
+                 "MSTR": "Strategy Inc", "MARA": "MARA Holdings"}
+        monkeypatch.setattr(cfg, "_names", {k: {"name": v} for k, v in names.items()}, raising=False)
+        monkeypatch.setattr(cfg, "_ensure_names", lambda: None, raising=False)
+        out = cfg.search_symbols("bitcoin", limit=5)
+        syms = [r["symbol"] if isinstance(r, dict) else r for r in out]
+        assert syms[0] == "BTC-USD"
+        assert syms.index("MSTR") < syms.index("BIXI")
