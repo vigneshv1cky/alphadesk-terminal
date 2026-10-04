@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { on, type CategoryMoverRow, type MoverCategory } from "@/lib/api"
 import { usePrefetchChart, useQuote } from "@/lib/queries"
+import { useCryptoTicks } from "@/lib/liveCrypto"
 import { QueryFailure } from "@/components/KeyPrompt"
 import { isNeedsKey } from "@/lib/api"
 import { useLiveQuotes } from "@/lib/liveQuotes"
@@ -396,6 +397,7 @@ function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = tru
           : "The latest price"}>Last</TH>
         <TH align="right" width={share(!rank ? 19 : options ? 14 : 16)} title={
           changeTip ?? (bonds ? "Change in yield since the previous business day's curve, in basis points: one basis point is 0.01 percentage point"
+          : changeHead === "24h" ? "Change over the last 24 hours. Crypto trades around the clock, so there is no daily close to measure from"
           : session ? `Change since the last close. These prices were struck in the ${session.toLowerCase()} session; a row that has not traded since the bell shows the closed session's own move`
           : "Change since the previous session's close")}>{changeHead}</TH>
         {/* The figure the tab ranks by, beside the day's change (2026-09-15):
@@ -452,15 +454,15 @@ function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = tru
 }
 
 const CATEGORY_LABELS: Record<MoverCategory, string> = {
-  stocks: "Stocks", etfs: "ETFs", options: "Options",
+  stocks: "Stocks", crypto: "Crypto", etfs: "ETFs", options: "Options",
   indices: "Market ETFs", bonds: "Treasury yields", currencies: "Currencies",
 }
 const SOURCE_LABELS: Record<string, string> = {
-  alpaca: "Alpaca", treasury: "US Treasury",
+  coingecko: "CoinGecko", alpaca: "Alpaca", treasury: "US Treasury",
   polygon: "Polygon", finnhub: "Finnhub", alphavantage: "Alpha Vantage", fmp: "FMP",
 }
 
-/** ONE movers tile, six categories, with a category picker (2026-09-12).
+/** ONE movers tile, seven categories, with a category picker (2026-09-12).
  * A tile starts on its registered category and the reader can switch it
  * from the header; the board keeps as many tiles as it likes, each on its
  * own category. Every category but Treasury yields answers from the
@@ -615,7 +617,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
     refetchInterval: query => session ? false
       : query.state.data?.filling ? 3_000
       : category === "bonds" ? 900_000
-      : category === "stocks" || category === "indices" ? 30_000 : 120_000,
+      : category === "stocks" || category === "crypto" || category === "indices" ? 30_000 : 120_000,
     refetchIntervalInBackground: true,
   })
   // HALTS SIT BESIDE THE MOVERS FOR STOCKS (2026-09-23). A halt is market
@@ -633,7 +635,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   const active = tabs.find(t => t.id === tab) ?? tabs[0]
   const rows = useMemo(() => (halted ? [] : active?.rows ?? []), [active, halted])
   // Live prices where a stream exists: the equity stream for stocks and
-  // ETFs. A tick moves the price AND the
+  // ETFs, the crypto stream for coins. A tick moves the price AND the
   // day's change: the snapshot's price and change fix the previous close,
   // and the change is re-read against it from the live price. The rank
   // stays the server's until its next cycle — rows never reshuffle under
@@ -645,16 +647,20 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   const streamable = (category === "stocks" || category === "etfs") && !session
   const symbols = useMemo(() => (streamable ? rows.map(r => r.symbol) : []), [rows, streamable])
   const live = useLiveQuotes(symbols)
+  // The coins on screen, and none for any other category.
+  const coins = useMemo(() => (category === "crypto" && !session ? rows.map(r => r.symbol) : []), [rows, category, session])
+  const cryptoTicks = useCryptoTicks(coins)
   const priced = useMemo(() => rows.map(r => {
     const livePrice = streamable
       ? (live[r.symbol] && !live[r.symbol].stale ? live[r.symbol].price : null)
+      : category === "crypto" ? (cryptoTicks[r.symbol] && !cryptoTicks[r.symbol].stale ? cryptoTicks[r.symbol].price : null)
       : null
     if (livePrice == null) return r
     const prev = r.price != null && r.change_pct != null && r.change_pct > -100
       ? r.price / (1 + r.change_pct / 100) : null
     return { ...r, price: livePrice,
       change_pct: prev ? Math.round((livePrice / prev - 1) * 10000) / 100 : r.change_pct }
-  }), [rows, live, streamable])
+  }), [rows, live, cryptoTicks, streamable, category])
   // The subtitle carries the session when one is picked, because every
   // figure below changes meaning with it — and a tile that looks live while
   // showing Tuesday is the fault this repo has shipped four times.
@@ -744,7 +750,12 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         : <>
         {halted ? <HaltsTable /> : <MoversTable rows={priced} changeHead={q.data?.change_label ?? "1D"} session={q.data?.session_label ?? null}
                        changeTip={category === "currencies" ? "Change since the 5pm New York rollover, where the currency trading day begins" : undefined}
-                       {...(category === "currencies" ? {
+                       {...(category === "crypto" ? {
+                         volTip: "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",
+                         liqTip: q.data?.liquidity_scope === "venue"
+                           ? `Average dollar volume a day over the last twenty days on ${SOURCE_LABELS[q.data.source ?? ""] ?? q.data.source}'s own exchange only — worldwide volume is far larger`
+                           : "Dollar volume traded worldwide over the last 24 hours",
+                       } : category === "currencies" ? {
                          volTip: "Annualised volatility of daily returns over the last twenty trading days",
                          liquidity: false,
                        } : category === "bonds" ? {
@@ -762,9 +773,18 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
                        linkable={category !== "options" && category !== "currencies" && category !== "bonds"} options={category === "options"}
                        rank={active?.id === "dollar_volume" ? "dollars"
                          : active?.id === "most_active"
-                           ? (category === "options" ? "contracts" : "shares")
+                           // A coin list's volume is dollars (CoinGecko) or one venue's coins (Alpaca, no Active tab).
+                           ? (category === "options" ? "contracts" : category === "crypto" ? "dollars" : "shares")
                            : null}
                        empty={active?.id === "losers" ? "nothing is down" : active?.id === "gainers" ? "nothing is up" : `no ${CATEGORY_LABELS[category].toLowerCase()} quotes right now`} />}
+        {/* CoinGecko's paid plans require the credit wherever their data
+            shows (2026-09-19); the coin list is theirs when they answered. */}
+        {q.data?.source === "coingecko" && (
+          <p className="order-last border-t border-row-rule px-3 py-2 text-caption text-muted-foreground">
+            <a href="https://www.coingecko.com" target="_blank" rel="noreferrer"
+               className="font-semibold text-accent-700 underline decoration-dotted hover:text-foreground">Powered by CoinGecko</a>
+          </p>
+        )}
         </>}
     </Widget>
   )
@@ -783,6 +803,7 @@ const StockMovers = () => <CategoryMoversTile initial="stocks" title="Stock Move
  * 2026-09-15 (the reader's call): it lives on Sectors only, and a saved
  * board or view that named it simply no longer shows it. */
 export const IndexMovers = () => <CategoryMoversTile initial="indices" title="Market ETFs" />
+const CryptoMovers = () => <CategoryMoversTile initial="crypto" title="Crypto Movers" />
 const CurrencyMovers = () => <CategoryMoversTile initial="currencies" title="Currency Movers" />
 const EtfMovers = () => <CategoryMoversTile initial="etfs" title="ETF Movers" />
 const OptionMovers = () => <CategoryMoversTile initial="options" title="Option Movers" />
@@ -790,6 +811,7 @@ const BondMovers = () => <CategoryMoversTile initial="bonds" title="Treasury Yie
 
 registerWidget({ id: "equity-overview", label: "Equity overview", order: 13, component: EquityOverview })
 registerWidget({ id: "stock-movers", label: "Stock movers", order: 17, component: StockMovers })
+registerWidget({ id: "crypto-movers", label: "Crypto movers", order: 18, component: CryptoMovers })
 registerWidget({ id: "currency-movers", label: "Currency movers", order: 18.1, component: CurrencyMovers })
 // In the place Market ETFs held, beside Stock movers (2026-09-15).
 registerWidget({ id: "related-funds", label: "Funds on this stock", order: 14.5, component: RelatedFundsTile })

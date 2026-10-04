@@ -18,7 +18,7 @@ of this project did trade, and that was removed on purpose.
 For **reading**, largely yes, if you bring your own data. On one board you
 get quotes and intraday charts with indicators, news, SEC filings and their
 text, XBRL financial statements, insider trades, earnings and corporate
-calendars, options chains with implied volatility, sector and market
+calendars, options chains with implied volatility, crypto, sector and market
 movers, and the US Treasury yield curve.
 
 What you do not get: execution, chat with other traders, analyst-desk
@@ -50,9 +50,9 @@ For much of it, no.
   statements, Form 4 insider trades, company profiles, and the US Treasury
   yield curve. These are public government data.
 - **Your own key:** quotes, charts, news, earnings and corporate calendars,
-  options chains, movers. A free Alpaca key covers a great deal.
+  options chains, crypto, movers. A free Alpaca key covers a great deal.
   Vendors supported include Alpaca, Financial Modeling Prep, Finnhub,
-  Polygon, Alpha Vantage and Marketaux.
+  Polygon, Alpha Vantage, CoinGecko and Marketaux.
 
 AlphaDesk never resells data. Each request runs on your account with that
 vendor, under your agreement with them. Check your plan's terms before

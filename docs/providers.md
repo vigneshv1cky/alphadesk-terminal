@@ -35,6 +35,7 @@ class PriceProvider(Protocol):
     def movers(self, top=20) -> dict: ...
     def market_tape(self) -> list[dict]: ...
     def index_board(self) -> list[dict]: ...
+    def crypto_movers(self, top=20) -> dict: ...
     def category_movers(self, category, top=20) -> dict | None: ...   # optional
     def economic_calendar(self, start, end) -> list[dict] | None: ...  # optional
     # Options
@@ -55,11 +56,11 @@ that are easy to get wrong:
   refusing. See `alphadesk/providers/base.py` for the full docstrings — that
   file is the contract, this page is the tour.
 - **`category_movers` is the movers seam** (2026-09-13). The Markets board
-  draws eight categories — stocks, ETFs, mutual funds, options,
+  draws nine categories — stocks, crypto, ETFs, mutual funds, options,
   indices, futures, bonds, currencies — and asks the selected provider for
   each one first. Answer `{tabs: [{id, label, rows: [{symbol, display, name,
   price, change_pct, volume}]}]}` for a category your feed carries whole
-  and `None` for the rest: the free path (Yahoo's screeners, the
+  and `None` for the rest: the free path (Yahoo's screeners, CoinGecko, the
   option chains) then serves those, so a keyed feed replaces what it can
   and never blanks a tile. Twenty-session volatility and average dollar
   volume are added by the route afterwards from one source for everyone,
@@ -179,11 +180,12 @@ A new market-data vendor therefore needs an implementation registered under
 | llm | `anthropic` | Messages API; JSON is forced by prefilling the assistant turn |
 | llm | `gemini` | Google's Generative Language API |
 | news | `polygon`, `alpaca`, `finnhub`, `benzinga`, `alphavantage`, `marketaux`, `fmp` | ticker-tagged feeds; a reader keying several has their window merged |
-| prices | `alpaca` | SIP bars (15 minutes behind on the free plan), overnight session, quotes, streams, movers, option chains |
+| prices | `alpaca` | SIP bars (15 minutes behind on the free plan), overnight session, quotes, streams, movers, crypto, option chains |
 | prices | `finnhub` | key statistics, analysts, peers, earnings history and calendar, profile; more on paid plans |
 | prices | `polygon` | bars, quotes, dividends and splits; currencies and option movers on paid plans |
 | prices | `alphavantage` | overview-based statistics, estimates, earnings calendar |
 | prices | `fmp` | statistics, peers, grades, ETF holdings, corporate actions, economic calendar |
+| prices | `coingecko` | crypto movers and coin profiles |
 
 ## Testing yours
 

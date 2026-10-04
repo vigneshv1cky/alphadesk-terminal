@@ -466,6 +466,15 @@ export interface Fundamentals {
   currency?: string
 }
 
+/** Crypto rows reuse MoverRow: same columns, same renderer. `all` is the
+ * configured order rather than a ranking — the unsorted view. */
+export interface CryptoMovers {
+  all: MoverRow[]
+  most_active: MoverRow[]
+  gainers: MoverRow[]
+  losers: MoverRow[]
+}
+
 /** A curated basket. Server-side config: nothing here is scored or ranked,
  * and `symbols` is in the order it was written. */
 export interface Theme {
@@ -879,11 +888,12 @@ export interface CompanyProfile {
     predecessor?: { cik: string; name: string } | null
   } | null
   /** Where to read further, for every profile: filings index, official
-   * site, investor page, a neutral reference. */
+   * site, investor page, coin trackers, a neutral reference. */
   sources: { label: string; url: string }[]
   /** An authored note for an index, contract or pair no feed describes. */
   reference: { name: string; what: string; publisher: string; url: string; sources: { label: string; url: string }[] } | null
-  /** The FETCHED outside source: the SEC's structured facts (registrants). */
+  /** FETCHED outside sources: the SEC's structured facts (registrants),
+   * CoinGecko's record (coins). */
   financials: {
     as_of: string | null
     items: Record<string, { val: number; end: string; fy: number | null; accn: string | null; unit: string; concept: string }>
@@ -891,6 +901,13 @@ export interface CompanyProfile {
     source_url: string
     /** The predecessor registrant's facts, for a successor with none yet. */
     predecessor?: { cik: string; name: string } | null
+  } | null
+  coin: {
+    id: string; name: string | null; symbol: string; description: string; categories: string[]
+    homepage: string | null; whitepaper: string | null; explorers: string[]
+    genesis_date: string | null; hashing_algorithm: string | null; market_cap_rank: number | null
+    circulating_supply: number | null; total_supply: number | null; max_supply: number | null
+    url: string; attribution: string
   } | null
 }
 
@@ -1007,8 +1024,9 @@ export interface ScreenerCitation {
  * processed the article. */
 export interface NewsArticle {
   article_id: string
-  /** Why the story is listed: in a search "related" — found by meaning, not
-   * by its words (alphadesk/semantic.py). */
+  /** Why the story is listed: on a coin's panel "coin", "crypto stock",
+   * "crypto" or "rates" (alphadesk/cryptonews.py); in a search "related" —
+   * found by meaning, not by its words (alphadesk/semantic.py). */
   why?: string
   title: string
   summary: string | null
@@ -1136,13 +1154,13 @@ export interface CompareMetrics { rows: CompareRow[]; missing: string[] }
 export interface Peers { symbol: string; peers: string[]; source: string | null }
 
 /** Movers by category — ingest/movers. One shape for nine categories. */
-export type MoverCategory = "stocks" | "etfs" | "options" | "indices" | "bonds" | "currencies"
+export type MoverCategory = "stocks" | "crypto" | "etfs" | "options" | "indices" | "bonds" | "currencies"
 export interface CategoryMoverRow {
   symbol: string
   /** Option contracts only: where a click opens the chain. */
   underlying?: string | null
   expiry?: string | null
-  /** What the row shows: a contract in words, the symbol otherwise. */
+  /** What the row shows: the plain coin ticker, a contract in words, the symbol otherwise. */
   display: string
   name: string | null
   price: number | null
@@ -1150,7 +1168,7 @@ export interface CategoryMoverRow {
   volume: number
   /** Annualised realised volatility over the last twenty sessions, percent. */
   volatility: number | null
-  /** Average dollar volume a day over the last twenty sessions (a vendor's dollar-volume figure). */
+  /** Average dollar volume a day over the last twenty sessions (a coin's 24h dollar volume). */
   liquidity: number | null
   /** Dollars traded today: price × volume, or the vendor's own figure (an
    * option's premium; the dollar-volume tab's volume × volume-weighted price). */
@@ -1234,6 +1252,9 @@ export interface CategoryMovers {
   /** The lists are still filling in (the market-wide liquid set is being
    * built for the first time); ask again in a few seconds. */
   filling?: boolean
+  /** "venue": liquidity counts only the vendor's own exchange (Alpaca's
+   * crypto), not the whole market. */
+  liquidity_scope?: "venue"
   /** False when the vendor that answered is a SCRAPED source — read off a
    * public page rather than delivered under a key. The tile says so. */
   official?: boolean
@@ -1584,6 +1605,7 @@ export const api = {
   quotes: (symbols: string[], fill?: string) =>
     get<{ quotes: Record<string, Quote | null> }>(
       `/api/quotes?symbols=${encodeURIComponent(symbols.join(","))}${fill ? `&fill=${encodeURIComponent(fill)}` : ""}`),
+  crypto: (top = 20) => get<CryptoMovers>(`/api/crypto?top=${top}`),
   quote: (symbol: string) => get<Quote>(`/api/quote/${encodeURIComponent(symbol)}`),
   movers: (top = 20) => get<Movers>(`/api/movers?top=${top}`),
   sectors: () => get<Sectors>("/api/sectors"),

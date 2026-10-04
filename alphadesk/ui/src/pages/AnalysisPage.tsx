@@ -4,7 +4,7 @@ import { MarketChart } from "@/widgets/chart"
 import { SymbolFilings } from "@/components/SymbolFilings"
 import { RelatedFundsPanel } from "@/components/RelatedFunds"
 import { SymbolNews } from "@/components/SymbolNews"
-import { FinancialsPanel } from "@/pages/CompanyPage"
+import { CoinRecordPanel, FinancialsPanel } from "@/pages/CompanyPage"
 import { EarningsHistoryPanel, EarningsInsightsPanel } from "@/components/EarningsPanels"
 import { DividendsPanel, SplitsPanel } from "@/components/CorporateActions"
 import { InsiderTradesPanel, InstitutionalOwnershipPanel, StockOwnershipPanel } from "@/components/Ownership"
@@ -33,6 +33,14 @@ export default function AnalysisPage() {
   // answers null for a company, and the panels stay out.
   const fund = useFund(symbol)
   const isFund = !!fund.data
+  // A COIN has no filings, earnings, analysts, splits, dividends, holders or
+  // insiders: no key fills those, and each asked for one (2026-09-19, the
+  // owner: "analysis page also has this issue"). A coin gets the chart, its
+  // performance, its CoinGecko record and its news.
+  const isCoin = /-(USD|USDT|USDC|BTC)$/.test(symbol)
+  const STOCK_ONLY = new Set(["filings", "stats", "history", "consensus", "related-funds", "analysts", "ratings",
+    "financials", "splits", "dividends", "institutional", "holders", "insiders"])
+
   const panels = [
         // The full chart — the same component the Markets board registers,
         // so intervals, indicators, drawings and the live edge all work here
@@ -66,6 +74,13 @@ export default function AnalysisPage() {
         { id: "news", label: "Symbol news", node: <SymbolNews symbol={symbol} span={12} /> },
   ]
   return (
-    <ComposedBoard page="analysis" panels={panels} />
+    <ComposedBoard
+      page="analysis"
+      panels={isCoin
+        ? [...panels.filter(p => !STOCK_ONLY.has(p.id)).slice(0, 2),
+           { id: "coin", label: "What it is", node: <CoinRecordPanel symbol={symbol} span={12} /> },
+           ...panels.filter(p => !STOCK_ONLY.has(p.id)).slice(2)]
+        : panels}
+    />
   )
 }

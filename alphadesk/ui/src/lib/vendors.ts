@@ -3,7 +3,7 @@
  * SEC EDGAR is the keyless public source. */
 export const VENDOR_LABELS: Record<string, string> = {
   alpaca: "Alpaca", finnhub: "Finnhub", polygon: "Polygon", alphavantage: "Alpha Vantage",
-  fmp: "Financial Modeling Prep", "sec-edgar": "SEC EDGAR", edgar: "SEC EDGAR",
+  fmp: "Financial Modeling Prep", coingecko: "CoinGecko", "sec-edgar": "SEC EDGAR", edgar: "SEC EDGAR",
   treasury: "US Treasury", benzinga: "Benzinga", marketaux: "Marketaux",
 }
 

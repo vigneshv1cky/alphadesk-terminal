@@ -1,12 +1,12 @@
 /** The tab's ONE live connection (2026-09-15).
  *
- * Every live surface — a chart's trades, the panels' row prices — used to
- * open its own EventSource: one per charted symbol, one per quotes panel.
- * Over HTTP/1.1 (a local server) a browser
+ * Every live surface — a chart's trades, the panels' row prices, the crypto
+ * tape — used to open its own EventSource: one per charted symbol, one per
+ * quotes panel, one for crypto. Over HTTP/1.1 (a local server) a browser
  * keeps six connections to an origin, the Markets board held five or six
  * streams, and a chart request could wait indefinitely for a free one. Now
  * the hooks register what they watch here and the tab holds one connection
- * to /api/stream carrying its channels.
+ * to /api/stream carrying three channels.
  *
  * WHEN THE SET CHANGES the connection is reopened with the new lists: on
  * Cloud Run a side request to change subscriptions can reach another
@@ -44,6 +44,7 @@ export function aged<T extends { age_s?: number; stale: boolean }>(k: Kept<T>, n
 export type Watch = {
   trades?: string[]
   quotes?: string[]
+  crypto?: string[]
   /** The reader's real-time news: told when a story has been stored. */
   news?: boolean
   onNews?: (seq: number) => void
@@ -53,12 +54,14 @@ export type Watch = {
   onTradeLive?: (symbol: string, live: boolean) => void
   /** Row prices that moved, for any watched row symbol. */
   onQuotes?: (ticks: PriceTick[]) => void
+  onCrypto?: (ticks: PriceTick[]) => void
 }
 
 const watches = new Set<Watch>()
 const lastTrade = new Map<string, Kept<TradeTick>>()
 const tradeLive = new Map<string, boolean>()
 const lastQuote = new Map<string, Kept<PriceTick>>()
+const lastCoin = new Map<string, Kept<PriceTick>>()
 
 let current: { url: string; es: EventSource } | null = null
 let pending: { url: string; es: EventSource } | null = null
@@ -66,18 +69,20 @@ let timer: number | null = null
 
 /** The connection URL for everything watched, or null for nothing. Sorted,
  * so the same set in a different mount order is the same connection. */
-export function liveUrl(all: Iterable<Pick<Watch, "trades" | "quotes" | "news">>): string | null {
-  const t = new Set<string>(), q = new Set<string>()
+export function liveUrl(all: Iterable<Pick<Watch, "trades" | "quotes" | "crypto" | "news">>): string | null {
+  const t = new Set<string>(), q = new Set<string>(), c = new Set<string>()
   let news = false
   for (const w of all) {
     w.trades?.forEach(s => s && t.add(s.toUpperCase()))
     w.quotes?.forEach(s => s && q.add(s.toUpperCase()))
+    w.crypto?.forEach(s => s && c.add(s.toUpperCase()))
     news = news || !!w.news
   }
-  if (!t.size && !q.size && !news) return null
+  if (!t.size && !q.size && !c.size && !news) return null
   const p = new URLSearchParams()
   if (t.size) p.set("trades", [...t].sort().join(","))
   if (q.size) p.set("quotes", [...q].sort().join(","))
+  if (c.size) p.set("crypto", [...c].sort().join(","))
   if (news) p.set("news", "1")
   return `/api/stream?${p.toString()}`
 }
@@ -114,6 +119,11 @@ function open(url: string) {
   es.addEventListener("news", e => frame<{ seq?: number }>(e, d => {
     if (conn !== current) return
     watches.forEach(w => w.news && w.onNews?.(d.seq ?? 0))
+  }))
+  es.addEventListener("crypto", e => frame<{ ticks?: PriceTick[] }>(e, d => {
+    if (conn !== current || !d.ticks?.length) return
+    d.ticks.forEach(t => lastCoin.set(t.symbol, { tick: t, received: Date.now() }))
+    watches.forEach(w => w.onCrypto?.(d.ticks!))
   }))
   return conn
 }
@@ -152,6 +162,8 @@ export function watch(w: Watch): () => void {
     syms.map(s => m.get(s)).filter((k): k is Kept<PriceTick> => !!k).map(k => aged(k, now))
   const q = kept(lastQuote, w.quotes)
   if (q.length) w.onQuotes?.(q)
+  const c = kept(lastCoin, w.crypto)
+  if (c.length) w.onCrypto?.(c)
   return () => {
     watches.delete(w)
     schedule()
