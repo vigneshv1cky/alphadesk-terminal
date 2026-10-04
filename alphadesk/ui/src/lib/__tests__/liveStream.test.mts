@@ -11,11 +11,10 @@ test("every surface's symbols ride one URL, unioned and sorted", () => {
   const url = liveUrl([
     { trades: ["nvda"], quotes: ["TSLA", "AAPL"] },
     { quotes: ["AAPL", "NVDA"] },
-    { crypto: ["BTC-USD"] },
   ])
-  assert.equal(url, "/api/stream?trades=NVDA&quotes=AAPL%2CNVDA%2CTSLA&crypto=BTC-USD")
+  assert.equal(url, "/api/stream?trades=NVDA&quotes=AAPL%2CNVDA%2CTSLA")
   // The same set mounted in another order is the same connection.
-  assert.equal(liveUrl([{ crypto: ["BTC-USD"] }, { quotes: ["NVDA", "TSLA", "AAPL"] }, { trades: ["NVDA"] }]), url)
+  assert.equal(liveUrl([{ quotes: ["NVDA", "TSLA", "AAPL"] }, { trades: ["NVDA"] }]), url)
 })
 
 test("nothing watched is no connection", () => {

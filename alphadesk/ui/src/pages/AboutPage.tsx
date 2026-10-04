@@ -47,7 +47,7 @@ export default function AboutPage() {
         </P>
         <L items={[
           <><strong>News.</strong> Polygon, Alpaca, Finnhub, Benzinga, Alpha Vantage, Marketaux, FMP. Key several and your window merges them, de-duplicated by URL.</>,
-          <><strong>Market data.</strong> Alpaca, Polygon, Finnhub, Alpha Vantage, Financial Modeling Prep and CoinGecko, each on your own key. Connect several and each panel asks them in turn; a panel none of them carries says which vendors would.</>,
+          <><strong>Market data.</strong> Alpaca, Polygon, Finnhub, Alpha Vantage, and Financial Modeling Prep, each on your own key. Connect several and each panel asks them in turn; a panel none of them carries says which vendors would.</>,
           <><strong>Filings, financial statements and release times.</strong> Straight from SEC EDGAR, and Treasury yields from the US Treasury. Public government data, no key.</>,
         ]} />
         <P>

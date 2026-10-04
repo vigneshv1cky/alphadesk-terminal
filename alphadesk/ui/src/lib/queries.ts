@@ -26,7 +26,6 @@ export const keys = {
   optionChain: (symbol: string, expiry: string) => ["option-chain", symbol, expiry] as const,
   optionFlow: (symbols: string[], minPremium: number) => ["option-flow", symbols.join(","), minPremium] as const,
   quotes: (symbols: string[]) => ["quotes", symbols.join(",")] as const,
-  crypto: ["crypto"] as const,
   movers: ["movers"] as const,
   sectors: ["sectors"] as const,
   sectorBreadth: ["sectors", "breadth"] as const,
@@ -291,9 +290,6 @@ export const useThemes = () =>
 
 export const useIndices = () =>
   useQuery({ queryKey: keys.indices, queryFn: ({ signal }) => on(signal).indices(), refetchInterval: 60_000 })
-
-export const useCrypto = () =>
-  useQuery({ queryKey: keys.crypto, queryFn: ({ signal }) => on(signal).crypto(20), refetchInterval: 120_000 })
 
 /** Quote for one symbol. Disabled when there is no symbol, so a widget can
  * mount before the board has been scoped without firing a bad request. */

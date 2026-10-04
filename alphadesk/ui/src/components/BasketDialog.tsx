@@ -11,7 +11,7 @@ const LABEL = "mb-1 block text-label font-medium uppercase tracking-caps text-mu
 /** Make or edit one of the reader's own baskets (2026-09-18): a name, a line
  * on what moves it, and its tickers typed as one list. The server cleans the
  * tickers (upper case, each once, anything that is not a symbol dropped) and
- * nothing is looked up, so a crypto pair or a fund the SEC list does not
+ * nothing is looked up, so a fund the SEC list does not
  * carry is still a member. Saved per reader; the rail and the reader's agent
  * see it beside the curated baskets. */
 export function BasketDialog({ basket, onClose }: { basket?: Theme; onClose: () => void }) {

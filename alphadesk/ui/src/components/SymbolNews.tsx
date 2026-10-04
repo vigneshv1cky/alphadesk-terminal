@@ -29,17 +29,14 @@ export function SymbolNews({ symbol, span = 4, scroll = 300, framed = true }: {
   framed?: boolean
 }) {
   const { data, isPending, isError, error } = useSymbolNews(symbol)
-  // A coin's stories are chosen by the server — all crypto and what moves
-  // it, not the coin's own tag (2026-09-19) — so none is filtered out here.
-  const coin = /-(USD|USDT|USDC|BTC)$/.test(symbol)
-  const matches = useCallback((a: NewsArticle) => coin || a.tickers.includes(symbol), [symbol, coin])
+  const matches = useCallback((a: NewsArticle) => a.tickers.includes(symbol), [symbol])
   const { shown: headlines, older, state, loadMore, reset } = useOlderNews(data?.articles ?? [], matches, symbol)
   const [openId, setOpenId] = useState<string | null>(null)
   const open = headlines.find(h => h.article_id === openId) ?? null
 
   const More = (
     <OlderNews state={state} onLoad={() => void loadMore()} onReset={reset} loaded={older.length}
-               subject={coin ? "crypto stories" : "stories about this company"} />
+               subject="stories about this company" />
   )
 
   const body = (
@@ -52,7 +49,7 @@ export function SymbolNews({ symbol, span = 4, scroll = 300, framed = true }: {
         <QueryFailure error={error}>the news window is unavailable right now</QueryFailure>
       ) : !headlines.length ? (
         <div>
-          <Empty>{coin ? "no crypto headlines in the current window" : `no headlines for ${symbol} in the current window`}</Empty>
+          <Empty>{`no headlines for ${symbol} in the current window`}</Empty>
           {More}
         </div>
       ) : (
@@ -89,7 +86,7 @@ export function SymbolNews({ symbol, span = 4, scroll = 300, framed = true }: {
       span={span}
       symbol={symbol}
       title="News"
-      subtitle={headlines.length ? `${headlines.length} in the window${coin ? " · all crypto and what moves it" : ""}` : undefined}
+      subtitle={headlines.length ? `${headlines.length} in the window` : undefined}
       scroll={scroll}
     >
       {body}

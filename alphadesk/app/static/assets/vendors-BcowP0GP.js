@@ -1,0 +1,1 @@
+var e={alpaca:`Alpaca`,finnhub:`Finnhub`,polygon:`Polygon`,alphavantage:`Alpha Vantage`,fmp:`Financial Modeling Prep`,"sec-edgar":`SEC EDGAR`,edgar:`SEC EDGAR`,treasury:`US Treasury`,benzinga:`Benzinga`,marketaux:`Marketaux`},t=e=>e&&e.length?`via ${e.map(e=>n(e)).join(e.length===2?` and `:`, `)}`:null,n=t=>t?e[t]??t:void 0;export{t as n,n as t};

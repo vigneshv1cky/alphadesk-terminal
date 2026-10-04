@@ -25,8 +25,8 @@ Removed on the same date, and not to be reintroduced even as an opt-in:
   movers and corporate actions.
 - **Nasdaq's `api.nasdaq.com` calendar and holdings routes** — undocumented
   endpoints behind Nasdaq's public pages.
-- **Keyless CoinGecko and the Coinbase public feed** — crypto now runs on the
-  reader's Alpaca or CoinGecko key.
+- **CoinGecko, the Coinbase public feed and every other cryptocurrency source** —
+  AlphaDesk covers equities only (2026-10-03).
 - **The operator's Alpaca stream, shared Polygon news feed and default model
   key** — every reader brings their own.
 
@@ -46,12 +46,11 @@ naming the vendors (and plans) that would.
 
 | Vendor | What it can serve | Terms |
 |---|---|---|
-| **Alpaca** (key + secret) | charts (consolidated SIP bars 15 minutes behind on the free plan, Blue Ocean overnight session), quotes, live stock and crypto streams, stock movers, market ETFs, crypto, option chains with implied volatility | [Alpaca terms](https://alpaca.markets/terms) |
+| **Alpaca** (key + secret) | charts (consolidated SIP bars 15 minutes behind on the free plan, Blue Ocean overnight session), quotes, live stock streams, stock movers, market ETFs, option chains with implied volatility | [Alpaca terms](https://alpaca.markets/terms) |
 | **Finnhub** | key statistics, comparison, peers, analyst ratings, earnings history and calendar, company profile; price targets, rating changes, short interest, fund holdings, institutional ownership, estimates on paid plans | [Finnhub terms](https://finnhub.io/terms-of-service) |
 | **Polygon** | charts, quotes, dividends and splits, news; currencies and option movers on paid plans | [Polygon terms](https://polygon.io/terms) |
 | **Alpha Vantage** | key statistics, analyst ratings and mean target, estimates, earnings calendar, company profile, ETF holdings and sector weights | [Alpha Vantage terms](https://www.alphavantage.co/terms_of_service/) |
 | **Financial Modeling Prep** | key statistics, peers, grades, targets, ETF holdings, dividends and splits, earnings, economic calendar | [FMP terms](https://site.financialmodelingprep.com/terms-of-service) |
-| **CoinGecko** (demo or paid key) | the crypto list (worldwide prices, volume, market caps, names — cut to coins the reader can trade when an Alpaca key is also connected), coin profiles; verified against a live Demo key 2026-09-19 | [CoinGecko terms](https://www.coingecko.com/en/terms) |
 | **News feeds** (Polygon, Finnhub, Alpaca, Marketaux, …) | the reader's news window, merged across the feeds they keyed | each provider's terms |
 
 Data fetched on your key is governed by your agreement with that vendor.
