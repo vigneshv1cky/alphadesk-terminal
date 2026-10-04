@@ -1719,6 +1719,15 @@ def api_crypto(top: int = 20):
     return get_prices().ask("crypto_movers", top=max(1, min(top, 50)))
 
 
+@app.get("/api/crypto/tradable")
+def api_crypto_tradable():
+    """The coins the connected Alpaca account can trade against the dollar —
+    the list the crypto movers are cut to. Read-only, no keys in it."""
+    from alphadesk.providers import get_prices
+    coins = get_prices().get("crypto_symbols")
+    return {"count": len(coins or ()), "coins": sorted(coins or ()), "connected": bool(coins)}
+
+
 @app.get("/api/widgets/external")
 def api_external_widgets():
     """The declarative external tiles this deployment is configured with.
