@@ -86,7 +86,30 @@ python -m alphadesk.main init --email you@example.com --like-cloud
 Then `python -m alphadesk.main dashboard` as above, and sign in with that email and
 password. Use `--login` for a different login email, `--database-url` for another
 Postgres, and `--password-hash` (from `python -m alphadesk.main hash-password`)
-to skip the prompt.
+to skip the prompt. For a setup with no typing at all, for example from a script:
+
+```bash
+python -m alphadesk.main init --email you@example.com --like-cloud --password-hash "$HASH" --database-url postgresql://localhost:5432/alphadesk
+```
+
+What to know about the Postgres path:
+
+- **Version.** It is built and run against Postgres 16. The driver is a pure-Python
+  one that comes with the install, so there is nothing to compile.
+- **The database.** `init --like-cloud` creates the database if the server is running and
+  the user may create databases; otherwise create it first (`createdb alphadesk`) and run
+  `init` again. Tables are created at the first start, and starting again is safe.
+- **The word-search index.** The first start also tries to create the `pg_trgm`
+  extension and the indexes that make word search fast. If the database user may not
+  create extensions (some managed services), the log says so once and search still
+  works, only without the index. Ask the service to allow `pg_trgm`, or run
+  `CREATE EXTENSION pg_trgm` as an administrator, and restart.
+- **Moving from SQLite.** The two stores are separate: switching an existing setup to
+  Postgres starts with an empty ledger. Your vendor keys sealed in the old store are not
+  carried over, so keep the settings file and add the keys again on the Account page,
+  or import them with `python -m alphadesk.main keys import-file`.
+- **Backups.** The ledger is one database: back it up with `pg_dump`. Keep the vault key
+  in the settings file as well, because stored vendor keys cannot be opened without it.
 
 With Docker instead:
 
@@ -98,6 +121,28 @@ The first start does the same setup inside a data volume and keeps it there. It
 also starts Postgres beside the app, the same database the live server runs, so
 what you test locally is what runs in the cloud; the word search uses a Postgres
 index there that SQLite cannot have.
+
+What to know about the Docker path:
+
+- **The first build is large and slow.** The image holds Python, a CPU-only build of
+  the machine-learning library and the 1.2 GB embedding model that search by meaning
+  uses, baked in so a starting container fetches nothing. Expect several gigabytes and
+  a long first build. `ALPHADESK_SEMANTIC_SEARCH=off` stops the model being loaded when
+  the app runs; it does not shrink the image.
+- **Two volumes hold everything.** `alphadesk-data` has the settings file (with the
+  vault key) and `alphadesk-pg` has the database. `docker compose down` keeps both;
+  `docker compose down -v` deletes them and with them your history and stored keys.
+- **Back up the settings file.** `docker compose cp alphadesk:/data/.env ./alphadesk.env`
+  copies it out. Without the vault key the stored vendor keys cannot be opened.
+- **Update.** `git pull`, then `docker compose up -d --build`. Settings and data stay.
+  Watch it with `docker compose logs -f alphadesk`.
+- **No sign-in inside the container.** It runs in single-person mode on
+  `127.0.0.1:8000`, as above. For a login of your own use the host setup with
+  `--like-cloud`, or put an access token in front as described below.
+- **Agents.** Create the token on the **Agent access** page as usual; the tools answer on
+  `http://127.0.0.1:8000/api/agent/tools/mcp`. To reach them from another machine, set
+  `ALPHADESK_BASE_URL` to the address that machine uses and
+  `ALPHADESK_ALLOWED_HOSTS` for any other name, and keep an access token in front.
 **Reachable from other machines?** Sign-in is off in this mode, so anyone who
 can reach the port can use it and read your connected vendors. Keep it on
 `127.0.0.1`, or set an access token — the browser then asks for it once, and
@@ -194,7 +239,7 @@ cp alphadesk/deploy/env.example .env
 | `SEC_USER_AGENT` | yes | `AlphaDesk (you@example.com)` — a name and a real email |
 | `ALPHADESK_AUTH` | for one person | `off`: a single local account with no sign-in |
 | `ALPHADESK_ACCESS_TOKEN` | if reachable beyond your machine | with sign-in off, one shared secret (16+ characters) the browser asks for once; see Quick start |
-| `ALPHADESK_DATABASE_URL` | no | a `postgres://` URL (recommended: the Docker setup uses one, and it enables the word-search index); unset, SQLite in `ALPHADESK_DATA` (`~/.alphadesk`) |
+| `ALPHADESK_DATABASE_URL` | no | a `postgresql://` URL (recommended: the Docker setup and `init --like-cloud` use one, and it enables the word-search index, which needs the `pg_trgm` extension); unset, SQLite in `ALPHADESK_DATA` (`~/.alphadesk`) |
 | `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys. Found at start, they are sealed into your account — the local one with sign-in off, or the login's — so the settings file is the record: they add or update keys, never delete them, and win over a key changed on the Account page at the next start. You can still connect keys on the Account page instead |
 | `ALPHADESK_SEMANTIC_SEARCH` | no | `off` skips the ~1.2 GB embedding model; search then matches words only. Without the `search` extra installed it is off anyway |
 | `ALPHADESK_LOGIN_EMAIL` + `ALPHADESK_LOGIN_PASSWORD_HASH` | no | with sign-in on: your own sign-in, and the only user the server accepts. With sign-in on it is required; the server will not start without it. At start the account is made, or an existing account with that email gets the password and keeps its data. While set, the password form is the only door. Make the hash with `python -m alphadesk.main hash-password`; `ALPHADESK_LOGIN_PASSWORD` (12+ characters) also works but is readable to anyone who can read the settings. The identifier is an email address |

@@ -23,7 +23,10 @@ the end of this page.
 - **The email address is the account key.** The identifier is an email, not a
   free-form username.
 - **`ALPHADESK_BASE_URL` is required behind a proxy**: the app cannot infer
-  HTTPS (agent connections depend on it).
+  HTTPS (agent connections depend on it). The agent tools answer only on that
+  address plus any names in `ALPHADESK_ALLOWED_HOSTS` (comma-separated): a
+  platform that serves one service under two addresses, as Cloud Run does, needs
+  the second listed there or agents get a 421 on it.
 
   Passwords are hashed with scrypt (n=2^14, r=8, p=1, 32-byte salt),
   verified in constant time, at least 10 characters, and prompted, never
@@ -88,6 +91,11 @@ to 120 requests a minute per credential. Two credentials exist:
 
 - **Tokens** created on the Agent access page (beside Account) for Claude Code, Codex, Cursor and
   opencode: shown once, stored as SHA-256, at most 10 live, revoked at once.
+- **The call log.** Every tool call is recorded (tool, arguments, timing,
+  outcome), with an optional task id and intent from the request headers
+  `X-Agent-Task` and `X-Agent-Intent`; a caller can also say whether a result
+  helped by posting to the tool server's `/feedback` path with the same token.
+  Read it with `python -m alphadesk.main agent-usage` or `/api/agent/usage`.
 - **OAuth 2.1** for connector apps that add a server by URL (Claude.ai,
   ChatGPT): registration, PKCE, refresh and revoke, with clients sealed and
   codes and tokens stored as hashes; a single-use 5-minute code, one-hour
