@@ -248,6 +248,42 @@ def test_a_companys_own_words_name_the_crypto_it_holds_and_the_companies_it_ment
     assert lst["companies"] == []                                        # a story's tickers are a movers list, not a tie
 
 
+def test_a_coin_the_chart_vendor_lacks_is_priced_from_coingecko(monkeypatch):
+    from fastapi import HTTPException
+    from alphadesk import mcp_server
+    from alphadesk.app import dashboard
+    from alphadesk.ingest import coingecko, company
+
+    def no_chart(symbol, **kw):
+        raise HTTPException(404, "no such pair")
+    monkeypatch.setattr(dashboard, "api_chart", no_chart)
+    monkeypatch.setattr(company, "_crypto_key", lambda: "demo-key")
+    monkeypatch.setattr(coingecko, "daily_bars", lambda sym, days, key: [
+        {"t": "2026-09-01", "c": 1.9, "v": 5.0}, {"t": "2026-10-02", "c": 4.7, "v": 9.0}] if key == "demo-key" else None)
+    got = mcp_server.price_history("NEAR-USD", "3M")
+    assert got["vendor"] == "coingecko" and got["first"]["close"] == 1.9 and got["last"]["close"] == 4.7
+    monkeypatch.setattr(company, "_crypto_key", lambda: None)            # no key: the plain refusal, not a made-up series
+    import pytest
+    with pytest.raises(ValueError):
+        mcp_server.price_history("NEAR-USD", "3M")
+    with pytest.raises(ValueError):                                      # a stock is never sent to CoinGecko
+        mcp_server.price_history("XYZ", "3M")
+
+
+def test_coingecko_daily_bars_are_one_close_per_day(monkeypatch):
+    from alphadesk.ingest import coingecko
+    day = 86_400_000
+    t0 = 1_788_000_000_000 // day * day
+    monkeypatch.setattr(coingecko, "resolve_id", lambda base, key=None: "near")
+    monkeypatch.setattr(coingecko, "_get", lambda path, key: {
+        "prices": [[t0, 1.0], [t0 + day, 2.0], [t0 + day + 3_600_000, 2.5]],       # the live point repeats the last day
+        "total_volumes": [[t0, 10.0], [t0 + day, 20.0], [t0 + day + 3_600_000, 21.0]]})
+    bars = coingecko.daily_bars("NEAR-USD", 30, "k")
+    assert [b["c"] for b in bars] == [1.0, 2.5] and len({b["t"] for b in bars}) == 2
+    monkeypatch.setattr(coingecko, "resolve_id", lambda base, key=None: None)
+    assert coingecko.daily_bars("NOPE-USD", 30, "k") is None
+
+
 def test_a_surface_that_answered_nothing_is_not_called_a_missing_key():
     from alphadesk.providers.base import NeedsKey
     nothing = NeedsKey("analyst_ratings", [], connected=["alpaca", "finnhub", "fmp"])

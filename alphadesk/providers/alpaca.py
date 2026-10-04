@@ -16,6 +16,7 @@ What a FREE Alpaca key serves, measured the same day on a basic-plan key:
   * The screener: most active by volume, and the day's gainers and losers.
   * Option contracts and chain snapshots (quotes, last trade, implied
     volatility, greeks); no per-contract daily volume.
+  * Crypto bars and snapshots.
 
 What a PAID plan adds (Algo Trader Plus), and how it is noticed without the
 reader saying so: recent SIP data. The adapter asks once for SIP's latest
@@ -88,6 +89,11 @@ OPTION_MOVERS_NAMES = 37
 OPTION_INDEX_FUNDS = ("SPY", "QQQ", "IWM")
 OPTION_MOVERS_WORKERS = 12
 OPTION_STRIKE_BAND = 0.25
+# Coins by size, for the crypto list's order when the vendor's volume cannot
+# rank them (Alpaca counts only its own venue).
+COIN_ORDER = ("BTC", "ETH", "USDT", "XRP", "SOL", "USDC", "DOGE", "ADA", "TRX", "LINK", "AVAX", "SHIB", "XLM", "DOT",
+              "BCH", "LTC", "HYPE", "UNI", "PEPE", "AAVE", "POL", "ARB", "FIL", "GRT", "CRV", "MKR", "XTZ", "SUSHI",
+              "BAT", "YFI", "TRUMP", "PAXG")
 LISTED_EXCHANGES = frozenset({"NYSE", "NASDAQ", "ARCA", "AMEX", "BATS"})
 # Tries for one SIP request that a PAID key sees refused (2026-09-14, measured
 # minutes after an upgrade to Algo Trader Plus: 6 of 36 SIP requests came back
@@ -122,6 +128,17 @@ LISTED_ETFS: tuple[tuple[str, str], ...] = MARKET_ETFS + (
     ("TQQQ", "3x Nasdaq"), ("SQQQ", "-3x Nasdaq"), ("SOXL", "3x semis"), ("SOXS", "-3x semis"), ("LQD", "IG corporate"),
     ("IEF", "7-10yr Treasury"), ("SHY", "1-3yr Treasury"), ("KRE", "Regional banks"), ("XBI", "Biotech"), ("GDX", "Gold miners"),
 )
+
+
+def coin_pair(symbol: str) -> str | None:
+    """The Alpaca pair for a coin symbol ("BTC-USD", "BTC/USD", "BTCUSD"),
+    or None for anything that is not one."""
+    s = symbol.upper().strip()
+    for quote in ("USDT", "USDC", "USD", "BTC"):
+        for sep in ("-", "/"):
+            if s.endswith(sep + quote) and len(s) > len(quote) + 1:
+                return f"{s[: -len(quote) - 1]}/{quote}"
+    return None
 
 
 def common_stock_symbol(symbol: str) -> bool:
@@ -382,6 +399,9 @@ class AlpacaPrices:
             if kind == "stock":
                 from alpaca.data.historical import StockHistoricalDataClient
                 c = StockHistoricalDataClient(self.api_key, self.api_secret)
+            elif kind == "crypto":
+                from alpaca.data.historical import CryptoHistoricalDataClient
+                c = CryptoHistoricalDataClient(self.api_key, self.api_secret)
             elif kind == "option":
                 from alpaca.data.historical.option import OptionHistoricalDataClient
                 c = OptionHistoricalDataClient(self.api_key, self.api_secret)
@@ -727,6 +747,38 @@ class AlpacaPrices:
             self._night_cache[key] = (time.time(), out)
         return out
 
+    def crypto_bars(self, pair: str, spec: dict, start: datetime, end: datetime | None = None) -> list[dict]:
+        from alpaca.data.requests import CryptoBarsRequest
+        try:
+            resp = self._client("crypto").get_crypto_bars(CryptoBarsRequest(
+                symbol_or_symbols=pair, timeframe=self._timeframe(spec), start=start, end=end))
+        except Exception as exc:
+            raise self._wrap("crypto bars", exc) from exc
+        return self._rows(resp, pair)
+
+    def crypto_daily_history(self, symbols: list[str], days: int = 21) -> dict[str, list[dict]]:
+        """The last `days` daily bars for many coins in one request — what the
+        crypto list's volatility and liquidity are computed from (2026-09-19).
+        Keyed by the symbols as given. The volume is Alpaca's own venue's."""
+        from alpaca.data.requests import CryptoBarsRequest
+        import re
+        pairs = {s: coin_pair(s) for s in symbols}
+        # Only symbols in Alpaca's own spelling: CoinGecko lists coins like
+        # FIGR_HELOC, and ONE symbol Alpaca calls invalid fails the whole
+        # request — every coin's volatility went blank on a reader with both
+        # keys (2026-09-19). A coin Alpaca does not trade is simply absent.
+        pairs = {s: p for s, p in pairs.items() if p and re.fullmatch(r"[A-Z]+x?/[A-Z]+", p)}
+        if not pairs:
+            return {}
+        start = datetime.now(timezone.utc) - timedelta(days=days + 2)
+        try:
+            resp = self._client("crypto").get_crypto_bars(CryptoBarsRequest(
+                symbol_or_symbols=sorted(set(pairs.values())), timeframe=self._timeframe(self._INTERVALS["1d"]),
+                start=start))
+        except Exception as exc:
+            raise self._wrap("crypto daily bars", exc) from exc
+        return {s: rows for s, p in pairs.items() if (rows := self._rows(resp, p))}
+
     def chart_series(self, symbol: str, days: int = 2, range_key: str | None = None,
                      interval: str | None = None, before=None, need: int | None = None) -> dict | None:
         self._need_key()
@@ -756,13 +808,18 @@ class AlpacaPrices:
         else:
             windows = [(now_et() - timedelta(days=ip.RANGE_DAYS.get(rk, days) + 3), None)]
 
+        pair = coin_pair(sym)
         delay = 0
         start, end = windows[0]
         bars: list[dict] = []
         for start, end in windows:
-            got, delay = self.stock_bars(sym, spec, start, end)
-            got_bars = got.get(sym, [])
-            source = "sip"
+            if pair:
+                got_bars = self.crypto_bars(pair, spec, start, end)
+                source = "alpaca-crypto"
+            else:
+                got, delay = self.stock_bars(sym, spec, start, end)
+                got_bars = got.get(sym, [])
+                source = "sip"
             # A wider window that brought nothing new is the vendor's floor
             # at this interval, not a reason to ask again five times.
             if bars and len(got_bars) <= len(bars):
@@ -770,7 +827,7 @@ class AlpacaPrices:
             bars = got_bars
             if before is None or not ip.page_is_thin(bars, need):
                 break
-        if intraday and bars:
+        if not pair and intraday and bars:
             try:
                 # The night comes from its own prints where the window is
                 # short enough to read them — the feed's bars leave out the
@@ -791,7 +848,7 @@ class AlpacaPrices:
             bars = ip.page_trim(bars, need)
         if before is not None:
             bars = [b for b in bars if b["ts"] < before]
-        provisional = self._provisional(sym, spec, bars) if (delay and intraday and before is None) else []
+        provisional = self._provisional(sym, spec, bars) if (delay and intraday and before is None and not pair) else []
         stats = None if used in ("1m", "2m") else ip._daily_coverage(bars)
         out = ip.build_series_payload(sym, bars, used, range_key=rk, interval=interval, stats=stats, table=table)
         if out is not None:
@@ -838,7 +895,7 @@ class AlpacaPrices:
         import re
         # Preferred series ("ACP-PA", "CTO-PB") are not on Alpaca at all; asking
         # would cost one refused batch each before they could be dropped.
-        wanted = [s.upper() for s in symbols if s and not re.search(r"-P[A-Z]?$", s.upper())]
+        wanted = [s.upper() for s in symbols if s and not coin_pair(s) and not re.search(r"-P[A-Z]?$", s.upper())]
         if not wanted:
             return {}
         as_alpaca = {s: s.replace("-", ".") for s in wanted}
@@ -908,7 +965,8 @@ class AlpacaPrices:
         so volume is the whole market's, not one exchange's."""
         self._need_key()
         from alphadesk.config import ET
-        stocks = [s.upper() for s in symbols]
+        stocks = [s.upper() for s in symbols if not coin_pair(s)]
+        coins = [s.upper() for s in symbols if coin_pair(s)]
         out: dict[str, dict] = {}
         if stocks:
             feed = self.stock_feed()
@@ -995,6 +1053,29 @@ class AlpacaPrices:
                     "bid_size": _f(getattr(q, "bid_size", None)), "ask_size": _f(getattr(q, "ask_size", None)),
                     "vendor": self.name,
                 }
+        if coins:
+            from alpaca.data.requests import CryptoSnapshotRequest
+            pairs = {coin_pair(s): s for s in coins}
+            try:
+                snaps = self._client("crypto").get_crypto_snapshot(CryptoSnapshotRequest(symbol_or_symbols=list(pairs)))
+            except Exception as exc:
+                raise self._wrap("crypto snapshots", exc) from exc
+            for pair, sym in pairs.items():
+                snap = snaps.get(pair)
+                trade = getattr(snap, "latest_trade", None)
+                price = _f(getattr(trade, "price", None))
+                if price is None:
+                    continue
+                day = getattr(snap, "daily_bar", None)
+                prev = _f(getattr(getattr(snap, "previous_daily_bar", None), "close", None))
+                out[sym] = {"symbol": sym, "name": pair, "currency": "USD", "price": price,
+                            "change": round(price - prev, 6) if prev else None,
+                            "change_pct": round(100 * (price - prev) / prev, 2) if prev else None,
+                            "previous_close": prev, "open": _f(getattr(day, "open", None)),
+                            "day_low": _f(getattr(day, "low", None)), "day_high": _f(getattr(day, "high", None)),
+                            "volume": _f(getattr(day, "volume", None)), "quote_source": "Alpaca crypto",
+                            "as_of": getattr(trade, "timestamp", None).isoformat() if getattr(trade, "timestamp", None) else None,
+                            "vendor": self.name}
         return out
 
     def quote(self, symbol: str) -> dict | None:
@@ -1214,6 +1295,73 @@ class AlpacaPrices:
     def market_tape(self) -> list[dict] | None:
         return self.index_board()
 
+    def crypto_symbols(self) -> frozenset[str] | None:
+        """The coins this account can trade against the dollar, as base
+        symbols ("BTC"), from Alpaca's asset list; kept a day. The crypto
+        list from another vendor is cut to these (2026-09-19, the owner:
+        "only show crypto I can trade in alpaca")."""
+        hit = self._assets.get("__crypto__")
+        if hit and time.time() - hit[0] < 86400:
+            return hit[1]
+        from alpaca.trading.enums import AssetClass
+        from alpaca.trading.requests import GetAssetsRequest
+        assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
+        coins = frozenset(str(a.symbol).split("/")[0] for a in assets
+                          if str(a.symbol).endswith("/USD") and getattr(a, "tradable", True))
+        self._assets["__crypto__"] = (time.time(), coins)
+        return coins or None
+
+    def crypto_movers(self, top: int = 20) -> dict | None:
+        """Alpaca's USD coins. "all" runs largest coins first (COIN_ORDER, then
+        the rest by symbol): Alpaca's volume counts only its own venue —
+        Bitcoin 16 coins, about $1.2M, on 2026-09-15 — so it cannot rank the
+        market, and the payload says so ("venue_volume")."""
+        from alpaca.trading.enums import AssetClass
+        from alpaca.trading.requests import GetAssetsRequest
+        try:
+            assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
+        except ProviderError:
+            raise
+        pairs = sorted({a.symbol for a in assets if str(a.symbol).endswith("/USD") and getattr(a, "tradable", True)})
+        q = self.quotes([p.replace("/", "-") for p in pairs])
+        # The change over the last 24 hours, like every crypto venue shows
+        # and the column says (2026-09-15). The quote's change runs from
+        # Alpaca's last daily bar close, a clock cut crypto does not observe:
+        # BTC read -2.48% there against CoinGecko's rolling -3.30%. One
+        # request of 1-minute bars over the two hours before that moment, for
+        # every coin, sets each base to within a minute (15-minute bars were
+        # 0.13 points off on BTC); a coin quiet for two hours shows no change.
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(hours=24)
+        try:
+            from alpaca.data.requests import CryptoBarsRequest
+            resp = self._client("crypto").get_crypto_bars(CryptoBarsRequest(
+                symbol_or_symbols=pairs, timeframe=self._timeframe(self._INTERVALS["1m"]),
+                start=cutoff - timedelta(hours=2), end=cutoff))
+            bars = {p: self._rows(resp, p) for p in pairs}
+            # A coin that did not trade on Alpaca's venue in those two hours
+            # takes its last trade in the day before instead (2026-09-19):
+            # USDT traded 4 times in that day, the last five hours early, and
+            # showed no change at all. One more request, for those coins only.
+            # A coin with no trade in the day (USDG) still shows none.
+            quiet = [p for p in pairs if not bars.get(p)]
+            if quiet:
+                more = self._client("crypto").get_crypto_bars(CryptoBarsRequest(
+                    symbol_or_symbols=quiet, timeframe=self._timeframe(self._INTERVALS["1m"]),
+                    start=cutoff - timedelta(hours=24), end=cutoff))
+                bars.update({p: self._rows(more, p) for p in quiet})
+        except Exception as exc:                  # the list stands without the change
+            log.debug("alpaca crypto 24h bars: %s", exc)
+            bars = {}
+        rows = [{"symbol": s, "name": s.split("-")[0], "price": r["price"],
+                 "change_pct": rolling_change(r["price"], bars.get(s.replace("-", "/")) or [], now, 1),
+                 "volume": r.get("volume") or 0} for s, r in q.items()]
+        rank = {c: i for i, c in enumerate(COIN_ORDER)}
+        changed = [r for r in rows if r["change_pct"] is not None]
+        return {"all": sorted(rows, key=lambda r: (rank.get(r["symbol"].split("-")[0], len(rank)), r["symbol"]))[:top],
+                "gainers": sorted([r for r in changed if r["change_pct"] > 0], key=lambda r: -r["change_pct"])[:top],
+                "losers": sorted([r for r in changed if r["change_pct"] < 0], key=lambda r: r["change_pct"])[:top]}
+
     def option_movers(self, top: int = 20) -> dict | None:
         """The busiest option contracts across today's most traded names,
         expiring within OPTION_MOVERS_DAYS, from the reader's chain snapshots —
@@ -1326,6 +1474,13 @@ class AlpacaPrices:
             return {"tabs": tabs_from_list(rows, with_active=True), "source": "alpaca",
                     "note": "ETFs standing in for the indices — an index level is licensed data" if category == "indices" else None,
                     "filling": category == "etfs" and etf_filling}
+        if category == "crypto":
+            c = self.crypto_movers(top)
+            if not c:
+                return None
+            return {"tabs": [{"id": k, "label": lbl, "rows": c.get(k) or []}
+                             for k, lbl in (("all", "All"), ("gainers", "Gainers"), ("losers", "Losers"))],
+                    "source": "alpaca", "venue_volume": True}
         if category == "options":
             return self.option_movers(top)
         return None
@@ -1492,6 +1647,8 @@ class AlpacaPrices:
     def context(self, symbol: str) -> dict | None:
         """Price and liquidity context over the last ninety sessions."""
         sym = symbol.upper()
+        if coin_pair(sym):
+            return None
         got, _ = self.stock_bars(sym, self._INTERVALS["1d"], datetime.now(timezone.utc) - timedelta(days=140))
         bars = got.get(sym, [])[-90:]
         if len(bars) < 2:

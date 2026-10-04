@@ -1,5 +1,5 @@
 """Market-data vendor adapters on the user's own keys (2026-09-13): Polygon,
-Finnhub, Alpha Vantage and Financial Modeling Prep through the
+Finnhub, Alpha Vantage, CoinGecko, and Financial Modeling Prep through the
 company mixins (providers/company_vendors.py). Alpaca lives in
 providers/alpaca.py. There is no builtin source: the data router asks the
 signed-in user's connected vendors, and a surface none of them carries
@@ -231,8 +231,8 @@ class PolygonPrices:
 
     PARTIAL on purpose, the way the protocol invites: charts, live context,
     a thin quote and gainers/losers are what one Polygon key serves well.
-    Fundamentals, ownership, analyst consensus, macro, the tape, and options
-    are served by other vendors and answer None here — the UI
+    Fundamentals, ownership, analyst consensus, macro, the tape, options and
+    crypto are served by other vendors and answer None here — the UI
     renders absence honestly rather than this provider guessing.
 
     Charts go through `ingest.prices.build_series_payload`, so a Polygon
@@ -631,6 +631,9 @@ class PolygonPrices:
     def option_chain(self, symbol: str, expiry: str) -> dict | None:
         return None
 
+    def crypto_movers(self, top: int = 20) -> dict | None:
+        return None
+
 
 class FinnhubPrices(FinnhubCompany):
     """Finnhub quotes and company data. Config: the user's Finnhub key — the same
@@ -914,6 +917,9 @@ class FinnhubPrices(FinnhubCompany):
     def option_expirations(self, symbol: str) -> list[str] | None: return None
 
     def option_chain(self, symbol: str, expiry: str) -> dict | None:
+        return None
+
+    def crypto_movers(self, top: int = 20) -> dict | None:
         return None
 
 
@@ -1255,7 +1261,78 @@ class AlphaVantagePrices(AlphaVantageCompany):
     def option_chain(self, symbol: str, expiry: str) -> dict | None:
         return None
 
+    def crypto_movers(self, top: int = 20) -> dict | None:
+        return None
 
+
+# A coin's 24-hour dollar volume past this many times its market cap is a
+# data error, not trading (2026-09-15: CoinGecko sent Ethereum's as about
+# $1.19e19, a billion times the real ~$12B, beside a ~$290B market cap).
+COINGECKO_VOLUME_MAX_CAP_MULTIPLE = 10
+
+
+def coingecko_volume(total_volume, market_cap) -> tuple[float, bool]:
+    """(the volume to use, whether it was discarded). A volume past
+    COINGECKO_VOLUME_MAX_CAP_MULTIPLE × the market cap reads as none, and is
+    flagged so a turnover floor does not drop the coin for a figure the
+    vendor got wrong. Pure."""
+    try:
+        v = float(total_volume or 0)
+        cap = float(market_cap or 0)
+    except (TypeError, ValueError):
+        return 0.0, False
+    if cap > 0 and v > cap * COINGECKO_VOLUME_MAX_CAP_MULTIPLE:
+        return 0.0, True
+    return v, False
+
+
+class CoinGeckoPrices:
+    """CoinGecko, on the user's own demo or pro key (2026-09-13: no keyless
+    calls). Serves the crypto surfaces; everything else answers None so the
+    router asks the next vendor. The surfaces are filled in by the movers
+    and company modules that already speak CoinGecko's payloads."""
+
+    name = "coingecko"
+
+    def __init__(self, *, api_key: str | None = None, api_secret: str | None = None) -> None:
+        self.api_key = (api_key or "").strip()
+
+    def _need_key(self) -> None:
+        if not self.api_key:
+            raise ProviderError("no CoinGecko key")
+
+    def category_movers(self, category: str, top: int = 20) -> dict | None:
+        """Coins by market cap from /coins/markets — theirs' "All" order —
+        with the 24-hour change and dollar volume."""
+        if category != "crypto":
+            return None
+        self._need_key()
+        # The top 250 by market cap, CoinGecko's page limit, in one request:
+        # the list may be cut to the coins the reader can trade on Alpaca
+        # (ingest/movers.py), which keeps about a fifth of the top 50.
+        per = 250
+        data = _get_json(f"https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc"
+                         f"&per_page={per}&page=1&sparkline=false&price_change_percentage=24h",
+                         {"x-cg-demo-api-key": self.api_key}, timeout=20)
+        rows = []
+        for c in data or []:
+            sym = str(c.get("symbol") or "").upper()
+            if not sym or c.get("current_price") is None:
+                continue
+            vol, suspect = coingecko_volume(c.get("total_volume"), c.get("market_cap"))
+            rows.append({"symbol": f"{sym}-USD", "display": sym, "name": c.get("name"), "price": c.get("current_price"),
+                         "change_pct": c.get("price_change_percentage_24h"), "volume": vol,
+                         "volume_is_dollars": True, "volume_suspect": suspect})
+        if not rows:
+            return None
+        from alphadesk.ingest.movers import _row, tabs_from_list
+        normal = [{**_row(r["symbol"], r["price"], r["change_pct"], r["volume"], name=r["name"], display=r["display"],
+                          turnover_is_volume=True), "volume_is_dollars": True, "volume_suspect": r["volume_suspect"]}
+                  for r in rows]
+        return {"tabs": tabs_from_list(normal), "source": "coingecko"}
+
+
+register("prices", CoinGeckoPrices.name, CoinGeckoPrices)
 register("prices", FmpPrices.name, FmpPrices)
 register("prices", PolygonPrices.name, PolygonPrices)
 register("prices", FinnhubPrices.name, FinnhubPrices)

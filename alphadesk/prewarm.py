@@ -50,7 +50,7 @@ _NEVER = ("/api/stream", "/api/auth", "/api/agent", "/api/account", "/api/keys",
           "/api/data/vendors", "/api/news/related", "/api/search", "/api/earnings/find")
 #: Refreshed every FAST_S: what changes minute to minute.
 _FAST = ("/api/movers", "/api/rail", "/api/quote", "/api/quotes", "/api/tape", "/api/indices",
-         "/api/options-flow", "/api/sectors")
+         "/api/crypto", "/api/options-flow", "/api/sectors")
 
 _seen: dict[str, dict[str, float]] = {}          # user -> path -> last used (epoch)
 _replayed: dict[tuple[str, str], float] = {}     # (user, path) -> last replayed

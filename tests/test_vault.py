@@ -461,25 +461,14 @@ class TestUserPricesKeys:
         rows = [k for k in store.list_user_keys("u3") if k["seam"] == "prices"]
         assert sorted(r["provider"] for r in rows) == ["fake-prices", "polygon"]
 
-    def test_old_crypto_seam_rows_are_dropped(self, store):
-        """The CoinGecko key's old seam went with crypto itself (2026-10-03)."""
+    def test_the_crypto_seam_folds_into_market_data(self, store):
         store.create_user("u4", "d@e.f", "sso-only")
         from alphadesk.ledger import store as store_mod
         with store_mod._connect() as conn:
             conn.execute("INSERT INTO user_api_keys (user_id, seam, provider, config, key_hint, created_at)"
                          " VALUES ('u4', 'crypto', 'coingecko', 'sealed', 'cccc', '2026-01-01')")
         store_mod.init()
-        assert store_mod.list_user_keys("u4") == []
-
-    def test_a_stored_key_for_a_vendor_this_build_lacks_is_not_offered_to_the_router(self, store):
-        """A CoinGecko key saved before crypto was removed stays in the store
-        but is never handed to the router, so it cannot raise."""
-        store.create_user("u5", "g@h.i", "sso-only")
-        from alphadesk.providers import registry
-        store.set_user_key("u5", "prices", "coingecko", "sealed", "cccc")
-        store.set_user_key("u5", "prices", "polygon", "sealed", "pppp")
-        registry._prices_rows.clear()
-        assert [r["provider"] for r in registry._user_prices_rows("u5")] == ["polygon"]
+        assert [(r["seam"], r["provider"]) for r in store_mod.list_user_keys("u4")] == [("prices", "coingecko")]
 
     def test_pre_prices_check_table_is_rebuilt(self, tmp_path, monkeypatch):
         import importlib

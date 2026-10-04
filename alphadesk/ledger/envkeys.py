@@ -28,7 +28,7 @@ log = logging.getLogger("alphadesk.envkeys")
 #: vendor -> (key setting, secret setting) for market data.
 PRICES = {"alpaca": ("ALPACA_API_KEY", "ALPACA_SECRET_KEY"), "polygon": ("POLYGON_API_KEY", None),
           "finnhub": ("FINNHUB_API_KEY", None), "alphavantage": ("ALPHAVANTAGE_API_KEY", None),
-          "fmp": ("FMP_API_KEY", None)}
+          "fmp": ("FMP_API_KEY", None), "coingecko": ("COINGECKO_API_KEY", None)}
 #: Finnhub is market data only: its general news feed carries almost no
 #: tickers, so as a news key it delivered nothing (2026-09-13).
 NEWS = {"polygon": ("POLYGON_API_KEY", None), "alpaca": ("ALPACA_API_KEY", "ALPACA_SECRET_KEY"),

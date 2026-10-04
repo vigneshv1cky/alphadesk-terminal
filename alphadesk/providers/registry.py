@@ -136,12 +136,7 @@ def _user_prices_rows(uid: str) -> list[dict]:
     if hit and now - hit[0] < _PRICES_ROW_TTL_S:
         return hit[1]
     from alphadesk.ledger import store
-    # A stored key for a vendor this build no longer carries (CoinGecko, removed
-    # 2026-10-03 when the product became equities only) is left in the store but
-    # never offered to the router, so it cannot raise.
-    _load_once()
-    known = _REGISTRY["prices"]
-    rows = [r for r in store.get_user_keys(uid, "prices") if r["provider"] in known]
+    rows = store.get_user_keys(uid, "prices")
     if len(_prices_rows) > 4096:
         _prices_rows.clear()
     _prices_rows[uid] = (now, rows)
@@ -163,13 +158,13 @@ _METHOD_TTL_S: dict[str, float] = {
     "market_tape": 30.0, "index_board": 30.0, "fundamentals": 3600.0,
     "institutional_ownership": 3600.0, "earnings_context": 3600.0,
     "earnings_insights": 3600.0, "macro": 600.0, "sector_change_pct": 300.0,
-    "option_expirations": 900.0, "option_chain": 900.0,
+    "option_expirations": 900.0, "option_chain": 900.0, "crypto_movers": 60.0,
     "category_movers": 30.0, "quotes": 20.0, "key_stats": 600.0, "compare_metrics": 3600.0,
     "peers": 86400.0, "analyst_ratings": 3600.0, "price_targets": 3600.0, "rating_changes": 3600.0,
     "short_interest": 3600.0, "fund_holdings": 21600.0, "corporate_actions": 21600.0,
     "earnings_history": 3600.0, "earnings_calendar": 900.0, "economic_calendar": 1800.0,
     "press_releases": 21600.0, "dividend_calendar": 1800.0, "split_calendar": 3600.0, "ipo_calendar": 1800.0, "market_caps": 3600.0,
-    "company_profile": 86400.0, "option_movers": 120.0, "daily_history": 900.0, "fx_daily_history": 3600.0,
+    "company_profile": 86400.0, "option_movers": 120.0, "crypto_bars": 30.0, "daily_history": 900.0, "crypto_daily_history": 900.0, "fx_daily_history": 3600.0,
 }
 # KEPT ANSWERS (2026-10-03). The memo above forgets at every restart and re-asks
 # the vendor every few minutes for answers that change daily. The methods below
@@ -186,7 +181,7 @@ _KEEP_FRESH_S: dict[str, float] = {
     "earnings_context": 21600.0, "earnings_insights": 21600.0, "press_releases": 43200.0,
     "split_calendar": 7200.0, "dividend_calendar": 7200.0, "ipo_calendar": 7200.0, "market_caps": 7200.0,
     "macro": 3600.0, "earnings_calendar": 3600.0, "economic_calendar": 7200.0,
-    "daily_history": 3600.0, "fx_daily_history": 10800.0,
+    "daily_history": 3600.0, "crypto_daily_history": 3600.0, "fx_daily_history": 10800.0,
 }
 _HISTORY_RANGES = {"1M", "3M", "6M", "YTD", "1Y", "5Y", "MAX"}
 _DAILY_OR_LONGER = {"1d", "1wk", "1mo"}

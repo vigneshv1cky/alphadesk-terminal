@@ -189,13 +189,14 @@ class TestLiveMux:
 
     @staticmethod
     def _markets(monkeypatch):
-        stock = stream_mod._MarketStream()
-        fake = FakeStream()
-        fake.subscribe_quotes = lambda handler, *s: None
-        fake.unsubscribe_quotes = lambda *s: None
-        monkeypatch.setattr(stock, "_ensure_running", lambda: (setattr(stock, "_stream", fake) or True)
-                            if stock._stream is None else True)
-        return stock
+        stock, crypto = stream_mod._MarketStream(), stream_mod._MarketStream(kind="crypto")
+        for m in (stock, crypto):
+            fake = FakeStream()
+            fake.subscribe_quotes = lambda handler, *s: None
+            fake.unsubscribe_quotes = lambda *s: None
+            monkeypatch.setattr(m, "_ensure_running", lambda m=m, fake=fake: (setattr(m, "_stream", fake) or True)
+                                if m._stream is None else True)
+        return stock, crypto
 
     @staticmethod
     def _tick(market, sym, price, at):
@@ -204,21 +205,26 @@ class TestLiveMux:
     def test_symbols_are_cleaned_deduplicated_and_ordered(self):
         from alphadesk.app.dashboard import stream_symbols
         assert stream_symbols("nvda, aapl,NVDA,brk.b,$$$,,aapl")[0] == ["NVDA", "AAPL", "BRK.B"]
+        assert stream_symbols("btc/usd,eth-usd", extra="/")[0] == ["BTC/USD", "ETH-USD"]
 
-    def test_one_connection_carries_trades_and_quotes(self, monkeypatch):
-        stock = self._markets(monkeypatch)
-        mux = stream_mod.LiveMux(stock, ["NVDA"], ["AAPL", "NVDA"], panel_push_s=5.0)
+    def test_one_connection_carries_trades_quotes_and_coins(self, monkeypatch):
+        from alphadesk.providers.alpaca import coin_pair
+        stock, crypto = self._markets(monkeypatch)
+        mux = stream_mod.LiveMux(stock, crypto, ["NVDA", "BTC-USD"], ["AAPL", "NVDA"], ["ETH-USD", "NOTACOIN"],
+                                 panel_push_s=5.0, coin_push_s=2.0, pair_of=coin_pair)
         hello = mux.open()
-        assert hello["trades"] == {"NVDA": True}
-        assert hello["quotes"]["symbols"] == ["AAPL", "NVDA"] and "crypto" not in hello
+        assert hello["trades"] == {"NVDA": True, "BTC-USD": True}
+        assert hello["quotes"]["symbols"] == ["AAPL", "NVDA"] and hello["crypto"]["products"] == ["ETH-USD"]
         # NVDA is charted AND a row: two references, one upstream subscription.
         assert stock.status()["symbols"] == {"NVDA": 2, "AAPL": 1}
+        assert set(crypto.status()["symbols"]) == {"BTC/USD", "ETH/USD"}
 
         self._tick(stock, "NVDA", 212.5, "t1")
         self._tick(stock, "AAPL", 230.0, "t1")
+        self._tick(crypto, "ETH/USD", 4000.0, "t1")
         frames = mux.frames(100.0)
-        assert [f.split("\n")[0] for f in frames] == ["event: trade", "event: quotes"]
-        assert '"symbol": "NVDA"' in frames[0]
+        assert [f.split("\n")[0] for f in frames] == ["event: trade", "event: quotes", "event: crypto"]
+        assert '"symbol": "NVDA"' in frames[0] and '"symbol": "ETH-USD"' in frames[2]
 
         # A new print is a new trade frame at once; the rows wait out their pace.
         self._tick(stock, "NVDA", 212.6, "t2")
@@ -227,24 +233,28 @@ class TestLiveMux:
         assert mux.frames(107.0) == []                    # nothing new
 
     def test_quotes_past_the_cap_are_reported_not_refused(self, monkeypatch):
-        stock = self._markets(monkeypatch)
+        from alphadesk.providers.alpaca import coin_pair
+        stock, crypto = self._markets(monkeypatch)
         many = [f"S{i}" for i in range(stream_mod.LIVE_QUOTES_MAX + 5)]
-        mux = stream_mod.LiveMux(stock, [], many, panel_push_s=5.0)
+        mux = stream_mod.LiveMux(stock, crypto, [], many, [], panel_push_s=5.0, coin_push_s=2.0, pair_of=coin_pair)
         hello = mux.open()
         assert len(hello["quotes"]["symbols"]) == stream_mod.LIVE_QUOTES_MAX
         assert hello["quotes"]["skipped"] == many[stream_mod.LIVE_QUOTES_MAX:]
 
     def test_close_hands_back_every_reference_and_no_key_is_not_live(self, monkeypatch):
-        stock = self._markets(monkeypatch)
-        mux = stream_mod.LiveMux(stock, ["NVDA"], ["NVDA", "AAPL"], panel_push_s=5.0)
+        from alphadesk.providers.alpaca import coin_pair
+        stock, crypto = self._markets(monkeypatch)
+        mux = stream_mod.LiveMux(stock, crypto, ["NVDA"], ["NVDA", "AAPL"], ["BTC-USD"],
+                                 panel_push_s=5.0, coin_push_s=2.0, pair_of=coin_pair)
         mux.open()
         released = []
         mux.close(lambda market, sym: (released.append(sym), market.release(sym)))
-        assert sorted(released) == ["AAPL", "NVDA", "NVDA"]
-        assert stock.status()["symbols"] == {}
-        keyless = stream_mod.LiveMux(None, ["NVDA"], ["AAPL"], panel_push_s=5.0)
+        assert sorted(released) == ["AAPL", "BTC/USD", "NVDA", "NVDA"]
+        assert stock.status()["symbols"] == {} and crypto.status()["symbols"] == {}
+        keyless = stream_mod.LiveMux(None, None, ["NVDA"], ["AAPL"], ["BTC-USD"],
+                                     panel_push_s=5.0, coin_push_s=2.0, pair_of=coin_pair)
         hello = keyless.open()
-        assert hello["trades"] == {"NVDA": False} and not hello["quotes"]["live"]
+        assert hello["trades"] == {"NVDA": False} and not hello["quotes"]["live"] and not hello["crypto"]["live"]
         assert keyless.frames(0.0) == []
 
 
@@ -274,12 +284,13 @@ class TestLiveNews:
     """2026-09-15: the reader's real-time news on the tab's one connection."""
 
     def test_the_news_channel_tells_the_tab_when_stories_arrive(self, monkeypatch):
+        from alphadesk.providers.alpaca import coin_pair
         news_market = stream_mod._MarketStream(kind="news")
         fake = SimpleNamespace(subscribe_news=lambda h, *s: None, unsubscribe_news=lambda *s: None)
         monkeypatch.setattr(news_market, "_ensure_running",
                             lambda: (setattr(news_market, "_stream", fake) or True) if news_market._stream is None else True)
         seq = {"u1": 4}
-        mux = stream_mod.LiveMux(None, [], [], panel_push_s=5.0,
+        mux = stream_mod.LiveMux(None, None, [], [], [], panel_push_s=5.0, coin_push_s=2.0, pair_of=coin_pair,
                                  news=news_market, news_owner="u1", news_seq=lambda owner: seq[owner])
         assert mux.open()["news"] is True
         assert news_market._owners == {"u1": 1} and news_market.status()["symbols"] == {"*": 1}

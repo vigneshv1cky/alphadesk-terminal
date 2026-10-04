@@ -100,13 +100,19 @@ class TestMarketData:
         assert client.get("/api/movers?top=-5").status_code == 200
         assert seen["top"] == 1
 
-    def test_the_indices_are_wrapped(self, client, monkeypatch):
-        """/api/indices returns {"indices": [...]} rather than a bare list — a
-        top-level JSON array is the one shape that cannot gain a sibling field
-        later without breaking every caller. There is no /api/crypto: the
-        product is equities only (2026-10-03)."""
+    def test_crypto_top_is_clamped_and_indices_are_wrapped(self, client, monkeypatch):
+        """Same clamp as movers, plus the indices envelope. /api/indices returns
+        {"indices": [...]} rather than a bare list — a top-level JSON array is
+        the one shape that cannot gain a sibling field later without breaking
+        every caller."""
+        seen = {}
+
         class FakePrices:
             name = "fake2"
+
+            def crypto_movers(self, top=20):
+                seen["top"] = top
+                return {"all": [], "most_active": [], "gainers": [], "losers": []}
 
             def index_board(self):
                 return [{"symbol": "^GSPC", "label": "S&P 500",
@@ -116,6 +122,11 @@ class TestMarketData:
         import alphadesk.providers as pkg
         router = registry.DataRouter("u", {"alpaca": FakePrices()})
         monkeypatch.setattr(pkg, "get_prices", lambda: router)
+
+        assert client.get("/api/crypto?top=10000").status_code == 200
+        assert seen["top"] == 50
+        assert client.get("/api/crypto?top=-5").status_code == 200
+        assert seen["top"] == 1
 
         body = client.get("/api/indices").json()
         assert list(body) == ["indices"]

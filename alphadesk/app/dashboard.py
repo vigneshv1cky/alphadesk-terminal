@@ -506,7 +506,18 @@ def api_news(limit: int = 300, before: str | None = None, q: str | None = None, 
         # No server feed (2026-09-13): news is the user's own feed key.
         raise NeedsKey("news", [], signed_in=bool(uid))
     sym = "".join(c for c in (symbol or "").upper() if c.isalnum() or c in ".-")[:14]
-    if sym and not q:
+    from alphadesk.providers.alpaca import coin_pair
+    if sym and not q and coin_pair(sym):
+        # A COIN reads all crypto and what moves it, not its own tag
+        # (alphadesk/cryptonews.py, 2026-09-19). The window, or with
+        # `before` a page of older stories, filtered by that one rule.
+        from alphadesk import cryptonews
+        if before:
+            pool = store.articles_before(news_owner(uid), before, limit=500, body=False)
+        else:
+            pool = store.recent_articles(_since_iso(), limit=8000, owner=news_owner(uid), body=False)
+        articles = cryptonews.select(pool, min(limit, 300))
+    elif sym and not q:
         # ONE symbol's stories (2026-09-18). The symbol panel used to filter
         # the shared window, which is the newest 500 stories across every
         # feed — a few hours — so a quiet name like XLK showed three of its
@@ -907,12 +918,16 @@ def _chart_or_fallback(provider, sym, days, range, interval, page, reader, wante
 # HOW OFTEN A LIVE SURFACE MAY REPAINT. Two numbers, and the split is the
 # point: a flash lasts 420ms, so anything pushed faster than about a second
 # leaves the tint permanently on and stops reading as a change at all — which
-# is exactly what the first version of the live ticker did.
+# is exactly what the first version of the crypto ticker did.
 #
 # A single number can take a faster cadence than a table. The strip shows one
 # price per instrument and nothing moves position; a panel re-ranks twenty rows,
 # and a table reordering every two seconds is unreadable however live it is.
+_TICKER_PUSH_S = float(os.environ.get("CRYPTO_MIN_PUSH_S", "2.0"))
 _PANEL_PUSH_S = float(os.environ.get("PANEL_PUSH_S", "5.0"))
+
+# Kept as the old name so a deployment's existing env still applies.
+_CRYPTO_MIN_PUSH_S = _TICKER_PUSH_S
 
 
 def stream_symbols(raw: str, cap: int = 10_000, extra: str = "") -> tuple[list[str], list[str]]:
@@ -930,14 +945,14 @@ def stream_symbols(raw: str, cap: int = 10_000, extra: str = "") -> tuple[list[s
 
 
 @app.get("/api/stream")
-async def api_stream(request: Request, trades: str = "", quotes: str = "", news: int = 0):
+async def api_stream(request: Request, trades: str = "", quotes: str = "", crypto: str = "", news: int = 0):
     """Every live surface of one browser tab on ONE Server-Sent Events
     connection (2026-09-15): `trades` for the charted symbols (a frame per
-    print) and `quotes` for panel rows (latest prices, deduped and paced).
-    See LiveMux in ingest/stream.py.
+    print), `quotes` for panel rows and `crypto` for coins (latest prices,
+    deduped and paced). See LiveMux in ingest/stream.py.
 
     It replaced a connection per chart symbol, one per quotes panel and one
-    for the tape: over HTTP/1.1 a browser keeps six connections to an origin,
+    for crypto: over HTTP/1.1 a browser keeps six connections to an origin,
     the Markets board held five or six streams, and a chart request could
     wait indefinitely for a free one.
 
@@ -962,18 +977,20 @@ async def api_stream(request: Request, trades: str = "", quotes: str = "", news:
     import time as _time
 
     from alphadesk.ingest import stream as streams
+    from alphadesk.providers.alpaca import coin_pair
 
-    def clean(raw: str) -> list[str]:
-        return stream_symbols(raw)[0]
+    def clean(raw: str, extra: str = "") -> list[str]:
+        return stream_symbols(raw, extra=extra)[0]
 
     stock = streams.for_current_user("stock") if (trades or quotes) else None
+    coins = streams.for_current_user("crypto") if (crypto or trades) else None
     # The news channel (2026-09-15): the reader's Alpaca news key streams
     # stories as they publish; each is stored as theirs and the tab is told to
     # reread its list. Other feeds have no real-time stream and stay polled.
     news_stream, news_owner = streams.news_for_current_user() if news else (None, None)
     from alphadesk.ingest.news import stream_seq
-    mux = streams.LiveMux(stock, clean(trades), clean(quotes),
-                          panel_push_s=_PANEL_PUSH_S,
+    mux = streams.LiveMux(stock, coins, clean(trades, "/"), clean(quotes), clean(crypto, "/"),
+                          panel_push_s=_PANEL_PUSH_S, coin_push_s=_CRYPTO_MIN_PUSH_S, pair_of=coin_pair,
                           news=news_stream, news_owner=news_owner, news_seq=stream_seq)
 
     def release_later(market, upstream):
@@ -1098,13 +1115,24 @@ def api_company(symbol: str):
     summary, headcount and officers. See ingest/company."""
     from alphadesk.ingest.company import profile
     # Wider than the equity cleaner: the cross-asset board's symbols carry
-    # ^ (indices) and = (futures, FX).
+    # ^ (indices), = (futures, FX) and - (crypto pairs).
     sym = "".join(c for c in symbol.upper() if c.isalnum() or c in ".-^=")[:14]
     if not sym:
         raise HTTPException(400, "bad symbol")
     out = profile(sym)
     if not out:
-        raise HTTPException(404, f"no company record for {sym}")
+        # A COIN is not a missing company: nothing in EDGAR or a company
+        # feed knows it, and the coin record needs a vendor that carries
+        # coins. Saying which one fills the panel beats "no company record"
+        # (2026-09-15).
+        from alphadesk.providers import get_prices
+        from alphadesk.providers.alpaca import coin_pair
+        from alphadesk.ingest.company import _crypto_key
+        # The key prompt only when there IS no CoinGecko key; with one, a
+        # coin CoinGecko does not know is simply not found.
+        if coin_pair(sym) and not _crypto_key():
+            raise NeedsKey("coin_profile", signed_in=get_prices().uid is not None)
+        raise HTTPException(404, f"no {'coin' if coin_pair(sym) else 'company'} record for {sym}")
     return out
 
 
@@ -1244,7 +1272,7 @@ def api_category_movers(category: str, top: int = 20,
                         min_liquidity: float | None = Query(None, ge=0),
                         min_volatility: float | None = Query(None, ge=0),
                         session: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$")):
-    """Movers by category — stocks, etfs, mutual_funds, options,
+    """Movers by category — stocks, crypto, etfs, mutual_funds, options,
     indices, futures, bonds, currencies — one shape for one tile
     (ingest/movers.py). The floors are the reader's when given, the
     category's defaults otherwise. 404 for a category that does not exist.
@@ -1252,7 +1280,7 @@ def api_category_movers(category: str, top: int = 20,
     `session` asks for a PAST session instead of now, computed from the
     whole market that day against the session before it. Stocks and ETFs
     only: every other category's movers come from a today-only vendor
-    endpoint, and an options list for the 24th cannot be built
+    endpoint, and a crypto or options list for the 24th cannot be built
     from anything we can reach. 404 names the ones that can."""
     from alphadesk.ingest import movers
     if session:
@@ -1425,23 +1453,29 @@ def _fill_quote_gaps(router, quotes: dict, wants: set[str]) -> None:
                 if q and cap:
                     q["market_cap"] = cap
     if "avgvol" in wants:
+        from alphadesk.providers.alpaca import coin_pair
         need = [s for s, q in quotes.items() if q and q.get("avg_volume") is None]
+        coins = [s for s in need if coin_pair(s)]
+        stocks = [s for s in need if not coin_pair(s)]
         bars: dict = {}
-        if need:
-            try:
-                bars.update(router.get("daily_history", need, 21) or {})
-            except Exception:                      # no bar vendor: the tab stays empty
-                pass
+        for method, syms in (("daily_history", stocks), ("crypto_daily_history", coins)):
+            if syms:
+                try:
+                    bars.update(router.get(method, syms, 21) or {})
+                except Exception:                  # no bar vendor: the tab stays empty
+                    pass
         for sym, rows in bars.items():
             vols = [r.get("volume") for r in (rows or [])[-20:] if r.get("volume") is not None]
             q = quotes.get(sym)
             if q and vols:
                 q["avg_volume"] = sum(vols) / len(vols)
     if "pe" in wants:
-        # Only companies (and whatever a vendor reports for a fund) are asked, four at a time, each a cached
+        # A coin has no earnings; only companies (and whatever a vendor
+        # reports for a fund) are asked, four at a time, each a cached
         # key-statistics call.
         from concurrent.futures import ThreadPoolExecutor
-        need = [s for s, q in quotes.items() if q and q.get("pe_trailing") is None]
+        from alphadesk.providers.alpaca import coin_pair
+        need = [s for s, q in quotes.items() if q and q.get("pe_trailing") is None and not coin_pair(s)]
 
         def pe(sym: str):
             try:
@@ -1676,6 +1710,13 @@ def api_indices():
     /api/tape on purpose — see INDEX_BOARD in config."""
     from alphadesk.providers import get_prices
     return {"indices": get_prices().ask("index_board")}
+
+
+@app.get("/api/crypto")
+def api_crypto(top: int = 20):
+    """{all, most_active, gainers, losers} for crypto, on a rolling 24h."""
+    from alphadesk.providers import get_prices
+    return get_prices().ask("crypto_movers", top=max(1, min(top, 50)))
 
 
 @app.get("/api/widgets/external")
@@ -1921,6 +1962,8 @@ def api_keys_set(seam: str, body: KeyIn, request: Request, background: Backgroun
     from alphadesk.ledger import vault
     from alphadesk.providers import registry
     user_id = _key_user(request)
+    if seam == "crypto":
+        seam = "prices"      # CoinGecko is a market-data vendor since 2026-09-13
     if seam not in ("news", "prices", "transcripts"):
         raise HTTPException(422, "seam must be 'news', 'prices' or 'transcripts'")
     if not vault.enabled():
@@ -2001,6 +2044,8 @@ def api_keys_delete_provider(seam: str, provider: str, request: Request):
     must address one without taking the others."""
     from alphadesk.providers import registry
     user_id = _key_user(request)
+    if seam == "crypto":
+        seam = "prices"
     if not store.delete_user_key(user_id, seam, provider):
         raise HTTPException(404, "no key stored for that provider")
     registry.forget_user_keys(user_id)
@@ -2206,7 +2251,7 @@ _BASKETS_MAX, _BASKET_SYMBOLS_MAX = 50, 40
 def basket_symbols(raw: list[str] | str) -> list[str]:
     """Tickers as typed — a list, or one string split on commas and spaces —
     upper-cased, each once, in the order given, anything that is not a symbol
-    dropped. Nothing is looked up: a fund the SEC list does
+    dropped. Nothing is looked up: a crypto pair or a fund the SEC list does
     not carry is still a fine member."""
     parts = raw.replace(",", " ").split() if isinstance(raw, str) else [str(x) for x in raw]
     out: list[str] = []

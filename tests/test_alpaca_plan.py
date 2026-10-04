@@ -327,6 +327,16 @@ def test_option_mover_rows_count_only_todays_session_and_price_the_premium():
     assert r["turnover"] == 90000 * 2.1 * 100 and r["volatility"] == 14.2 and r["change_pct"] == 31.25
 
 
+def test_crypto_runs_largest_coins_first_and_says_its_volume_is_one_venues():
+    p = AlpacaPrices(api_key="k", api_secret="s")
+    p._trading = lambda call: [SimpleNamespace(symbol=s, tradable=True) for s in ("DOGE/USD", "BTC/USD", "ZZZ/USD", "ETH/USD")]
+    p.quotes = lambda syms: {s: {"price": 1.0, "change_pct": 0.5, "volume": 1} for s in syms}
+    p._client = lambda kind: (_ for _ in ()).throw(RuntimeError("no bars in this test"))
+    got = p.category_movers("crypto")
+    assert got["venue_volume"] is True
+    assert [r["symbol"] for r in got["tabs"][0]["rows"]] == ["BTC-USD", "ETH-USD", "DOGE-USD", "ZZZ-USD"]
+
+
 def test_crypto_change_is_over_the_last_24_hours_not_since_the_daily_close():
     from datetime import datetime, timedelta, timezone
     from alphadesk.providers.alpaca import rolling_change
