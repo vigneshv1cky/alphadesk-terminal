@@ -34,7 +34,11 @@ async def call(session, name, **args):
 
 
 async def main(sym: str):
-    token = TOKEN_FILE.read_text().strip()
+    try:
+        token = TOKEN_FILE.read_text().strip()
+    except OSError:
+        sys.exit(f"{TOKEN_FILE} does not exist. Make a token on the Agent access page and save it there "
+                 "(the token is one word starting adk_).")
     if not token.startswith(("adk_", "ado_")) or " " in token:
         sys.exit(f"{TOKEN_FILE} does not hold an access token (it should be one word starting adk_). "
                  "Make a token on the Agent access page, copy it, then run:  pbpaste > ~/.alphadesk-agent-token")
