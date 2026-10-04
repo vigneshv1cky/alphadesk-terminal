@@ -7,14 +7,14 @@
 [![Commercial licence available](https://img.shields.io/badge/Commercial-licence_available-black.svg)](#licence)
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg)
 ![React 19](https://img.shields.io/badge/React-19-61DAFB.svg)
-![MCP tools: 50](https://img.shields.io/badge/MCP_tools-50_read--only-6E56CF.svg)
+![MCP tools: 53](https://img.shields.io/badge/MCP_tools-53_read--only-6E56CF.svg)
 
 **A dense, fast market-research terminal and integration platform.** Readers
 connect their own market-data and news providers; AlphaDesk is the workspace
 that connects, checks and presents what those providers — and the public
 record at SEC EDGAR and the US Treasury — actually say. Questions are asked
 in the reader's **own AI agent** (Claude, ChatGPT, Codex, Cursor, opencode),
-which reads the same records through **50 read-only agent tools** (MCP).
+which reads the same records through **53 read-only agent tools** (MCP).
 
 AlphaDesk **reads**: quotes and charts, news, SEC filings, financial
 statements, ownership and insider activity, earnings and corporate
@@ -357,7 +357,7 @@ each on with a button on the Account page.
 |---|---|
 | **Nasdaq** | Earnings, dividend, split and listing calendars — and **today's trading halts**, which no vendor in the catalogue carries at all |
 | **Yahoo** | Charts, quotes and daily history from the public chart endpoint |
-| **Social** | A mirror of one public account's posts |
+| **Social** | One public account's posts, read from a public copy of the account. Only text posts are served, and every post seen is kept in an archive, so a search reaches back past the copy's newest hundred |
 
 Two rules keep them honest. **A keyed vendor is always asked first** — every
 licensed vendor is ordered ahead of every scraped one, so a scraped source
@@ -415,7 +415,7 @@ each marked with the reason it is there.
 
 ## Agent access (MCP)
 
-AlphaDesk exposes the same records the interface shows as **50 read-only
+AlphaDesk exposes the same records the interface shows as **53 read-only
 tools** over the [Model Context Protocol](https://modelcontextprotocol.io),
 at `/api/agent/tools/mcp`. Every call runs **as the reader**, on their keys,
 rate-limited to 120 requests a minute per token.
@@ -435,15 +435,45 @@ rate-limited to 120 requests a minute per token.
 |---|---|
 | Today | `market_today`, `index_board`, `movers` (stocks, ETFs, indices, crypto, currencies, options, bonds), `sector_performance`, `sector_breadth` |
 | The reader's names | `my_board`, `quotes`, `baskets`, `find_symbol` |
-| One company | `quote`, `key_stats`, `company_profile`, `fund_profile`, `analyst_view`, `financial_statements`, `earnings_history`, `ownership`, `insider_activity`, `peers`, `compare_metrics` |
+| One company | `quote` (with the order book), `key_stats`, `company_profile` (including a share count, with its basis), `fund_profile`, `analyst_view`, `financial_statements`, `filed_report`, `earnings_history`, `symbol_events`, `ownership`, `insider_activity`, `peers`, `compare_metrics`, `related_funds` |
+| Why it moved, and what next | `what_moved` (the big-move days with the stories and filings leading into each), `move_state` (has the move held, faded or turned), `priced_in` (its past reactions to reports, the run into them, analyst targets), `candidates` (dated reasons to move in the **next trading session** — Friday evening and weekends answer for Monday), `movers_in_context` (gainers or losers with their own news, filings and shape), `news_scan` (the news window grouped by name), `related_assets` (what a company's own filings tie it to, such as a token it holds), `entry_facts` (spread, liquidity, tradability, levels and risks before entering a position — read-only, no order is ever placed) |
 | Prices | `price_history`, `price_chart` |
-| News | `symbol_news`, `news_search`, `news_story` |
+| News | `symbol_news`, `news_search`, `news_story`, `news_scan` |
 | Filings and calls | `list_filings`, `filing_text`, `transcripts`, `transcript_text` |
 | Calendars | `earnings_calendar` (upcoming, and reported with `days_back`), `economic_calendar`, `corporate_calendar` |
 | Options | `option_expirations`, `option_chain`, `options_flow` |
 | What just happened | `catalysts` (filings, halts, government action and social posts on one tape), `filing_feed`, `trading_halts`, `government_actions`, `social_posts` |
 | A past session | `movers(session=…)` for stocks and ETFs, with `market_sessions` for the days the market actually opened |
 | Provenance | `data_sources` — whether a figure came from a licensed vendor or a scraped page |
+
+**Which address.** The tools answer only on the names the server is set to answer
+to: the public address in `ALPHADESK_BASE_URL`, plus any names in
+`ALPHADESK_ALLOWED_HOSTS` (a comma-separated list). A host that is not on that
+list is refused. On Cloud Run, which serves one service under two addresses,
+put the second in `ALPHADESK_ALLOWED_HOSTS`.
+
+**Measures, not verdicts.** The tools return figures and plain-fact flags — a
+move's size, how much of a swing was given back, whether a story is about the
+name or only lists it — and never a score, a rating or a recommendation. Each
+reply says what it could not read (`unavailable`, `reliable`), and a refusal
+says what happened: no key, a plan that excludes the data, or connected
+vendors that simply have nothing for that company (small companies often have
+no analyst coverage). The reader's price plan is stated in `data_freshness`:
+a free plan's volume is one exchange's alone and understates the market.
+
+**Watching how agents use it.** Every tool call is logged: the tool, its
+arguments, how long it took and how it ended (answered, empty, incomplete or
+failed, and why). A caller can add the request headers `X-Agent-Task` (one id
+for all the calls of one question) and `X-Agent-Intent` (the question in a
+line), and can say whether a result helped by sending a small JSON message to
+the same address with `/feedback` in place of `/mcp`, using the same token:
+`{"tool": "what_moved", "useful": "yes" | "partly" | "no", "note": "…", "missing": "…"}`.
+That is the only write on the agent door, and it writes to the usage log
+and nothing else. Read the report with `python -m alphadesk.main agent-usage
+--days 30`, or `/api/agent/usage?days=30` while signed in: which tools are never
+called, which come back empty or fail, which are slow, which chains of calls
+repeat (a tool that should exist), and what agents said they were missing. The
+log never holds a token, a key, or the agent's reasoning or final answer.
 
 The tools are written for an agent that cannot see the screen: `find_symbol`
 resolves a name to a ticker from the SEC list rather than letting an agent
@@ -509,7 +539,7 @@ The full account, session, key-vault and agent-credential design is in
   Reader's agent (MCP) ┤                                              │
   Your own bot (HTTP) ─┤                                              │
                        │  /api/*  ── panels, composed per request     │
-                       │  /api/agent/tools/mcp ── 50 read-only tools  │
+                       │  /api/agent/tools/mcp ── 53 read-only tools  │
                        │  /api/v1 ── the same tools, GET only, HTTP   │
                        │  OAuth 2.1 at the root (/authorize, /token…) │
                        │                                              │
@@ -656,7 +686,7 @@ required.
 | `ALPHADESK_ACCESS_TOKEN` | with sign-in off, a shared secret (16+ characters) that guards the browser; ignored where accounts gate |
 | `ALPHADESK_LOCAL_USER_EMAIL` | with sign-in off, act as this existing account instead of a fresh local one — for a server that began with accounts and became one person's own; nothing is moved |
 | `ALPHADESK_OAUTH_REDIRECT_HOSTS` | optional: only these addresses (and their subdomains), comma-separated, may receive a Claude.ai or ChatGPT connector grant; any other is refused at the consent page. Unset, any address may, and the page leads with the address and warns on one it does not recognise |
-| `ALPHADESK_ALLOWED_HOSTS` | with sign-in off and no access token, the server answers only to `localhost`, `127.0.0.1` and `[::1]` (so a web page cannot reach it by rebinding its own name); list any other name you reach it by, comma-separated. `ALPHADESK_BASE_URL`'s host is allowed too |
+| `ALPHADESK_ALLOWED_HOSTS` | extra names the server answers to. With sign-in off and no access token it answers only to `localhost`, `127.0.0.1` and `[::1]` (so a web page cannot reach it by rebinding its own name); list any other name you reach it by, comma-separated. `ALPHADESK_BASE_URL`'s host is allowed too |
 | `ALPHADESK_KEEP_DATA` | `forever` or a number of days: keeps the records (stories and their text, announcements, the forecast log, scraped pages) that long instead of the defaults of 3 to 120 days, and reaches further when the store has less (a key save refills 30 days, "Load older" looks 30 days back, a symbol's own ask a year). It only lengthens a default. A vendor's own terms about storing its data still apply to you; this setting does not change them |
 | `NEWS_BACKFILL_DAYS` | how many days a key save refills (default: the retention window, 30 with `ALPHADESK_KEEP_DATA`, never over 365) |
 | `ALPHADESK_SKIP_KEY_CHECK` | `1` saves a news key without trying it at the vendor first (offline) |
