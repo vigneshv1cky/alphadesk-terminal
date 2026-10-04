@@ -521,6 +521,11 @@ called, which come back empty or fail, which are slow, which chains of calls
 repeat (a tool that should exist), and what agents said they were missing. The
 log never holds a token, a key, or the agent's reasoning or final answer.
 
+**Trying the tools yourself.** `scripts/agent_probe.py` signs in the way an agent does
+(with a token saved in `~/.alphadesk-agent-token`) and prints what the main tools return
+for a symbol: `python scripts/agent_probe.py NVDA`. Point it at another server with
+`ALPHADESK_PROBE_URL`. It only reads.
+
 The tools are written for an agent that cannot see the screen: `find_symbol`
 resolves a name to a ticker from the SEC list rather than letting an agent
 guess; `price_chart` returns a thinned series carrying each point's RSI and
