@@ -41,3 +41,23 @@ def test_reading_a_panel_postpones_its_replay(monkeypatch):
     prewarm._replayed.clear()
     prewarm.note("u2", "/api/sectors")
     assert time.time() - prewarm._replayed[("u2", "/api/sectors")] < 1
+
+
+def test_a_fast_panel_the_owner_has_not_read_for_hours_drops_to_the_slow_rhythm():
+    from alphadesk import prewarm
+    assert prewarm.interval("/api/movers/stocks", 60) == prewarm.FAST_S
+    assert prewarm.interval("/api/movers/stocks", prewarm.FAST_IDLE_S + 1) == prewarm.SLOW_S
+    assert prewarm.interval("/api/company/NVDA", 0) == prewarm.SLOW_S
+
+
+def test_a_tick_refreshes_at_most_a_few_panels_with_a_pause_between(monkeypatch):
+    from alphadesk import prewarm
+    monkeypatch.setattr(prewarm, "_owners", lambda: [("u", "e@x")])
+    now = __import__("time").time()
+    monkeypatch.setattr(prewarm, "_load", lambda uid: {f"/api/quote/S{i}": now for i in range(40)})
+    sent, slept = [], []
+    monkeypatch.setattr(prewarm, "_replay", lambda uid, email, path: sent.append(path))
+    monkeypatch.setattr(prewarm.time, "sleep", lambda s: slept.append(s))
+    prewarm._replayed.clear()
+    assert prewarm.tick() == prewarm.MAX_PER_TICK == len(sent)
+    assert slept and all(s == prewarm.PAUSE_S for s in slept)

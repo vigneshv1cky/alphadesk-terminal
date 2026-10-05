@@ -41,7 +41,15 @@ KEEP_HOURS = 24.0
 FAST_S = 60.0
 SLOW_S = 600.0
 TICK_S = 15.0
-MAX_PER_TICK = 60
+#: How many panels one tick refreshes, and the pause between them. Sixty back
+#: to back was a burst of vendor calls on the one instance every minute, and
+#: the server stalled with it (2026-10-05: 36 slow requests in the minute of one).
+#: Fifteen a tick, a breath between each, covers the same panels over the minute.
+MAX_PER_TICK = 15
+PAUSE_S = 0.3
+#: A fast panel the owner has not looked at for this long drops to the slow
+#: rhythm: a page closed for hours does not need its panels refreshed every minute.
+FAST_IDLE_S = 7200.0
 HEADER = "X-AlphaDesk-Prewarm"
 
 #: Never recorded or replayed: not reads of market data, or not safe to repeat.
@@ -71,15 +79,13 @@ def worth_keeping(path: str) -> bool:
     return "q=" not in path and "before=" not in path
 
 
-def interval(path: str) -> float:
-    """How often a kept request is refreshed. Pure."""
-    if path.startswith(_FAST):
-        return FAST_S
-    if path.startswith("/api/chart/") and ("range=1D" in path or "range=5D" in path):
-        return FAST_S
-    if path.startswith("/api/news") and "symbol=" not in path:
-        return FAST_S
-    return SLOW_S
+def interval(path: str, idle_s: float = 0.0) -> float:
+    """How often a kept request is refreshed, given how long ago the owner
+    last read it. Pure."""
+    fast = (path.startswith(_FAST)
+            or (path.startswith("/api/chart/") and ("range=1D" in path or "range=5D" in path))
+            or (path.startswith("/api/news") and "symbol=" not in path))
+    return FAST_S if fast and idle_s <= FAST_IDLE_S else SLOW_S
 
 
 def note(user_id: str, path: str) -> None:
@@ -157,17 +163,21 @@ def tick() -> int:
     done = 0
     now = time.time()
     for user_id, email in _owners():
-        for path in sorted(_load(user_id)):
+        kept = _load(user_id)
+        # The longest-waiting first, so a capped tick does not starve the
+        # same paths every time.
+        for path in sorted(kept, key=lambda p: _replayed.get((user_id, p), 0.0)):
             if done >= MAX_PER_TICK:
                 return done
             with _lock:
                 last = _replayed.get((user_id, path), 0.0)
-            if now - last < interval(path):
+            if now - last < interval(path, now - kept[path]):
                 continue
             _replay(user_id, email, path)
             with _lock:
                 _replayed[(user_id, path)] = time.time()
             done += 1
+            time.sleep(PAUSE_S)
     return done
 
 

@@ -385,3 +385,39 @@ class TestHeldNewsConnection:
         monkeypatch.setattr(stream_mod, "news_for_user", lambda uid: market)
         assert stream_mod.hold_news_for(["u1"]) == (0, 0)
         assert market._owners == {}
+
+
+class TestOneSubscribeMessageForMany:
+    """2026-10-05: a tab opening with hundreds of symbols sent a subscribe message per symbol,
+    each answered with the whole list, and the server stalled."""
+
+    def test_many_symbols_are_one_upstream_message(self, market):
+        calls = []
+        market._fake.subscribe_trades = lambda handler, *symbols: calls.append(list(symbols))
+        assert market.acquire_many(["aapl", "msft", "nvda"]) is True
+        assert calls == [["AAPL", "MSFT", "NVDA"]]
+        market.acquire_many(["AAPL", "TSLA"])                       # AAPL is already held: only TSLA goes upstream
+        assert calls[-1] == ["TSLA"]
+
+    def test_references_are_counted_per_occurrence_and_released_to_zero(self, market):
+        market.acquire_many(["NVDA", "NVDA"])
+        market.release("NVDA")
+        assert market._fake.unsubscribed == []                       # one reference left
+        market.release("NVDA")
+        assert market._fake.unsubscribed == ["NVDA"]
+
+    def test_a_refused_upstream_takes_no_reference(self, market):
+        def boom(handler, *symbols):
+            raise RuntimeError("socket closed")
+        market._fake.subscribe_trades = boom
+        assert market.acquire_many(["NVDA", "AAPL"]) is False
+        assert market._refs == {}
+
+    def test_a_tab_opening_with_many_symbols_subscribes_in_few_messages(self, market):
+        calls = []
+        market._fake.subscribe_trades = lambda handler, *symbols: calls.append(list(symbols))
+        symbols = [f"S{i:03d}" for i in range(300)]
+        mux = stream_mod.LiveMux(market, None, ["S000"], symbols, [], panel_push_s=5, coin_push_s=2, pair_of=lambda s: None)
+        hello = mux.open()
+        assert len(calls) <= 2                                       # trades and quotes, not 300
+        assert hello["quotes"]["live"] is True and hello["trades"] == {"S000": True}

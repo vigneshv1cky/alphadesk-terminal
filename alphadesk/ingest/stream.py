@@ -186,11 +186,10 @@ class _MarketStream:
                 self._stream = cls(key, secret)
             # Everything still held is re-subscribed on the replacement
             # stream — the readers did not go away with the socket.
-            for sym in list(self._refs):
-                try:
-                    self._subscribe(sym)
-                except Exception as exc:                  # pragma: no cover
-                    log.debug("re-subscribe failed for %s: %s", sym, exc)
+            try:
+                self._subscribe_many(list(self._refs))
+            except Exception as exc:                      # pragma: no cover
+                log.debug("re-subscribe failed: %s", exc)
             self._thread = threading.Thread(
                 target=self._run, name="alphadesk-stream", daemon=True)
             self._thread.start()
@@ -223,14 +222,24 @@ class _MarketStream:
                 self._thread = None
 
     def _subscribe(self, sym: str) -> None:
-        if self._kind == "news":
-            self._stream.subscribe_news(self._on_news, sym)
+        self._subscribe_many([sym])
+
+    def _subscribe_many(self, syms: list[str]) -> None:
+        """ONE subscribe message for these symbols. Each message is answered
+        with the whole current list, which the SDK logs: a tab opening with
+        several hundred symbols, subscribed one by one, was several hundred
+        messages and several hundred full-list log lines in a tenth of a
+        second, and the server stalled with it (2026-10-05, seen at 03:00:23)."""
+        if not syms:
             return
-        self._stream.subscribe_trades(self._on_trade, sym)
+        if self._kind == "news":
+            self._stream.subscribe_news(self._on_news, *syms)
+            return
+        self._stream.subscribe_trades(self._on_trade, *syms)
         if self._kind == "crypto":
             # Crypto prints are sparse on this feed; the quote midpoint is
             # what moves between them.
-            self._stream.subscribe_quotes(self._on_quote, sym)
+            self._stream.subscribe_quotes(self._on_quote, *syms)
 
     def _unsubscribe(self, stream: Any, sym: str) -> None:
         if self._kind == "news":
@@ -310,6 +319,34 @@ class _MarketStream:
             log.warning("subscribe failed for %s: %s", sym, exc)
             with self._lock:
                 self._refs[sym] = max(0, self._refs.get(sym, 1) - 1)
+            return False
+
+    def acquire_many(self, symbols: list[str]) -> bool:
+        """`acquire` for a list, subscribing the ones nobody held yet in ONE
+        message. Counts each occurrence like a separate acquire, so a symbol
+        listed twice is released twice. All or nothing: False takes no
+        reference."""
+        syms = [x.upper() for x in symbols]
+        if not syms:
+            return True
+        fresh: list[str] = []
+        with self._lock:
+            if not self._ensure_running():
+                return False
+            for sym in syms:
+                if not self._refs.get(sym, 0) and sym not in fresh:
+                    fresh.append(sym)
+                self._refs[sym] = self._refs.get(sym, 0) + 1
+        try:
+            self._subscribe_many(fresh)
+            return True
+        except Exception as exc:
+            log.warning("subscribe failed for %d symbols: %s", len(fresh), exc)
+            with self._lock:
+                for sym in syms:
+                    self._refs[sym] = max(0, self._refs.get(sym, 1) - 1)
+                    if not self._refs[sym]:
+                        self._refs.pop(sym, None)
             return False
 
     def ensure_live(self) -> bool:
@@ -615,18 +652,39 @@ class LiveMux:
         self._held.append((market, upstream))
         return True
 
+    def _take_all(self, market: Optional["_MarketStream"], upstreams: list[str]) -> bool:
+        """Take references on all of these at once — one upstream subscribe
+        message for the lot where the market supports it. All or nothing."""
+        if market is None:
+            return False
+        many = getattr(market, "acquire_many", None)
+        if many is None:
+            return all([self._take(market, u) for u in upstreams]) if upstreams else True
+        if not many(upstreams):
+            return False
+        self._held.extend((market, u) for u in upstreams)
+        return True
+
     def open(self) -> dict:
         """Take the references; the hello frame's body."""
         live_trades: dict[str, bool] = {}
+        # Trades, quotes and coins are each taken in ONE call per market, so a
+        # tab opening with hundreds of symbols is a few subscribe messages,
+        # not hundreds. A market that refuses leaves all of its group dark.
+        by_market: dict[int, tuple[Optional["_MarketStream"], list[tuple[str, str]]]] = {}
         for sym in self._want_trades:
             pair = self._pair_of(sym)
             market, upstream = (self._crypto, pair) if pair else (self._stock, sym)
-            ok = self._take(market, upstream)
-            live_trades[sym] = ok
-            if ok:
-                self._trades.append((sym, market, upstream))
-        self._quotes = [s for s in self._want_quotes if self._take(self._stock, s)]
-        self._coins = [(c, self._pair_of(c)) for c in self._want_coins if self._take(self._crypto, self._pair_of(c))]
+            by_market.setdefault(id(market), (market, []))[1].append((sym, upstream))
+        for market, items in by_market.values():
+            ok = self._take_all(market, [u for _, u in items])
+            for sym, upstream in items:
+                live_trades[sym] = ok
+                if ok:
+                    self._trades.append((sym, market, upstream))
+        self._quotes = list(self._want_quotes) if self._take_all(self._stock, list(self._want_quotes)) else []
+        coin_pairs = [(c, self._pair_of(c)) for c in self._want_coins]
+        self._coins = coin_pairs if self._take_all(self._crypto, [p for _, p in coin_pairs]) else []
         if self._news is not None and self._news_owner:
             self._news.add_owner(self._news_owner)
             self._news_live = self._take(self._news, "*")
