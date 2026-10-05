@@ -242,3 +242,13 @@ class TestEveryAlpacaCoinIsSearchable:
         monkeypatch.setattr(cfg, "_load_names", lambda: None, raising=False)
         for word, sym in (("ripple", "XRP-USD"), ("tether", "USDT-USD"), ("matic", "POL-USD")):
             assert [r["symbol"] for r in cfg.search_symbols(word, limit=3)][:1] == [sym]
+
+
+class TestCoinTickers:
+    def test_a_coin_typed_by_its_ticker_beats_stocks_that_only_start_with_it(self):
+        coin = rank("BAT-USD", "Basic Attention Token", "bat")
+        stock = rank("BATL", "Battalion Oil Corp", "bat")
+        assert better(coin, stock)
+
+    def test_an_exact_stock_ticker_still_comes_first(self):
+        assert better(rank("BTC", "Grayscale Bitcoin Mini Trust", "btc"), rank("BTC-USD", "Bitcoin", "btc"))
