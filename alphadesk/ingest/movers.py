@@ -632,6 +632,16 @@ def _market_day(router, day: str) -> dict:
         hit = _cache.get(key)
     if hit and time.time() - hit[0] < SESSION_TTL_S:
         return hit[1]
+    # THE RECORDED CLOSE COMES FIRST (2026-10-05). A finished session never
+    # changes, so one saved on an earlier visit, or by the nightly recorder,
+    # is the answer — no vendor asked, nothing to refuse, nothing to rate-limit.
+    finished = session_finished(day)
+    if finished and router.owner:
+        saved = _recorded(router.owner, day)
+        if saved:
+            with _lock:
+                _cache[key] = (time.time(), saved)
+            return saved
     try:
         got = router.ask("market_day", day)
     except NeedsKey as exc:
@@ -639,9 +649,66 @@ def _market_day(router, day: str) -> dict:
             raise VendorRefused("; ".join(exc.failed.values())) from exc
         raise
     got = got if isinstance(got, dict) else {}
+    if got and finished and router.owner:
+        _record(router, day, got)
     with _lock:
         _cache[key] = (time.time(), got)
     return got
+
+
+def session_finished(day: str) -> bool:
+    """True once `day` is before today's date in New York: its bars, extended
+    hours included, can no longer change. Today's session is never recorded."""
+    return day < datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+
+def _recorded(owner: str, day: str) -> Optional[dict]:
+    try:
+        from alphadesk.ledger import store
+        return store.get_session_day(owner, day) or None
+    except Exception as exc:
+        log.debug("recorded close %s unreadable: %s", day, exc)
+        return None
+
+
+def _record(router, day: str, bars: dict) -> None:
+    """Save a finished session's market. A session with no usable bars is not
+    saved (an empty answer is a closed day or a thin read, not a close)."""
+    try:
+        from alphadesk.ledger import store
+        vendor = "unknown"
+        try:
+            vendor = str(getattr(router.vendor_for("market_day", "market_day"), "name", "") or vendor)
+        except Exception:
+            pass
+        store.save_session_day(router.owner, day, vendor, bars)
+    except Exception as exc:                      # an unsaved close is asked again next time
+        log.warning("recording the close of %s failed: %s", day, exc)
+
+
+def record_closes(router, count: int = 15) -> int:
+    """Record every finished session among the last `count` that is not saved
+    yet, oldest first. Returns how many were saved. Run daily by the recorder
+    (ingest/closes.py) and safe to run any time."""
+    if not router.owner:
+        return 0
+    try:
+        router.vendor_for("market_day", "market_day")
+    except NeedsKey:
+        return 0
+    from alphadesk.ledger import store
+    have = store.recorded_session_days(router.owner)
+    saved = 0
+    for day in sorted(d for d in trading_sessions(router, count) if session_finished(d) and d not in have):
+        try:
+            got = router.ask("market_day", day)
+        except Exception as exc:
+            log.info("close of %s not recorded: %s", day, exc)
+            break
+        if got:
+            _record(router, day, got)
+            saved += 1
+    return saved
 
 
 #: One symbol liquid enough to have traded on every session there is. Its
@@ -729,8 +796,11 @@ def session_movers(category: str, day: str, top: int = 20,
     # surface" to the router, so without asking first, a public holiday and
     # a reader with no Polygon key would give the same answer — and the one
     # that needs a key prompt would get "the market was shut" instead.
-    if not router.vendor_for("market_day", "market_day"):
-        raise NeedsKey("market_day")
+    # A recorded close needs no vendor, so a reader whose key was later
+    # removed still reads every day already saved.
+    if not (router.owner and session_finished(day) and _recorded(router.owner, day)):
+        if not router.vendor_for("market_day", "market_day"):
+            raise NeedsKey("market_day")
     try:
         today = _market_day(router, day)
         prev_day = previous_session(router, day)

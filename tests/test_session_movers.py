@@ -11,6 +11,11 @@ import pytest
 from alphadesk.ingest import movers
 
 
+@pytest.fixture(autouse=True)
+def _isolated_ledger(store):
+    """Finished sessions are recorded now, so no test may write to a real ledger."""
+
+
 class _Bar(dict):
     """A daily bar shaped as the router hands it over."""
     def __init__(self, day: str, close: float, volume: float = 1000.0):
@@ -253,3 +258,78 @@ def test_enough_bars_are_asked_for_to_reach_back():
 
     movers._enrich_session_stats(_Counting(), _rows_as_tabs("AAPL"), "2026-09-24")
     assert asked and asked[0] > movers.STATS_DAYS + 1
+
+
+# RECORDED CLOSES (2026-10-05) ------------------------------------------------
+
+def test_a_finished_session_is_recorded_and_then_read_without_the_vendor(store):
+    class _Once:
+        owner = "reader-1"
+        connected = ["alpaca"]
+        calls = 0
+
+        def ask(self, method, *a, **k):
+            self.calls += 1
+            return {"AAPL": {"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 10}}
+
+        def vendor_for(self, surface, method):
+            return type("V", (), {"name": "alpaca"})()
+
+    movers._cache.clear()
+    r = _Once()
+    first = movers._market_day(r, "2020-01-02")
+    movers._cache.clear()                      # a restart: the memo is gone, the store is not
+    again = movers._market_day(r, "2020-01-02")
+    assert first == again and r.calls == 1
+    assert "2020-01-02" in store.recorded_session_days("reader-1")
+
+
+def test_today_is_never_recorded(store):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+    class _Live:
+        owner = "reader-1"
+        connected = ["alpaca"]
+
+        def ask(self, method, *a, **k):
+            return {"AAPL": {"close": 1.0, "volume": 1}}
+
+    movers._cache.clear()
+    movers._market_day(_Live(), today)
+    assert store.recorded_session_days("reader-1") == set()
+
+
+def test_a_recorded_day_outlives_the_vendor_key(store):
+    store.save_session_day("reader-1", "2020-01-02", "alpaca", {"AAPL": {"close": 3.0, "volume": 1}})
+
+    class _NoKey:
+        owner = "reader-1"
+        connected: list = []
+
+        def ask(self, *a, **k):
+            from alphadesk.providers.base import NeedsKey
+            raise NeedsKey("market_day")
+
+    movers._cache.clear()
+    assert movers._market_day(_NoKey(), "2020-01-02") == {"AAPL": {"close": 3.0, "volume": 1}}
+
+
+def test_closes_are_recorded_oldest_first_and_only_once(store, monkeypatch):
+    monkeypatch.setattr(movers, "trading_sessions", lambda router, count=15: ["2020-01-03", "2020-01-02"])
+    asked: list[str] = []
+
+    class _R:
+        owner = "reader-1"
+
+        def vendor_for(self, s, m):
+            return type("V", (), {"name": "alpaca"})()
+
+        def ask(self, method, day):
+            asked.append(day)
+            return {"AAPL": {"close": 1.0, "volume": 1}}
+
+    assert movers.record_closes(_R()) == 2
+    assert asked == ["2020-01-02", "2020-01-03"]
+    assert movers.record_closes(_R()) == 0

@@ -104,8 +104,8 @@ SURFACES: dict[str, Surface] = {
         Surface("stream", "Live prices", (("alpaca", FREE),)),
         Surface("stock_movers", "Stock movers", (("alpaca", FREE), ("polygon", PAID))),
         # A PAST SESSION'S MOVERS need the whole market for one day, which the
-        # today-only movers endpoints cannot answer. Only Polygon publishes it.
-        Surface("market_day", "A past session's whole market", (("polygon", FREE),)),
+        # today-only movers endpoints cannot answer. Polygon publishes it whole; Alpaca is asked symbol by symbol (providers/alpaca.py).
+        Surface("market_day", "A past session's whole market", (("polygon", FREE), ("alpaca", FREE))),
         Surface("etf_movers", "ETF movers", (("alpaca", FREE), ("polygon", PAID))),
         Surface("index_board", "Market tape", (("alpaca", FREE), ("polygon", PAID))),
         # Alpaca alone (2026-10-05, the owner: trading is on Alpaca, so its coins and its

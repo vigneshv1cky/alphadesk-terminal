@@ -1234,6 +1234,44 @@ class AlpacaPrices:
             out["losers"] = merge_movers(out["losers"], dollar, up=False)
         return out
 
+    def market_day(self, day: str) -> dict[str, dict]:
+        """EVERY listed US stock and fund's bar for ONE past session, in the
+        shape Polygon's whole-market day has (2026-10-05).
+
+        Alpaca has no whole-market-day call, so this asks for the day's daily
+        bar of every listed symbol, 500 to a request in parallel (the same 26
+        requests the dollar pool uses, a few seconds). A day the market did
+        not open answers with an empty dict, never None, so the caller reads
+        "not a session" rather than "not carried"."""
+        from concurrent.futures import ThreadPoolExecutor
+        universe = sorted(sym for sym, (_, exch) in self._listing().items()
+                          if exch in LISTED_EXCHANGES and common_stock_symbol(sym))
+        nxt = (datetime.strptime(day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        def chunk(part: list[str]) -> dict[str, dict]:
+            out: dict[str, dict] = {}
+            token = None
+            for _ in range(20):
+                body = self._data_get("/v2/stocks/bars", symbols=",".join(part), timeframe="1Day",
+                                      start=day, end=nxt, feed="sip", limit=10000, adjustment="split",
+                                      page_token=token) or {}
+                for sym, bars in (body.get("bars") or {}).items():
+                    for b in bars:
+                        if str(b.get("t", ""))[:10] == day and b.get("c"):
+                            out[sym.upper()] = {"open": b.get("o"), "high": b.get("h"), "low": b.get("l"),
+                                                "close": b["c"], "volume": b.get("v") or 0}
+                token = body.get("next_page_token")
+                if not token:
+                    break
+            return out
+
+        parts = [universe[i:i + 500] for i in range(0, len(universe), 500)]
+        out: dict[str, dict] = {}
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for got in pool.map(chunk, parts):
+                out.update(got)
+        return out
+
     def _build_pool(self) -> None:
         """Rank every listed stock by average dollars traded a day over the
         last POOL_SESSIONS sessions and keep those at POOL_MIN_DOLLARS or more.

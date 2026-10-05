@@ -252,6 +252,10 @@ async def _serve() -> None:
     # (alphadesk/prewarm.py) — first pass right after start-up.
     from alphadesk import prewarm
     prewarm.start()
+    # Every finished session's close is recorded for good (ingest/closes.py).
+    if prewarm.enabled():
+        from alphadesk.ingest import closes
+        closes.start()
     ingest_tasks = [asyncio.create_task(_edgar_releases_loop()),
                     asyncio.create_task(_news_loop()),
                     asyncio.create_task(_forecast_loop()),
