@@ -5,6 +5,7 @@ import {
   RIGHT_GAP, scaledRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
 } from "@/lib/chartScales"
 import { bucketBars } from "@/lib/chartBuckets"
+import { percentBase } from "@/lib/percentBase"
 import { useSmoothedRange } from "@/lib/smoothRange"
 import { paneAxisLabel, paneExtent, sessionLayout, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
 import { heikinAshi, type SeriesKind } from "@/lib/series"
@@ -395,7 +396,7 @@ export function ChartCanvas({
       if (scaleMode !== "percent") return padRangeInset(ext.min, ext.max, topInset, priceH)
       // Percent rebases to the first visible bar, so two names of very
       // different price can be compared on one axis.
-      const base = bars[Math.max(0, Math.floor(from))]?.c
+      const base = percentBase(bars, from)
       if (!base) return padRangeInset(ext.min, ext.max, topInset, priceH)
       return padRangeInset((ext.min / base - 1) * 100, (ext.max / base - 1) * 100, topInset, priceH)
     })()
@@ -440,7 +441,7 @@ export function ChartCanvas({
     [from, to, seriesW, priceH, min, max],
   )
   const log = scaleMode === "log"
-  const base = bars[Math.max(0, Math.floor(from))]?.c ?? 1
+  const base = percentBase(bars, from) ?? 1
   const toDisplay = useCallback(
     (p: number) => (scaleMode === "percent" ? (p / base - 1) * 100 : p), [scaleMode, base])
   const fromDisplay = useCallback(
