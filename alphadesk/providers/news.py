@@ -231,6 +231,11 @@ def alpaca_article(a) -> Article | None:
     item without an id, a headline or a ticker: the window groups by ticker."""
     from html import unescape
     symbols = [s for s in (getattr(a, "symbols", None) or []) if s]
+    try:                                         # BTCUSD -> BTC-USD, the way the board writes a coin
+        from alphadesk.cryptonews import canonical_tags
+        symbols = canonical_tags(symbols)
+    except Exception:                            # a tag is never worth losing the story
+        pass
     # Headlines and summaries arrive HTML-escaped ("maker&#39;s"); decoded
     # here so the stored text reads as written.
     title = unescape(getattr(a, "headline", "") or "")

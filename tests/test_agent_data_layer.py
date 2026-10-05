@@ -117,3 +117,11 @@ def test_the_news_poll_also_asks_the_feed_for_the_main_coins_by_name():
         def fetch(self, since, limit=200):
             raise AssertionError("must not be called")
     assert news.crypto_batch(NoSymbols(), datetime(2026, 10, 4, tzinfo=timezone.utc), "u-test-crypto") == []
+
+
+def test_a_feeds_coin_tags_are_written_the_way_the_board_writes_them(monkeypatch):
+    from alphadesk import config, cryptonews
+    monkeypatch.setattr(config, "_names", config._with_coins({"AAPL": {"name": "Apple", "exchange": "Nasdaq", "class": "us_equity"}}), raising=False)
+    monkeypatch.setattr(config, "_load_names", lambda: None, raising=False)
+    assert cryptonews.canonical_tags(["BMNR", "BTCUSD", "DOGEUSD", "X:ETHUSD", "SOLUSDT", "BTC", "BTC-USD", "ZZZUSD", "AAPL"]) == \
+        ["BMNR", "BTC-USD", "DOGE-USD", "ETH-USD", "SOL-USDT", "BTC", "ZZZUSD", "AAPL"]

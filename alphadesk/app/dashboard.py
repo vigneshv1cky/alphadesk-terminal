@@ -566,7 +566,10 @@ def api_news(limit: int = 300, before: str | None = None, q: str | None = None, 
             articles = semantic.merge(articles, rel, size + len(rel))
     else:
         articles = store.recent_articles(_since_iso(), limit=limit, owner=news_owner(uid), body=False)
+    from alphadesk import cryptonews
     for a in articles:
+        if a.get("tickers"):
+            a["tickers"] = cryptonews.canonical_tags(a["tickers"])         # BTCUSD -> BTC-USD, as the board writes it
         # The list carries no article text (2026-09-15): with Benzinga's full
         # stories stored, 300 of them ran to ~1.5MB on a poll every minute.
         # The reader fetches a story's text when it opens (/story).

@@ -41,6 +41,37 @@ _BASKET = "bitcoin"
 _PURE_CRYPTO = frozenset({"COIN", "CRCL", "GLXY"})
 
 
+_FEED_COIN_TAG = re.compile(r"^(?:X:|CRYPTO:)?([A-Z0-9]{2,10}?)(USDT|USDC|USD)$")
+
+
+def canonical_tag(tag: str) -> str:
+    """A feed's coin tag in the app's own spelling: BTCUSD -> BTC-USD,
+    SOLUSDT -> SOL-USDT (2026-10-05, the owner: the tickers on a story and the
+    tickers on the board differ). Only where the front is a coin the app lists,
+    so a stock whose ticker happens to end in USD is left alone. Pure but for
+    reading the symbol list."""
+    t = str(tag or "").upper()
+    m = _FEED_COIN_TAG.match(t)
+    if not m:
+        return tag
+    base, quote = m.group(1), m.group(2)
+    from alphadesk import config
+    config._load_names()
+    if base in config._COINS or f"{base}-{quote}" in (config._names or {}):
+        return f"{base}-{quote}"
+    return tag
+
+
+def canonical_tags(tags) -> list[str]:
+    """`canonical_tag` over a story's tickers, in order, without repeats."""
+    out: list[str] = []
+    for t in tags or []:
+        c = canonical_tag(t)
+        if c not in out:
+            out.append(c)
+    return out
+
+
 def crypto_stocks() -> frozenset[str]:
     """The curated baskets' members whose price moves on crypto."""
     from alphadesk import config
