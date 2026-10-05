@@ -309,3 +309,9 @@ def test_search_drops_coins_the_alpaca_account_does_not_carry(monkeypatch):
     monkeypatch.setattr(cfg, "_names", cfg._with_coins({}), raising=False)
     cfg.register_coin_pairs(None)
     assert "NEAR-USD" in cfg._names
+
+
+def test_a_pair_written_without_a_separator_is_still_a_coin_pair():
+    from alphadesk.providers.alpaca import coin_pair
+    assert coin_pair("BATUSDC") == "BAT/USDC" and coin_pair("BTCUSD") == "BTC/USD" and coin_pair("BAT-USDC") == "BAT/USDC"
+    assert coin_pair("AAPL") is None and coin_pair("ZZZUSD") is None

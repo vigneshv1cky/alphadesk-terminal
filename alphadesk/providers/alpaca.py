@@ -138,6 +138,13 @@ def coin_pair(symbol: str) -> str | None:
         for sep in ("-", "/"):
             if s.endswith(sep + quote) and len(s) > len(quote) + 1:
                 return f"{s[: -len(quote) - 1]}/{quote}"
+    # Written without a separator ("BATUSDC", "BTCUSD"): a pair only when the
+    # front is a coin the app lists, so a stock whose ticker happens to end in
+    # USD is not read as one (2026-10-05, BATUSDC charted as a stock: 404).
+    from alphadesk.config import _COINS
+    for quote in ("USDT", "USDC", "USD"):
+        if s.endswith(quote) and s[: -len(quote)] in _COINS:
+            return f"{s[: -len(quote)]}/{quote}"
     return None
 
 
