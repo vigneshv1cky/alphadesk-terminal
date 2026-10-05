@@ -75,7 +75,9 @@ export function FilingsReader({ rows, unavailable, groups, unlistedHidden, filte
         <div className="flex h-10 shrink-0 items-center gap-2 border-b border-row-rule bg-surface px-3 text-label font-semibold uppercase tracking-caps text-muted-foreground">
           <span className="w-[64px]">Filed</span><span className="w-[56px]">Ticker</span><span>Company</span>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto" onKeyDown={onKeyDown}>
+        {/* NO VISIBLE SCROLL BAR on the list (2026-10-05, the owner): it still scrolls with
+            the wheel, touch and the arrow keys; only the bar is gone. */}
+        <div className="scrollbar-none min-h-0 flex-1 overflow-y-auto" onKeyDown={onKeyDown}>
           {day.map(g => (
             <div key={g.label}>
               <div className="px-3 pb-1 pt-3 text-label font-semibold uppercase tracking-caps text-muted-foreground">{g.label}</div>
