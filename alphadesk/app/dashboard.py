@@ -517,6 +517,16 @@ def api_news(limit: int = 300, before: str | None = None, q: str | None = None, 
         else:
             pool = store.recent_articles(_since_iso(), limit=8000, owner=news_owner(uid), body=False)
         articles = cryptonews.select(pool, min(limit, 300))
+        if not articles and not before:
+            # A quiet stretch for crypto in the window is not an empty panel
+            # (2026-10-04, NEAR-USD read "no news in the window" while the
+            # store held crypto stories from earlier days): the newest crypto
+            # stories stored, a month back at most, the way a symbol's panel
+            # shows its newest however old.
+            from datetime import datetime, timedelta, timezone
+            month = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+            pool = store.recent_articles(month, limit=8000, owner=news_owner(uid), body=False)
+            articles = cryptonews.select(pool, min(limit, 300))
     elif sym and not q:
         # ONE symbol's stories (2026-09-18). The symbol panel used to filter
         # the shared window, which is the newest 500 stories across every
