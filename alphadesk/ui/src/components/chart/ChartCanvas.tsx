@@ -4,6 +4,7 @@ import {
   clampView, indexToX, padRangeInset, priceDecimals, priceTicks, priceTicksLog, priceToY,
   RIGHT_GAP, scaledRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
 } from "@/lib/chartScales"
+import { bucketBars } from "@/lib/chartBuckets"
 import { paneAxisLabel, paneExtent, sessionLayout, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
 import { heikinAshi, type SeriesKind } from "@/lib/series"
 import { barCloseCountdown, countdownLabel, thinTicks, timeAxisTicks, timeParts } from "@/lib/chartTime"
@@ -665,7 +666,8 @@ export function ChartCanvas({
   const leave = () => { if (!drag.current) stop(); setCursor(null); onHover?.(null, null) }
 
   // ── geometry, built as path strings ─────────────────────────────────────
-  const barW = Math.max(1, (seriesW / Math.max(1, to - from)) * 0.7)
+  const barW0 = Math.max(1, (seriesW / Math.max(1, to - from)) * 0.7)
+  const barW = barW0
   const half = barW / 2
 
   const paths = useMemo(() => {
@@ -685,13 +687,23 @@ export function ChartCanvas({
     let prevY: number | null = null
     let firstX: number | null = null, lastX: number | null = null
 
-    for (let i = lo; i <= hi; i++) {
-      const b = drawBars[i]
-      if (!b) continue
+    // A crowded view draws one candle per pixel column, not one per bar: a month
+    // of minute bars is tens of thousands of shapes rebuilt on every zoom step
+    // and tick, which is what made the chart stutter (lib/chartBuckets).
+    const items = bucketBars(drawBars, lo, hi, seriesW)
+    const folded = items.some(b => b.n > 1)
+    const perBar = Math.max(1, (hi - lo + 1) / Math.max(1, items.length))
+    const barW = folded ? Math.max(1, (seriesW / Math.max(1, to - from)) * perBar * 0.7) : barW0
+    const half = barW / 2
+    let prevClose: number | null = null
+
+    for (const b of items) {
+      const i = b.i
       const x = indexToX(s, i + 0.5)
-      if (x < -barW || x > seriesW + barW) continue
+      if (x < -barW || x > seriesW + barW) { prevClose = b.c; continue }
       const up = b.c >= b.o
-      const rising = i > 0 ? b.c >= drawBars[i - 1].c : up
+      const rising = prevClose != null ? b.c >= prevClose : (i > 0 && !folded ? b.c >= drawBars[Math.floor(i) - 1].c : up)
+      prevClose = b.c
       const yO = yOf(b.o), yC = yOf(b.c), yH = yOf(b.h), yL = yOf(b.l)
       const X = x.toFixed(1)
       if (firstX == null) firstX = x
@@ -756,7 +768,7 @@ export function ChartCanvas({
       baseY,
       hlc: highs.length ? `${highs.join("")}${lowsRev.join("")}Z` : "",
     }
-  }, [drawBars, s, kind, yOf, barW, half, seriesW, priceH, from, to])
+  }, [drawBars, s, kind, yOf, barW0, seriesW, priceH, from, to])
 
   /** Each pane's own geometry: offset, scale and batched paths. */
   const paneLayout = useMemo(() => {
