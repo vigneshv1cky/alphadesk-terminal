@@ -270,3 +270,19 @@ def test_a_reused_ticker_keeps_only_the_largest_coin(monkeypatch):
     got = prices.CoinGeckoPrices(api_key="k").category_movers("crypto")
     names = [r["name"] for t in got["tabs"] for r in t["rows"]]
     assert "Fake BTC" not in names and "Bitcoin" in names
+
+
+def test_a_coin_alpaca_trades_below_the_vendors_top_list_is_added():
+    """SUSHI and YFI were on Alpaca but not in CoinGecko's top 250 (2026-10-05)."""
+    class R:
+        def get(self, method, *args):
+            if method == "crypto_symbols":
+                return frozenset({"BTC", "SUSHI", "YFI"})
+            assert method == "crypto_rows" and args[0] == ["SUSHI-USD", "YFI-USD"]
+            return [{"symbol": "SUSHI-USD", "display": "SUSHI", "name": "SUSHI", "price": 0.5, "change_pct": 4.0, "volume": 1000},
+                    {"symbol": "YFI-USD", "display": "YFI", "name": "YFI", "price": 4000.0, "change_pct": -2.0, "volume": 3}]
+    btc = movers._row("BTC-USD", 86000, 1.0, 5e9, display="BTC", turnover_is_volume=True)
+    tabs = movers.tabs_from_list([btc])
+    movers.only_tradable_coins(R(), tabs, {})
+    by = {t["id"]: [r["display"] for r in t["rows"]] for t in tabs}
+    assert by["all"] == ["BTC", "SUSHI", "YFI"] and by["gainers"][:2] == ["SUSHI", "BTC"] and by["losers"] == ["YFI"]

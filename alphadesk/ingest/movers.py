@@ -373,7 +373,36 @@ def only_tradable_coins(router, tabs: list[dict], got: dict) -> None:
     pairs = {f"{c}-USD" for c in coins}               # the dollar pair, as Alpaca lists it
     for t in tabs:
         t["rows"] = [r for r in t["rows"] if f"{str(r.get('display') or r['symbol'].split('-')[0]).upper()}-USD" in pairs]
+    add_alpaca_only_coins(router, tabs, coins)
     got["note"] = "coins you can trade on Alpaca"
+
+
+def add_alpaca_only_coins(router, tabs: list[dict], coins) -> None:
+    """A CoinGecko list reaches its top 250 coins by market cap, so a coin
+    Alpaca trades below that (SUSHI, YFI on 2026-10-05) never appeared. Its
+    dollar pair is read off Alpaca and added to the list, at the foot of
+    "All" and in the other tabs by their own order. Nothing is added if Alpaca
+    cannot answer."""
+    if not coins or not tabs:
+        return
+    have = {r["symbol"] for t in tabs for r in t["rows"]}
+    missing = sorted(f"{c}-USD" for c in coins if f"{c}-USD" not in have)
+    if not missing:
+        return
+    try:
+        got = router.get("crypto_rows", missing) or []
+    except Exception as exc:
+        log.debug("alpaca-only coins: %s", exc)
+        return
+    new = [_row(r["symbol"], r.get("price"), r.get("change_pct"), r.get("volume"), name=r.get("name"),
+                display=r.get("display") or r["symbol"].split("-")[0]) for r in got if r.get("price") is not None]
+    if not new:
+        return
+    by_id = {t["id"]: t for t in tabs}
+    base = by_id.get("all", tabs[0])["rows"]
+    rebuilt = tabs_from_list(base + new, with_active=any(t["id"] == "most_active" for t in tabs))
+    tabs[:] = [{"id": t["id"], "label": next((x["label"] for x in tabs if x["id"] == t["id"]), t["label"]),
+                "rows": t["rows"]} for t in rebuilt]
 
 
 def _enrich_currencies(router, tabs: list[dict]) -> None:

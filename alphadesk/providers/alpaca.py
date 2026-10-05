@@ -1362,20 +1362,8 @@ class AlpacaPrices:
         self._assets["__crypto_pairs__"] = (time.time(), pairs)
         return pairs or None
 
-    def crypto_movers(self, top: int = 20) -> dict | None:
-        """Alpaca's USD coins. "all" runs largest coins first (COIN_ORDER, then
-        the rest by symbol): Alpaca's volume counts only its own venue —
-        Bitcoin 16 coins, about $1.2M, on 2026-09-15 — so it cannot rank the
-        market, and the payload says so ("venue_volume")."""
-        from alpaca.trading.enums import AssetClass
-        from alpaca.trading.requests import GetAssetsRequest
-        try:
-            assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
-        except ProviderError:
-            raise
-        # Every pair the account trades, the stablecoin ones too (BAT/USDC) —
-        # the owner wants all Alpaca crypto visible (2026-10-04).
-        pairs = sorted({str(a.symbol) for a in assets if "/" in str(a.symbol) and getattr(a, "tradable", True)})
+    def _crypto_rows(self, pairs: list[str]) -> list[dict]:
+        """Price, 24h change and volume for these Alpaca pairs ("BAT/USD")."""
         q = self.quotes([p.replace("/", "-") for p in pairs])
         # The change over the last 24 hours, like every crypto venue shows
         # and the column says (2026-09-15). The quote's change runs from
@@ -1412,6 +1400,29 @@ class AlpacaPrices:
                  "change_pct": rolling_change(r["price"], bars.get(s.replace("-", "/")) or [], now, 1),
                  "volume": r.get("volume") or 0} for s, r in q.items()]
         rows = stale_pair_changes_blanked(rows)
+        return rows
+
+    def crypto_rows(self, symbols: list[str]) -> list[dict]:
+        """Rows for these coin symbols ("SUSHI-USD") off Alpaca alone — what a
+        list from another vendor lacks for coins outside its top 250."""
+        pairs = sorted({p for s_ in symbols if (p := coin_pair(s_))})
+        return self._crypto_rows(pairs) if pairs else []
+
+    def crypto_movers(self, top: int = 20) -> dict | None:
+        """Alpaca's USD coins. "all" runs largest coins first (COIN_ORDER, then
+        the rest by symbol): Alpaca's volume counts only its own venue —
+        Bitcoin 16 coins, about $1.2M, on 2026-09-15 — so it cannot rank the
+        market, and the payload says so ("venue_volume")."""
+        from alpaca.trading.enums import AssetClass
+        from alpaca.trading.requests import GetAssetsRequest
+        try:
+            assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
+        except ProviderError:
+            raise
+        # Every pair the account trades, the stablecoin ones too (BAT/USDC) —
+        # the owner wants all Alpaca crypto visible (2026-10-04).
+        pairs = sorted({str(a.symbol) for a in assets if "/" in str(a.symbol) and getattr(a, "tradable", True)})
+        rows = self._crypto_rows(pairs)
         rank = {c: i for i, c in enumerate(COIN_ORDER)}
         changed = [r for r in rows if r["change_pct"] is not None]
         return {"all": sorted(rows, key=lambda r: (rank.get(r["symbol"].split("-")[0], len(rank)), r["symbol"]))[:top],
