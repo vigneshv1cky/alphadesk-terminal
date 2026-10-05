@@ -438,6 +438,19 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "GOOGLE": ("GOOGL", "GOOG"),      # files as Alphabet
     "FACEBOOK": ("META",),            # renamed 2021
     "BOFA": ("BAC",),                 # files as Bank of America Corp
+    # Companies searched by a name they no longer file under (2026-10-04: "microstrategy" found nothing).
+    "MICROSTRATEGY": ("MSTR",),       # now Strategy Inc
+    "SQUARE": ("XYZ",),               # Block, Inc.
+    "BLOCK": ("XYZ",),
+    "MARATHON DIGITAL": ("MARA",),    # now MARA Holdings
+    "MARATHON": ("MARA",),
+    "RIOT BLOCKCHAIN": ("RIOT",),     # now Riot Platforms
+    "VIACOM": ("PSKY",), "PARAMOUNT": ("PSKY",), "CBS": ("PSKY",),   # Paramount Skydance; PARA is now another company
+    "WEIGHT WATCHERS": ("WW",),
+    "ZOOM VIDEO": ("ZM",), "ZOOM": ("ZM",),
+    "JP MORGAN": ("JPM",), "CHASE": ("JPM",),
+    "HEWLETT PACKARD": ("HPQ", "HPE"),
+    "TSMC": ("TSM",),
     "RIPPLE": ("XRP-USD",), "MATIC": ("POL-USD",), "POLYGON": ("POL-USD",),   # what the market calls them
     "DOGE": ("DOGE-USD",), "TETHER": ("USDT-USD",), "YEARN": ("YFI-USD",), "SUSHISWAP": ("SUSHI-USD",),
     "TRUMP COIN": ("TRUMP-USD",), "BINANCE COIN": ("BNB-USD",),

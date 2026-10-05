@@ -282,3 +282,16 @@ def test_stablecoin_pairs_follow_the_dollar_pair_ahead_of_stocks():
     usdt = rank("BAT-USDT", "Basic Attention Token / Tether", "bat")
     stock = rank("BATL", "Battalion Oil Corp", "bat")
     assert usd < usdc < usdt < stock
+
+
+def test_renamed_companies_are_found_by_their_old_names(monkeypatch):
+    from alphadesk import config as cfg
+    names = {s: {"name": n, "exchange": "Nasdaq", "class": "us_equity"} for s, n in
+             {"MSTR": "Strategy Inc", "XYZ": "Block, Inc.", "MARA": "MARA Holdings, Inc.", "PSKY": "Paramount Skydance Corp",
+              "PARA": "Banzai International, Inc.", "ZM": "Zoom Communications, Inc."}.items()}
+    monkeypatch.setattr(cfg, "_names", names, raising=False)
+    monkeypatch.setattr(cfg, "_load_names", lambda: None, raising=False)
+    for word, sym in (("microstrategy", "MSTR"), ("square", "XYZ"), ("marathon digital", "MARA"),
+                      ("viacom", "PSKY"), ("zoom video", "ZM")):
+        assert cfg.search_symbols(word, limit=3)[0]["symbol"] == sym, word
+    assert "PARA" not in [r["symbol"] for r in cfg.search_symbols("viacom", limit=3)][:1]
