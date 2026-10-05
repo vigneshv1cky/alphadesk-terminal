@@ -252,7 +252,19 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
    * what the query layer already does — and which, being one-shot, left the
    * chart frozen at whatever moment the page was opened. */
   const { data, isFetching, error } = useChartSeries(symbol, range, wantedInterval)
-  const err = error ? String((error as Error).message ?? error) : null
+  // THE LAST FAILURE STAYS UNTIL A SERIES ARRIVES (2026-10-05, the owner: a
+  // coin Alpaca has no bars for sat on "loading…"). The query layer clears
+  // the error and goes back to pending on every refresh of a series that has
+  // never loaded, so the message showed for a second between 30-second
+  // polls and the rest of the time the tile said it was still loading.
+  const failKey = `${symbol}|${range}|${wantedInterval ?? ""}`
+  const [failed, setFailed] = useState<{ key: string; msg: string } | null>(null)
+  useEffect(() => {
+    if (error) setFailed({ key: failKey, msg: String((error as Error).message ?? error) })
+    else if (data) setFailed(null)
+  }, [error, data, failKey])
+  const err = error ? String((error as Error).message ?? error)
+    : !data && failed && failed.key === failKey ? failed.msg : null
   // A plan refusal changes the catalogue's refused list; the menu should
   // grey the bar before the reader tries it again.
   const qc = useQueryClient()
