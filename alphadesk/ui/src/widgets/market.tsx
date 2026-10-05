@@ -661,6 +661,16 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
     return { ...r, price: livePrice,
       change_pct: prev ? Math.round((livePrice / prev - 1) * 10000) / 100 : r.change_pct }
   }), [rows, live, cryptoTicks, streamable, category])
+  // A ROW THAT NO LONGER FITS ITS TAB LEAVES IT (2026-10-05, the reader: Gainers
+  // showed LTC at -0.06%, Losers showed coins up). The server ranks on its own
+  // cycle and the live price moves a coin that sat near zero to the other side
+  // of it before the next one. The rows keep the server's order; only the ones
+  // the live change has put on the wrong side are dropped.
+  const shown = useMemo(() => {
+    if (active?.id === "gainers") return priced.filter(r => (r.change_pct ?? 0) > 0)
+    if (active?.id === "losers") return priced.filter(r => (r.change_pct ?? 0) < 0)
+    return priced
+  }, [priced, active?.id])
   // The subtitle carries the session when one is picked, because every
   // figure below changes meaning with it — and a tile that looks live while
   // showing Tuesday is the fault this repo has shipped four times.
@@ -748,7 +758,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         // A currency pair or a Treasury tenor is not a symbol the board can
         // chart, so those rows do not open anything.
         : <>
-        {halted ? <HaltsTable /> : <MoversTable rows={priced} changeHead={q.data?.change_label ?? "1D"} session={q.data?.session_label ?? null}
+        {halted ? <HaltsTable /> : <MoversTable rows={shown} changeHead={q.data?.change_label ?? "1D"} session={q.data?.session_label ?? null}
                        changeTip={category === "currencies" ? "Change since the 5pm New York rollover, where the currency trading day begins" : undefined}
                        {...(category === "crypto" ? {
                          volTip: "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",
