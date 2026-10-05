@@ -506,6 +506,14 @@ vendors that simply have nothing for that company (small companies often have
 no analyst coverage). The reader's price plan is stated in `data_freshness`:
 a free plan's volume is one exchange's alone and understates the market.
 
+**A smaller tool list for a coin agent.** The full list is 53 tools and about
+66,000 characters of descriptions on every connect. Send the request header
+`X-Agent-Toolset: crypto` and only the 17 tools that apply to coins are listed
+(about 28,000 characters); a tool left out of the list still answers if called by
+name. A coin is written `BTC-USD`; `BTC/USD` and `BTCUSD` are accepted too, but a
+bare `BTC` means a listed fund. A token may make 120 calls a minute; set
+`ALPHADESK_AGENT_RATE_PER_MIN` to change that.
+
 **Watching how agents use it.** Every tool call is logged: the tool, its
 arguments, how long it took and how it ended (answered, empty, incomplete or
 failed, and why). A caller can add the request headers `X-Agent-Task` (one id

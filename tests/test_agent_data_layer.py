@@ -125,3 +125,54 @@ def test_a_feeds_coin_tags_are_written_the_way_the_board_writes_them(monkeypatch
     monkeypatch.setattr(config, "_load_names", lambda: None, raising=False)
     assert cryptonews.canonical_tags(["BMNR", "BTCUSD", "DOGEUSD", "X:ETHUSD", "SOLUSDT", "BTC", "BTC-USD", "ZZZUSD", "AAPL"]) == \
         ["BMNR", "BTC-USD", "DOGE-USD", "ETH-USD", "SOL-USDT", "BTC", "ZZZUSD", "AAPL"]
+
+
+def test_an_agents_coin_spellings_all_reach_the_apps_own(monkeypatch):
+    from alphadesk import config, mcp_server
+    monkeypatch.setattr(config, "_names", config._with_coins({}), raising=False)
+    monkeypatch.setattr(config, "_load_names", lambda: None, raising=False)
+    assert [mcp_server._symbol(s) for s in ("BTC/USD", "btc-usd", "BTCUSD", "SOL/USDC", "BTC", "AAPL", "BRK.B")] == \
+        ["BTC-USD", "BTC-USD", "BTC-USD", "SOL-USDC", "BTC", "AAPL", "BRK.B"]
+    assert mcp_server._symbols("BTC/USD, ETH/USD NVDA") == ["BTC-USD", "ETH-USD", "NVDA"]
+
+
+def test_the_movers_tool_gives_a_coin_agent_the_symbol_to_use_not_the_short_label():
+    from alphadesk import mcp_server
+    got = mcp_server._mover_lists({"category": "crypto", "tabs": [{"id": "all", "rows": [
+        {"symbol": "BTC-USD", "display": "BTC", "price": 1.0}]}]})
+    assert got["all"][0]["display"] == "BTC-USD" and got["all"][0]["symbol"] == "BTC-USD"
+    stocks = mcp_server._mover_lists({"category": "stocks", "tabs": [{"id": "all", "rows": [{"symbol": "NVDA", "display": "NVDA"}]}]})
+    assert stocks["all"][0]["display"] == "NVDA"
+
+
+def test_the_server_instructions_tell_an_agent_how_coins_differ():
+    from alphadesk import mcp_server
+    text = mcp_server.mcp.instructions
+    assert "BTC-USD" in text and "around the clock" in text and "no order book depth" in text
+
+
+def test_a_toolset_header_narrows_the_listing_and_its_absence_changes_nothing():
+    import asyncio
+    from alphadesk import agent_log, mcp_server
+    everything = {t.name for t in asyncio.run(mcp_server.mcp.list_tools())}
+    assert len(everything) >= 50
+    assert {t.name for t in asyncio.run(mcp_server._list_tools_for_caller())} == everything
+    held = agent_log.set_context("t1", None, None, None, "crypto")
+    try:
+        narrowed = {t.name for t in asyncio.run(mcp_server._list_tools_for_caller())}
+    finally:
+        agent_log.reset_context(held)
+    assert narrowed == mcp_server.TOOLSETS["crypto"] and narrowed <= everything
+    assert not {"options_flow", "list_filings", "analyst_view", "earnings_history"} & narrowed
+    held = agent_log.set_context("t1", None, None, None, "no-such-set")
+    try:
+        assert {t.name for t in asyncio.run(mcp_server._list_tools_for_caller())} == everything   # unknown name: the full list
+    finally:
+        agent_log.reset_context(held)
+
+
+def test_the_tool_listing_handler_is_the_filtered_one():
+    from alphadesk import mcp_server
+    import mcp.types as types
+    handler = mcp_server.mcp._mcp_server.request_handlers[types.ListToolsRequest]
+    assert handler is not None

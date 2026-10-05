@@ -43,9 +43,11 @@ def clean_header(value: str | None, limit: int) -> str | None:
     return text[:limit] or None
 
 
-def set_context(token_id: str | None, task_id: str | None, intent: str | None, client: str | None = None):
+def set_context(token_id: str | None, task_id: str | None, intent: str | None, client: str | None = None,
+                toolset: str | None = None):
     return _context.set({"token_id": token_id, "task_id": clean_header(task_id, _TASK_MAX),
-                         "intent": clean_header(intent, _INTENT_MAX), "client": clean_header(client, 80)})
+                         "intent": clean_header(intent, _INTENT_MAX), "client": clean_header(client, 80),
+                         "toolset": (clean_header(toolset, 20) or "").lower() or None})
 
 
 def reset_context(token) -> None:

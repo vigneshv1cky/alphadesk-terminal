@@ -66,6 +66,18 @@ mcp = FastMCP(
         "and flags, never a verdict, and none places an order. Read "
         "data_freshness in a reply first: a free plan's volume is one "
         "exchange's alone.\n"
+        "* COINS. Use a coin's symbol exactly as movers lists it, such as BTC-USD "
+        "(BTC/USD is accepted; a bare BTC means a listed fund, not Bitcoin). "
+        "These work for coins: quote, quotes, price_history, price_chart, "
+        "movers(category=crypto), symbol_news and news_scan (one shared list of "
+        "crypto stories for every coin), related_assets. These do not apply: "
+        "filings, key_stats, analyst_view, ownership, insider_activity, "
+        "earnings_*, options. Coins trade around the clock, so there are no "
+        "sessions or market hours (market_sessions is the US stock calendar). "
+        "Prices and volume are Alpaca's own venue, which is thin; there is no "
+        "order book depth, funding rate, open interest, liquidation or on-chain "
+        "data here. A coin agent can send the header X-Agent-Toolset: crypto to "
+        "have only the tools above listed.\n"
         "* Another asset class: movers takes a category — stocks, etfs, "
         "indices, crypto, currencies, options, bonds. Do not reach for a "
         "per-class tool; there is one.\n"
@@ -125,6 +137,29 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldH
 
 
 # ── Market data ────────────────────────────────────────────────────────────
+
+#: Named subsets of the tools, listed to a caller that asks for one with the
+#: request header X-Agent-Toolset (2026-10-05). The full list is 53 tools and
+#: about 66,000 characters of descriptions, sent on every connect; a coin agent
+#: uses a third of them. Only the LISTING is narrowed: a tool outside the set
+#: still answers if called by name.
+TOOLSETS: dict[str, frozenset[str]] = {
+    "crypto": frozenset({
+        "find_symbol", "quote", "quotes", "price_history", "price_chart", "movers", "symbol_news", "news_scan",
+        "news_search", "news_story", "entry_facts", "move_state", "what_moved", "related_assets", "social_posts",
+        "data_sources", "my_board"}),
+}
+
+
+async def _list_tools_for_caller():
+    from alphadesk import agent_log
+    tools = await mcp.list_tools()
+    keep = TOOLSETS.get(agent_log.context().get("toolset") or "")
+    return [t for t in tools if t.name in keep] if keep else tools
+
+
+mcp._mcp_server.list_tools()(_list_tools_for_caller)       # replaces the default listing handler
+
 
 @mcp.tool(annotations=READ_ONLY)
 def quote(symbol: str) -> dict:
@@ -212,8 +247,15 @@ def _mover_lists(payload: dict) -> dict:
     for every category, and the one callers already have.
     """
     out = {k: v for k, v in payload.items() if k != "tabs"}
+    coins = payload.get("category") == "crypto"
     for tab in payload.get("tabs") or []:
-        out[tab["id"]] = tab.get("rows") or []
+        rows = tab.get("rows") or []
+        if coins:
+            # The page shows a coin as BTC; every other tool wants BTC-USD, and a
+            # bare BTC is a listed fund. The agent gets the symbol to use, not the
+            # short label (2026-10-05).
+            rows = [{**r, "display": r["symbol"]} for r in rows]
+        out[tab["id"]] = rows
     return out
 
 
@@ -612,10 +654,17 @@ def earnings_calendar(days_ahead: int = 7, days_back: int = 0) -> list[dict]:
 
 
 def _symbol(raw: str) -> str:
-    sym = "".join(c for c in (raw or "").upper() if c.isalnum() or c in ".-^=")[:14]
+    """A symbol as the app writes it. A coin pair may come as BTC/USD (the
+    broker's spelling) or BTCUSD (a feed's): both become BTC-USD, the form
+    every tool takes (2026-10-05: the agent sent BTC and BTC/USD, and the
+    slash was dropped, which left a stock ticker for a coin). A bare BTC is
+    left alone: it is also a listed fund."""
+    text = (raw or "").upper().strip().replace("/", "-")
+    sym = "".join(c for c in text if c.isalnum() or c in ".-^=")[:14]
     if not sym:
         raise ValueError("a symbol is required")
-    return sym
+    from alphadesk.cryptonews import canonical_tag
+    return canonical_tag(sym)
 
 
 def _symbols(raw) -> list[str]:

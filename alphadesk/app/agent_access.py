@@ -39,7 +39,8 @@ TOKEN_PREFIX = "adk_"
 MAX_TOKENS = 10
 #: Tool-server requests one token may make per minute. An MCP tool call is
 #: one request; listing tools at connect is one more.
-RATE_PER_MIN = 120
+# Overridable (2026-10-05): a cycle over a few dozen coins used most of 120 calls.
+RATE_PER_MIN = int(os.environ.get("ALPHADESK_AGENT_RATE_PER_MIN", "120") or 120)
 #: last-used is written at most this often per token.
 TOUCH_EVERY_S = 60.0
 

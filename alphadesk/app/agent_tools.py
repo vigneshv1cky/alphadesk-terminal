@@ -165,7 +165,7 @@ class TokenGate:
         # WHY THE CALLS ARE BEING MADE, as far as the caller says (2026-10-03):
         # an optional task id and a one-line intent, kept beside each call.
         said = agent_log.set_context(limit_key, headers.get("x-agent-task"), headers.get("x-agent-intent"),
-                                     headers.get("user-agent"))
+                                     headers.get("user-agent"), headers.get("x-agent-toolset"))
         try:
             await self.app(scope, receive, send_with_limits)
         finally:
