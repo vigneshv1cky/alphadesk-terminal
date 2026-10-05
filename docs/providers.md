@@ -180,7 +180,7 @@ A new market-data vendor therefore needs an implementation registered under
 | llm | `anthropic` | Messages API; JSON is forced by prefilling the assistant turn |
 | llm | `gemini` | Google's Generative Language API |
 | news | `polygon`, `alpaca`, `finnhub`, `benzinga`, `alphavantage`, `marketaux`, `fmp` | ticker-tagged feeds; a reader keying several has their window merged |
-| prices | `alpaca` | SIP bars (15 minutes behind on the free plan), overnight session, quotes, streams, movers, crypto, option chains |
+| prices | `alpaca` | SIP bars (15 minutes behind on the free plan), overnight session, quotes, streams, movers, crypto (every pair the account trades, which also drives search and the crypto movers), option chains |
 | prices | `finnhub` | key statistics, analysts, peers, earnings history and calendar, profile; more on paid plans |
 | prices | `polygon` | bars, quotes, dividends and splits; currencies and option movers on paid plans |
 | prices | `alphavantage` | overview-based statistics, estimates, earnings calendar |

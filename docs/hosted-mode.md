@@ -96,6 +96,11 @@ to 120 requests a minute per credential. Two credentials exist:
   `X-Agent-Task` and `X-Agent-Intent`; a caller can also say whether a result
   helped by posting to the tool server's `/feedback` path with the same token.
   Read it with `python -m alphadesk.main agent-usage` or `/api/agent/usage`.
+- **A smaller tool list.** The full list is 53 tools, about 66,000 characters of
+  descriptions on every connect. The request header `X-Agent-Toolset: crypto`
+  lists only the 17 that apply to coins (about 28,000 characters); a tool left out
+  of the list still answers if called by name. The call limit is 120 a minute
+  per credential, and `ALPHADESK_AGENT_RATE_PER_MIN` changes it.
 - **OAuth 2.1** for connector apps that add a server by URL (Claude.ai,
   ChatGPT): registration, PKCE, refresh and revoke, with clients sealed and
   codes and tokens stored as hashes; a single-use 5-minute code, one-hour

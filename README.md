@@ -340,7 +340,7 @@ and why. Bring evidence and open an issue.
 |---|---|
 | **Landing** (`/`) | Product overview with blurred screenshots; sign-in |
 | **Markets** | A composable board: chart, equity overview, funds built on the stock, stock/ETF/crypto/currency/option movers, Treasury yields, heatmap, news. Stock and ETF movers **step back to a past session**, computed from the whole market that day against the session before it |
-| **Chart** | Full workspace: candles, line, area, step and other styles; 1-minute to multi-year intervals; indicators and templates; drawing tools (desktop, per visit); multi-chart layouts; overnight, pre-market, after-hours and weekend session shading |
+| **Chart** | Full workspace: candles, line, area, step and other styles; 1-minute to multi-year intervals; indicators and templates; drawing tools (desktop, per visit); multi-chart layouts; overnight, pre-market, after-hours and weekend session shading; a crowded view draws one candle per pixel column so zooming stays smooth, a range you press shows a loading state, and the percent scale measures from one bar (the first the chart opened with, or any bar you pick from the right-click menu) |
 | **Analysis** | One name end to end: chart, filings, price performance, key statistics, earnings history and consensus, analysts, rating changes, financials as filed, splits, dividends, institutional and insider ownership, news. Funds add holdings and breakdown |
 | **Profile** | Who a company is: EDGAR registrant facts, the latest 10-K/20-F business and properties sections verbatim, locations, officers |
 | **News** | Each reader's merged feeds, three days deep, newest first; filter by words, source or board; search by words and by meaning; an in-page reader with full text where the feed carries it |
@@ -454,7 +454,39 @@ filter box, "Search all" and the agent's `news_search` tool:
 
 A **coin's** news panel reads all crypto and what moves it — any coin's
 stories, crypto stocks, stories naming crypto, and Fed and rates headlines —
-each marked with the reason it is there.
+each marked with the reason it is there. The 5-minute news poll also asks the
+feed for stories tagged with the main coins by name, because crypto is a small
+share of the newest stories across everything. A feed writes a coin as `BTCUSD`;
+those tags are shown as `BTC-USD`, the way the board writes them, for the coins
+the account trades and the large ones in the fixed list.
+
+---
+
+## Crypto
+
+Crypto comes from **Alpaca alone**: trading is on Alpaca, so its coins and its
+venue's numbers are the ones that count. There is no worldwide market-cap order
+or volume.
+
+- **Search follows the account.** Every crypto pair the connected Alpaca account
+  can trade is searchable and chartable, including the pairs against a
+  stablecoin or bitcoin (`BAT-USDC`, `ETH-BTC`); a coin the account does not
+  carry is not offered. The funds the SEC ticker file lacks (QQQ, TLT, VOO and
+  many more) are added from the account's own asset list, loaded in the
+  background once an hour, so the first search after a start does not have them yet.
+- **The crypto movers** list the dollar pairs only (the stablecoin and bitcoin
+  pairs are the same coins priced another way). Active ranks by dollars traded on
+  Alpaca's venue (price times coins); the stablecoins (USDT, USDC, USDG) appear
+  under All but not under Active, Gainers or Losers. A coin's price is the live
+  bid/ask midpoint when its last trade is stale, and a 24-hour change with no
+  starting price in the six hours before the 24-hour mark is shown as a dash.
+  Volume and liquidity are Alpaca's own venue's, which is thin; the column says so.
+- **Checking it.** Signed in, `/api/crypto/tradable` lists the coins and pairs the
+  account can trade, and `/api/crypto/check` tests every pair for search, price
+  bars and a place in the movers.
+- **A coin chart** uses real trades for its live edge (the bid/ask midpoint moves
+  many times a second and made the chart shake), and fetches one spare day of
+  bars, not the three a stock needs for weekends.
 
 ---
 
@@ -646,7 +678,8 @@ alphadesk/
   ledger/            store (SQLite / Postgres), database adapter, key vault and the sealed key export
   mcp_server.py      the agent tools
   semantic.py        search by meaning (self-hosted embedding model)
-  cryptonews.py      a coin's news selection
+  cryptonews.py      a coin's news selection, and the feed's coin tags written as the board writes them
+  cryptocheck.py     the check that every crypto pair is searchable, has bars and reaches the movers
   newsquery.py       the word-search rule
   config.py          settings, retention, curated baskets
   ui/                React 19 + Vite frontend (built into app/static)
@@ -744,6 +777,7 @@ required.
 | `ALPHADESK_LOCAL_USER_EMAIL` | with sign-in off, act as this existing account instead of a fresh local one — for a server that began with accounts and became one person's own; nothing is moved |
 | `ALPHADESK_OAUTH_REDIRECT_HOSTS` | optional: only these addresses (and their subdomains), comma-separated, may receive a Claude.ai or ChatGPT connector grant; any other is refused at the consent page. Unset, any address may, and the page leads with the address and warns on one it does not recognise |
 | `ALPHADESK_ALLOWED_HOSTS` | extra names the server answers to. With sign-in off and no access token it answers only to `localhost`, `127.0.0.1` and `[::1]` (so a web page cannot reach it by rebinding its own name); list any other name you reach it by, comma-separated. `ALPHADESK_BASE_URL`'s host is allowed too |
+| `ALPHADESK_AGENT_RATE_PER_MIN` | calls per minute one agent token may make (default 120) |
 | `ALPHADESK_KEEP_DATA` | `forever` or a number of days: keeps the records (stories and their text, announcements, the forecast log, scraped pages) that long instead of the defaults of 3 to 120 days, and reaches further when the store has less (a key save refills 30 days, "Load older" looks 30 days back, a symbol's own ask a year). It only lengthens a default. A vendor's own terms about storing its data still apply to you; this setting does not change them |
 | `NEWS_BACKFILL_DAYS` | how many days a key save refills (default: the retention window, 30 with `ALPHADESK_KEEP_DATA`, never over 365) |
 | `ALPHADESK_SKIP_KEY_CHECK` | `1` saves a news key without trying it at the vendor first (offline) |
@@ -795,6 +829,15 @@ under `alphadesk/app/static`, so the image needs no Node build step.
 
 - Logs: Cloud Logging for the `alphadesk` service; the ingest loops,
   pruning and the embedding worker log their progress there.
+- **If requests stall.** Measure from the request logs and ignore each version's
+  first five minutes: every deploy is a cold start. The stalls seen so far came
+  after 15 to 25 minutes of use as memory climbed from about 35 percent to over 80
+  of the 4 GiB. Three things kept them away: the live stream subscribes in one
+  message per group, the background panel refresh runs 15 panels at a time with a
+  pause (at full pace only in the first five minutes), and expired price answers
+  leave the cache on each insert. If memory climbs above about 75 percent again,
+  raise it with `gcloud run services update alphadesk --region us-east4 --memory 8Gi`
+  (this changes only the memory).
 - Always-on is required as built; approximate cost at this size is
   $110–120 a month for the service (plus Cloud SQL). The lever for cost is a
   smaller embedding model, not scaling to zero.
