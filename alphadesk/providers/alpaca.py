@@ -141,6 +141,28 @@ def coin_pair(symbol: str) -> str | None:
     return None
 
 
+#: A pair against a stablecoin (BAT/USDC) trades about as thin as it can: its
+#: last trade can be hours old, and a move measured from it is not a move
+#: (2026-10-04, Alpaca showed BAT/USDC at -34% beside a bid and ask a fraction
+#: of a percent apart). Past this gap from the same coin's dollar price its
+#: change is left blank.
+STALE_PAIR_GAP = 0.05
+
+
+def stale_pair_changes_blanked(rows: list[dict]) -> list[dict]:
+    """Rows with the 24h change blanked on any non-dollar pair whose price
+    sits more than STALE_PAIR_GAP from the same coin's dollar pair. Pure."""
+    usd = {r["symbol"].split("-")[0]: r["price"] for r in rows if r["symbol"].endswith("-USD") and r.get("price")}
+    out = []
+    for r in rows:
+        base = r["symbol"].split("-")[0]
+        if not r["symbol"].endswith("-USD") and r.get("price") and usd.get(base):
+            if abs(r["price"] / usd[base] - 1) > STALE_PAIR_GAP:
+                r = {**r, "change_pct": None}
+        out.append(r)
+    return out
+
+
 def common_stock_symbol(symbol: str) -> bool:
     """A screener row worth listing: letters only, and not a Nasdaq
     fifth-letter warrant, right or unit (ACMEW, ACMER, ACMEU), which top
@@ -1336,7 +1358,9 @@ class AlpacaPrices:
             assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
         except ProviderError:
             raise
-        pairs = sorted({a.symbol for a in assets if str(a.symbol).endswith("/USD") and getattr(a, "tradable", True)})
+        # Every pair the account trades, the stablecoin ones too (BAT/USDC) —
+        # the owner wants all Alpaca crypto visible (2026-10-04).
+        pairs = sorted({str(a.symbol) for a in assets if "/" in str(a.symbol) and getattr(a, "tradable", True)})
         q = self.quotes([p.replace("/", "-") for p in pairs])
         # The change over the last 24 hours, like every crypto venue shows
         # and the column says (2026-09-15). The quote's change runs from
@@ -1367,9 +1391,12 @@ class AlpacaPrices:
         except Exception as exc:                  # the list stands without the change
             log.debug("alpaca crypto 24h bars: %s", exc)
             bars = {}
-        rows = [{"symbol": s, "name": s.split("-")[0], "price": r["price"],
+        rows = [{"symbol": s, "name": s.split("-")[0],
+                 # BAT-USD shows as BAT; BAT-USDC as BAT/USDC, so the pairs tell apart.
+                 "display": s.split("-")[0] if s.endswith("-USD") else s.replace("-", "/"), "price": r["price"],
                  "change_pct": rolling_change(r["price"], bars.get(s.replace("-", "/")) or [], now, 1),
                  "volume": r.get("volume") or 0} for s, r in q.items()]
+        rows = stale_pair_changes_blanked(rows)
         rank = {c: i for i, c in enumerate(COIN_ORDER)}
         changed = [r for r in rows if r["change_pct"] is not None]
         return {"all": sorted(rows, key=lambda r: (rank.get(r["symbol"].split("-")[0], len(rank)), r["symbol"]))[:top],

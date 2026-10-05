@@ -1068,6 +1068,17 @@ def api_quote(symbol: str):
     return _with_key_stats(router, sym, dict(q))
 
 
+def _register_alpaca_pairs() -> None:
+    """Add the connected Alpaca account's crypto pairs to the search list.
+    Never fails a search: without an Alpaca key the fixed list stands."""
+    try:
+        from alphadesk.config import register_coin_pairs
+        from alphadesk.providers import get_prices
+        register_coin_pairs(get_prices().get("crypto_pairs"))
+    except Exception:
+        pass
+
+
 @app.get("/api/search")
 def api_search(q: str = "", limit: int = 50):
     """Ticker/name search, so a symbol can be picked rather than typed exactly.
@@ -1083,6 +1094,7 @@ def api_search(q: str = "", limit: int = 50):
     # low. The popover scrolls; the reader decides where to stop looking.
     n = max(1, min(limit, 100))
     if q.strip():
+        _register_alpaca_pairs()
         return {"results": search_symbols(q, limit=n), "trending": False}
 
     # Empty query: offer what is actually moving rather than a hardcoded list —

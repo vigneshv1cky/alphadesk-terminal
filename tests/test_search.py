@@ -252,3 +252,25 @@ class TestCoinTickers:
 
     def test_an_exact_stock_ticker_still_comes_first(self):
         assert better(rank("BTC", "Grayscale Bitcoin Mini Trust", "btc"), rank("BTC-USD", "Bitcoin", "btc"))
+
+
+class TestAlpacaStablecoinPairs:
+    def test_every_pair_the_account_trades_becomes_findable(self, monkeypatch):
+        from alphadesk import config as cfg
+        monkeypatch.setattr(cfg, "_names", cfg._with_coins({}), raising=False)
+        monkeypatch.setattr(cfg, "_load_names", lambda: None, raising=False)
+        assert cfg.register_coin_pairs(["BAT/USDC", "BTC/USDT", "BAT/USD", "NEWCOIN/USD"]) == 3
+        meta = cfg._names["BAT-USDC"]
+        assert meta["name"] == "Basic Attention Token / USD Coin" and meta["class"] == "crypto"
+        assert "NEWCOIN-USD" in cfg._names
+        assert "BAT-USDC" in [r["symbol"] for r in cfg.search_symbols("bat", limit=10)]
+        assert cfg.register_coin_pairs(["BAT/USDC"]) == 0                        # idempotent
+
+    def test_a_stale_stablecoin_pair_does_not_show_a_false_move(self):
+        from alphadesk.providers.alpaca import stale_pair_changes_blanked
+        rows = [{"symbol": "BAT-USD", "price": 0.1046, "change_pct": 9.0},
+                {"symbol": "BAT-USDC", "price": 0.0682, "change_pct": -34.2},
+                {"symbol": "ETH-USDC", "price": 2726.0, "change_pct": 1.3},
+                {"symbol": "ETH-USD", "price": 2725.0, "change_pct": 1.4}]
+        got = {r["symbol"]: r["change_pct"] for r in stale_pair_changes_blanked(rows)}
+        assert got == {"BAT-USD": 9.0, "BAT-USDC": None, "ETH-USDC": 1.3, "ETH-USD": 1.4}

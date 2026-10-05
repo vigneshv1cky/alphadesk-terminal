@@ -358,6 +358,33 @@ def _fetch_sec_names() -> dict[str, dict]:
     return _with_coins(out)
 
 
+_QUOTE_NAMES = {"USD": "US Dollar", "USDC": "USD Coin", "USDT": "Tether", "BTC": "Bitcoin"}
+
+
+def register_coin_pairs(pairs) -> int:
+    """Make every crypto pair the connected Alpaca account can trade findable
+    ("BAT/USDC" becomes BAT-USDC, "Basic Attention Token / USD Coin"), beyond
+    the fixed coin list and the dollar pairs (2026-10-04, the owner: "all
+    coins, crypto assets available to trade in alpaca" visible). In memory
+    only; the account's own list is re-read daily. Returns how many were new."""
+    _load_names()
+    if _names is None:
+        return 0
+    added = 0
+    for pair in pairs or ():
+        base, _, quote = str(pair).upper().partition("/")
+        if not base or not quote:
+            continue
+        sym = f"{base}-{quote}"
+        if sym in _names:
+            continue
+        coin = _COINS.get(base) or base
+        name = coin if quote == "USD" else f"{coin} / {_QUOTE_NAMES.get(quote, quote)}"
+        _names[sym] = {"name": name, "exchange": "Crypto", "class": "crypto"}
+        added += 1
+    return added
+
+
 def _sec_key(symbol: str) -> str:
     """The SEC list writes a share class as "BRK-B"; vendors write "BRK.B"."""
     from alphadesk.ingest.edgar import sec_ticker
