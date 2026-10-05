@@ -59,5 +59,19 @@ def test_a_tick_refreshes_at_most_a_few_panels_with_a_pause_between(monkeypatch)
     monkeypatch.setattr(prewarm, "_replay", lambda uid, email, path: sent.append(path))
     monkeypatch.setattr(prewarm.time, "sleep", lambda s: slept.append(s))
     prewarm._replayed.clear()
+    monkeypatch.setattr(prewarm, "_booted", 0.0)                    # long after start-up
     assert prewarm.tick() == prewarm.MAX_PER_TICK == len(sent)
     assert slept and all(s == prewarm.PAUSE_S for s in slept)
+
+
+def test_just_after_a_start_everything_due_is_refreshed_at_once(monkeypatch):
+    from alphadesk import prewarm
+    monkeypatch.setattr(prewarm, "_owners", lambda: [("u", "e@x")])
+    now = __import__("time").time()
+    monkeypatch.setattr(prewarm, "_load", lambda uid: {f"/api/quote/S{i}": now for i in range(40)})
+    sent, slept = [], []
+    monkeypatch.setattr(prewarm, "_replay", lambda uid, email, path: sent.append(path))
+    monkeypatch.setattr(prewarm.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setattr(prewarm, "_booted", now - 30)
+    prewarm._replayed.clear()
+    assert prewarm.tick() == 40 and slept == []

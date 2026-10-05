@@ -47,6 +47,12 @@ TICK_S = 15.0
 #: Fifteen a tick, a breath between each, covers the same panels over the minute.
 MAX_PER_TICK = 15
 PAUSE_S = 0.3
+#: For this long after the process starts, the old pace: everything due at once,
+#: no pause. The caches are empty then and the owner's page is loading, so a
+#: slow warm-up is what they feel (2026-10-05: news and charts loaded slower
+#: after the pace was trimmed). The trim is for the steady state.
+STARTUP_S = 300.0
+_booted = time.time()
 #: A fast panel the owner has not looked at for this long drops to the slow
 #: rhythm: a page closed for hours does not need its panels refreshed every minute.
 FAST_IDLE_S = 7200.0
@@ -162,12 +168,14 @@ def tick() -> int:
     """Replay what is due for every active owner. Returns how many."""
     done = 0
     now = time.time()
+    starting = now - _booted < STARTUP_S
+    cap = 60 if starting else MAX_PER_TICK
     for user_id, email in _owners():
         kept = _load(user_id)
         # The longest-waiting first, so a capped tick does not starve the
         # same paths every time.
         for path in sorted(kept, key=lambda p: _replayed.get((user_id, p), 0.0)):
-            if done >= MAX_PER_TICK:
+            if done >= cap:
                 return done
             with _lock:
                 last = _replayed.get((user_id, path), 0.0)
@@ -177,7 +185,8 @@ def tick() -> int:
             with _lock:
                 _replayed[(user_id, path)] = time.time()
             done += 1
-            time.sleep(PAUSE_S)
+            if not starting:
+                time.sleep(PAUSE_S)
     return done
 
 
