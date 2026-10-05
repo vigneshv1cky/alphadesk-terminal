@@ -290,7 +290,7 @@ export function MarketChart({ span = 6, symbol: symbolProp }: {
       {/* A range change releases the interval back to the server's choice —
           the two are one decision, and pinning minute bars onto a year is not
           a thing to preserve. */}
-      <ChartRanges range={e.range} onRange={e.pickRange} />
+      <ChartRanges range={e.range} onRange={e.pickRange} loading={e.switching} />
     </Widget>
   )
 }

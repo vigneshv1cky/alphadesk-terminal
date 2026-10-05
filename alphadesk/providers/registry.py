@@ -213,6 +213,7 @@ def _arg_key(method: str, args: tuple, kwargs: dict) -> str:
 #: it lands within seconds, so it must not be held for the method's TTL.
 _FILLING_TTL_S = 2.0
 _CACHE_MAX_ENTRIES = 512
+_CACHE_SWEEP_AT = 24
 _REFUSAL_TTL_S = 3600.0
 
 
@@ -349,7 +350,11 @@ class _CachedPrices:
         filling = deferring or (isinstance(val, dict) and val.get("filling"))
         hold = min(ttl, _FILLING_TTL_S) if filling else ttl
         with self._memo_lock:
-            if len(self._memo) >= _CACHE_MAX_ENTRIES:
+            # What has EXPIRED goes on every insert once the memo has grown, not only
+            # when it is full: an expired answer is never read again, but a 3-month
+            # minute chart is ~48,000 bars, and up to 512 of them were kept until the
+            # memo filled (2026-10-05: the server sat at 72-83% of 4 GiB and stalled).
+            if len(self._memo) > _CACHE_SWEEP_AT or len(self._memo) >= _CACHE_MAX_ENTRIES:
                 live = {k: v for k, v in self._memo.items() if now - v[0] < v[1]}
                 self._memo = live if len(live) < _CACHE_MAX_ENTRIES else {}
             self._memo[key] = (now, hold, val)

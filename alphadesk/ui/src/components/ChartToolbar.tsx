@@ -359,9 +359,11 @@ export function ChartToolbar({
  * what the chart IS, the bottom for how much of it you are looking at. All
  * nine, in the row (2026-09-10: the three-plus-a-menu form was cut — the
  * menu hid the selection and cost a click for every other range). */
-export function ChartRanges({ range, onRange }: {
+export function ChartRanges({ range, onRange, loading = false }: {
   range: ChartRange
   onRange: (r: ChartRange) => void
+  /** The range just chosen is still loading: its button pulses. */
+  loading?: boolean
 }) {
   return (
     <div className="flex flex-wrap items-center gap-0.5 border-t border-row-rule px-2.5 py-1.5">
@@ -371,7 +373,8 @@ export function ChartRanges({ range, onRange }: {
           type="button"
           onClick={() => onRange(r)}
           aria-pressed={range === r}
-          className={`${BAR} tnum !px-1.5 ${range === r ? BAR_ON : "text-muted-foreground"}`}
+          aria-busy={loading && range === r}
+          className={`${BAR} tnum !px-1.5 ${range === r ? BAR_ON : "text-muted-foreground"} ${loading && range === r ? "animate-pulse" : ""}`}
         >
           {rangeLabel(r)}
         </button>

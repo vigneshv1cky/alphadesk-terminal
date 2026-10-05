@@ -267,3 +267,22 @@ def test_a_coin_chart_reads_fewer_spare_days_than_a_stock_chart():
     from alphadesk.providers.alpaca import chart_window_days
     assert chart_window_days(1, True) == 2 and chart_window_days(1, False) == 4
     assert chart_window_days(5, True) == 6 and chart_window_days(5, False) == 8
+
+
+def test_expired_answers_leave_the_memo_on_the_next_insert_not_only_when_it_is_full():
+    """2026-10-05: up to 512 expired chart answers (a quarter of minutes is ~48,000 bars each) were kept until the memo filled."""
+    import time
+    from alphadesk.providers import registry
+
+    class Inner:
+        name = "alpaca"
+
+        def category_movers(self, category, top=20):
+            return {"tabs": [], "category": category}
+    cached = registry._CachedPrices(Inner())
+    old = time.monotonic() - 10_000
+    for i in range(registry._CACHE_SWEEP_AT + 20):
+        cached._memo[("stale", i)] = (old, 30.0, {"bars": list(range(1000))})
+    assert len(cached._memo) > registry._CACHE_SWEEP_AT
+    cached.category_movers("stocks")                                   # one fresh answer arrives
+    assert len(cached._memo) == 1 and not any(k[0] == "stale" for k in cached._memo)

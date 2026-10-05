@@ -251,7 +251,11 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
    * keep-the-old-series-while-loading and loading flag were all reimplementing
    * what the query layer already does — and which, being one-shot, left the
    * chart frozen at whatever moment the page was opened. */
-  const { data, isFetching, error } = useChartSeries(symbol, range, wantedInterval)
+  const { data, isFetching, error, isPlaceholderData } = useChartSeries(symbol, range, wantedInterval)
+  // The reader asked for another range or bar and the OLD series is still on
+  // screen while the new one loads (2026-10-05, the owner: pressing 3M or 6M
+  // gave no sign it was working). The tile says so, over the old series.
+  const switching = isPlaceholderData && isFetching
   // THE LAST FAILURE STAYS UNTIL A SERIES ARRIVES (2026-10-05, the owner: a
   // coin Alpaca has no bars for sat on "loading…"). The query layer clears
   // the error and goes back to pending on every refresh of a series that has
@@ -546,7 +550,7 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
     drawings, history, tool, setTool, drawOpen, setDrawOpen,
     drawVisible, setDrawVisible, magnet, setMagnet, allLocked,
     projection, setProjection, hovered, setHovered, hoverAt, setHoverAt,
-    theme, data, isFetching, err, bars, fullBars, live,
+    theme, data, isFetching, switching, err, bars, fullBars, live,
     replay, startReplay, exitReplay, selectReplayAt, stepReplay, seekReplay, toggleReplayPlay, setReplaySpeed,
     stacked, priceHeight, canvasHeight,
   }

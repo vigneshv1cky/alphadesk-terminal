@@ -131,6 +131,18 @@ export function ChartSurface({ e, legendTop, toolsAlwaysOn = false, children }: 
           const t = e.projection.coordinateToTime(ev.clientX - r.left)
           if (t) e.selectReplayAt(t)
         }}>
+        {e.switching && (
+          // Over the OLD series while the new range or bar loads: dimmed, with a
+          // spinner and the range asked for. It takes no clicks, so the chart
+          // stays usable underneath.
+          <div role="status" aria-live="polite"
+               className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/50">
+            <span className="flex items-center gap-2 border border-border bg-popover px-3 py-1.5 text-caption font-semibold text-foreground shadow-card">
+              <span className="size-3 animate-spin rounded-full border-2 border-accent border-t-transparent" aria-hidden />
+              Loading {e.range}…
+            </span>
+          </div>
+        )}
         {e.replay.active && e.replay.selecting && (
           <div className="pointer-events-none absolute inset-x-0 top-2 z-30 flex justify-center">
             <span data-slot="dialog" className="border-2 border-info bg-popover px-3 py-1 text-caption font-semibold text-info">
