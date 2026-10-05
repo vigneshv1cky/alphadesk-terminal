@@ -507,8 +507,11 @@ def _rank(sym: str, name: str, q: str, q_norm: str, tokens: list[str]) -> int | 
         return 0
     # A coin typed by its ticker: "bat" is BAT-USD, not the four stocks whose
     # symbols merely start with BAT (2026-10-04). Just behind an exact stock.
-    if sym.endswith("-USD") and sym[:-4] == q:
-        return 1
+    # The pairs against a stablecoin follow their dollar twin: BAT-USDC right
+    # behind BAT-USD, still ahead of the longer-named stocks.
+    for rank_, quote in ((1, "-USD"), (2, "-USDC"), (3, "-USDT"), (4, "-BTC")):
+        if sym.endswith(quote) and sym[:-len(quote)] == q:
+            return rank_
     if sym.startswith(q):
         return 100 + len(sym)
     # A name that IS the query: "bitcoin" is Bitcoin, ahead of the companies

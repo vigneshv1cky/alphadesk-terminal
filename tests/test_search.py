@@ -274,3 +274,11 @@ class TestAlpacaStablecoinPairs:
                 {"symbol": "ETH-USD", "price": 2725.0, "change_pct": 1.4}]
         got = {r["symbol"]: r["change_pct"] for r in stale_pair_changes_blanked(rows)}
         assert got == {"BAT-USD": 9.0, "BAT-USDC": None, "ETH-USDC": 1.3, "ETH-USD": 1.4}
+
+
+def test_stablecoin_pairs_follow_the_dollar_pair_ahead_of_stocks():
+    usd = rank("BAT-USD", "Basic Attention Token", "bat")
+    usdc = rank("BAT-USDC", "Basic Attention Token / USD Coin", "bat")
+    usdt = rank("BAT-USDT", "Basic Attention Token / Tether", "bat")
+    stock = rank("BATL", "Battalion Oil Corp", "bat")
+    assert usd < usdc < usdt < stock
