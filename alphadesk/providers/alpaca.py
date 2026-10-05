@@ -567,6 +567,14 @@ class AlpacaPrices:
                     log.debug("alpaca asset listing: %s", exc)
             return self._names if time.time() - self._names_at < NAMES_KEEP_S else {}
 
+    def asset_listing(self) -> dict[str, tuple[str | None, str | None]] | None:
+        """Every active US equity and fund Alpaca lists, symbol -> (name,
+        exchange); kept an hour with the name listing. The SEC's ticker file
+        leaves out most exchange-traded funds (QQQ, TLT, VOO, NEAR…), so
+        search reads this beside it."""
+        got = self._listing()
+        return dict(got) if got else None
+
     def names(self, symbols: list[str]) -> dict[str, tuple[str | None, str | None]]:
         """(company name, exchange) per symbol; (None, None) when unknown.
 

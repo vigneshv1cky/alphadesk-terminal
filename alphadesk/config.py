@@ -393,6 +393,27 @@ def register_coin_pairs(pairs) -> int:
     return added
 
 
+def register_equity_listing(listing) -> int:
+    """Add the symbols a broker lists that the SEC's ticker file lacks — most
+    exchange-traded funds (2026-10-05, the owner: searching "near" did not
+    offer NEAR, the iShares bond fund; QQQ, TLT, VOO and VTI were missing
+    too). `listing` is symbol -> (name, exchange). In memory only; the SEC's
+    own entry wins where both have the symbol. Returns how many were new."""
+    _load_names()
+    if _names is None or not listing:
+        return 0
+    added = 0
+    for sym, (name, exchange) in listing.items():
+        key = str(sym).upper().replace(".", "-")
+        # A listing symbol is letters (and a class dash); a CUSIP or a
+        # number-led code is not something a reader types.
+        if not key or key in _names or not name or not key.replace("-", "").isalpha() or len(key) > 6:
+            continue
+        _names[key] = {"name": str(name).strip(), "exchange": exchange or None, "class": "us_equity"}
+        added += 1
+    return added
+
+
 def _sec_key(symbol: str) -> str:
     """The SEC list writes a share class as "BRK-B"; vendors write "BRK.B"."""
     from alphadesk.ingest.edgar import sec_ticker

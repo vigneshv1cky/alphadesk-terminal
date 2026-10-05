@@ -315,3 +315,17 @@ def test_a_pair_written_without_a_separator_is_still_a_coin_pair():
     from alphadesk.providers.alpaca import coin_pair
     assert coin_pair("BATUSDC") == "BAT/USDC" and coin_pair("BTCUSD") == "BTC/USD" and coin_pair("BAT-USDC") == "BAT/USDC"
     assert coin_pair("AAPL") is None and coin_pair("ZZZUSD") is None
+
+
+def test_funds_the_sec_file_lacks_are_added_from_the_broker_listing(monkeypatch):
+    from alphadesk import config as cfg
+    monkeypatch.setattr(cfg, "_names", {"AAPL": {"name": "Apple Inc.", "exchange": "Nasdaq", "class": "us_equity"}}, raising=False)
+    monkeypatch.setattr(cfg, "_load_names", lambda: None, raising=False)
+    listing = {"NEAR": ("iShares Short Duration Bond Active ETF", "BATS"), "QQQ": ("Invesco QQQ Trust, Series 1", "NASDAQ"),
+               "AAPL": ("Something else", "NASDAQ"), "BRK.B": ("Berkshire Hathaway Inc.", "NYSE"),
+               "037833100": ("A CUSIP", None), "TOOLONGX": ("Too long", "NYSE")}
+    assert cfg.register_equity_listing(listing) == 3
+    assert cfg._names["AAPL"]["name"] == "Apple Inc."                        # the SEC's own entry wins
+    assert "BRK-B" in cfg._names and "037833100" not in cfg._names
+    assert cfg.search_symbols("near", limit=3)[0]["symbol"] == "NEAR"
+    assert cfg.register_equity_listing(listing) == 0                          # idempotent

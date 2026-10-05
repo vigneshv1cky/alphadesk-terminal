@@ -1068,13 +1068,38 @@ def api_quote(symbol: str):
     return _with_key_stats(router, sym, dict(q))
 
 
+_listing_at = 0.0
+_listing_lock = threading.Lock()
+
+
 def _register_alpaca_pairs() -> None:
-    """Add the connected Alpaca account's crypto pairs to the search list.
+    """Add what the connected Alpaca account lists to the search list: its
+    crypto pairs, and (hourly, off the request) the funds the SEC file lacks.
     Never fails a search: without an Alpaca key the fixed list stands."""
+    global _listing_at
     try:
-        from alphadesk.config import register_coin_pairs
+        from alphadesk.config import register_coin_pairs, register_equity_listing
         from alphadesk.providers import get_prices
-        register_coin_pairs(get_prices().get("crypto_pairs"))
+        router = get_prices()
+        register_coin_pairs(router.get("crypto_pairs"))
+        with _listing_lock:
+            due = time.time() - _listing_at > 3600
+            if due:
+                _listing_at = time.time()
+        if due:
+            from alphadesk.identity import request_user
+            uid = request_user()
+
+            def load() -> None:
+                from alphadesk.identity import reset_request_user, set_request_user
+                token = set_request_user(uid)
+                try:
+                    register_equity_listing(router.get("asset_listing"))
+                except Exception:
+                    pass
+                finally:
+                    reset_request_user(token)
+            threading.Thread(target=load, daemon=True).start()
     except Exception:
         pass
 
