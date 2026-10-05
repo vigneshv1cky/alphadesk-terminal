@@ -5,6 +5,7 @@ import {
   RIGHT_GAP, scaledRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
 } from "@/lib/chartScales"
 import { bucketBars } from "@/lib/chartBuckets"
+import { useSmoothedRange } from "@/lib/smoothRange"
 import { paneAxisLabel, paneExtent, sessionLayout, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
 import { heikinAshi, type SeriesKind } from "@/lib/series"
 import { barCloseCountdown, countdownLabel, thinTicks, timeAxisTicks, timeParts } from "@/lib/chartTime"
@@ -383,7 +384,7 @@ export function ChartCanvas({
    * projection all keep the real bars — the smoothing is for the eye. */
   const drawBars = useMemo(() => (kind === "heikin" ? heikinAshi(bars) : bars), [bars, kind])
 
-  const { min, max } = useMemo(() => {
+  const targetRange = useMemo(() => {
     const ext = { ...visibleExtent(drawBars, from, to) }
     // The provisional line is on screen past the last bar: fit it too, or a
     // move since the delayed bars would run off the pane.
@@ -421,6 +422,10 @@ export function ChartCanvas({
     const half = (fitted.max - fitted.min) / 2 / yZoom
     return { min: centre - half, max: centre + half }
   }, [bars, drawBars, from, to, scaleMode, yZoom, held, topInset, priceH, provSlots])
+  // The axis glides to the range the visible bars fit, rather than jumping at
+  // every zoom or pan step; a new series, a hand-set scale and a dragged one
+  // are not eased (lib/smoothRange).
+  const { min, max } = useSmoothedRange(targetRange, seriesId ?? "", !held && yZoom === 1)
 
   // Memoized on its six numbers, and that memo is load-bearing rather than an
   // optimization. `s` feeds the projection effect's dep array, and the effect
