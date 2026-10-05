@@ -1756,6 +1756,37 @@ def api_crypto(top: int = 20):
     return get_prices().ask("crypto_movers", top=max(1, min(top, 50)))
 
 
+@app.get("/api/crypto/check")
+def api_crypto_check():
+    """For every crypto pair the connected Alpaca account trades: is it found
+    by search, does it have bars to chart, is it on the crypto movers. Read-only."""
+    from alphadesk import cryptocheck
+    from alphadesk.config import register_coin_pairs, search_symbols
+    from alphadesk.ingest import movers as movers_ingest
+    from alphadesk.providers import get_prices
+    router = get_prices()
+    pairs = router.get("crypto_pairs") or []
+    if not pairs:
+        return {"connected": False, "pairs": 0, "problems": {}, "rows": []}
+    register_coin_pairs(pairs)
+    syms = [p.replace("/", "-") for p in pairs]
+    try:
+        bars = router.get("crypto_daily_history", syms, 7) or {}
+    except Exception as exc:
+        bars = {}
+        note = f"bars could not be read: {exc}"
+    else:
+        note = None
+    try:
+        got = movers_ingest.category_movers("crypto", top=50) or {}
+        on_list = {r["symbol"] for t in got.get("tabs") or [] for r in t.get("rows") or []}
+    except Exception:
+        on_list = set()
+    out = cryptocheck.report(list(pairs), lambda text: [r["symbol"] for r in search_symbols(text, limit=12)],
+                             bars, on_list)
+    return {"connected": True, "note": note, **out}
+
+
 @app.get("/api/crypto/tradable")
 def api_crypto_tradable():
     """The coins the connected Alpaca account can trade against the dollar —
