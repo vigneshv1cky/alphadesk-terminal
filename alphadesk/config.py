@@ -361,6 +361,23 @@ def _fetch_sec_names() -> dict[str, dict]:
 _QUOTE_NAMES = {"USD": "US Dollar", "USDC": "USD Coin", "USDT": "Tether", "BTC": "Bitcoin"}
 
 
+_names_lock = __import__("threading").Lock()
+
+
+def _publish_names(update: dict, remove: list) -> None:
+    """Swap in a NEW symbol list with these changes, never edit the live one:
+    a search iterating it in another request would otherwise fail with
+    "dictionary changed size during iteration" (seen live 2026-10-05, when the
+    funds list was merged in while a search ran)."""
+    global _names
+    with _names_lock:
+        fresh = dict(_names or {})
+        for k in remove:
+            fresh.pop(k, None)
+        fresh.update(update)
+        _names = fresh
+
+
 def register_coin_pairs(pairs) -> int:
     """Make every crypto pair the connected Alpaca account can trade findable
     ("BAT/USDC" becomes BAT-USDC, "Basic Attention Token / USD Coin"), beyond
@@ -371,14 +388,14 @@ def register_coin_pairs(pairs) -> int:
     if _names is None:
         return 0
     pairs = [p for p in (pairs or ()) if "/" in str(p)]
+    remove: list[str] = []
     if pairs:
         # With the account's list in hand the search shows only what it can
         # trade (2026-10-04: NEAR-USD was offered, then charted nothing — the
         # fixed coin list had coins Alpaca does not carry).
         keep = {str(p).upper().replace("/", "-") for p in pairs}
-        for sym in [k for k, v in _names.items() if v.get("class") == "crypto" and k not in keep]:
-            del _names[sym]
-    added = 0
+        remove = [k for k, v in _names.items() if v.get("class") == "crypto" and k not in keep]
+    update: dict[str, dict] = {}
     for pair in pairs:
         base, _, quote = str(pair).upper().partition("/")
         if not base or not quote:
@@ -388,9 +405,10 @@ def register_coin_pairs(pairs) -> int:
             continue
         coin = _COINS.get(base) or base
         name = coin if quote == "USD" else f"{coin} / {_QUOTE_NAMES.get(quote, quote)}"
-        _names[sym] = {"name": name, "exchange": "Crypto", "class": "crypto"}
-        added += 1
-    return added
+        update[sym] = {"name": name, "exchange": "Crypto", "class": "crypto"}
+    if update or remove:
+        _publish_names(update, remove)
+    return len(update)
 
 
 def register_equity_listing(listing) -> int:
@@ -402,16 +420,17 @@ def register_equity_listing(listing) -> int:
     _load_names()
     if _names is None or not listing:
         return 0
-    added = 0
+    update: dict[str, dict] = {}
     for sym, (name, exchange) in listing.items():
         key = str(sym).upper().replace(".", "-")
         # A listing symbol is letters (and a class dash); a CUSIP or a
         # number-led code is not something a reader types.
         if not key or key in _names or not name or not key.replace("-", "").isalpha() or len(key) > 6:
             continue
-        _names[key] = {"name": str(name).strip(), "exchange": exchange or None, "class": "us_equity"}
-        added += 1
-    return added
+        update[key] = {"name": str(name).strip(), "exchange": exchange or None, "class": "us_equity"}
+    if update:
+        _publish_names(update, [])
+    return len(update)
 
 
 def _sec_key(symbol: str) -> str:
@@ -623,7 +642,7 @@ def search_symbols(query: str, limit: int = 12) -> list[dict]:
     lead = [s for s in _ALIASES.get(q_norm, ()) if s in (_names or {})]
 
     scored: list[tuple[int, str, str]] = []
-    for sym, meta in (_names or {}).items():
+    for sym, meta in list((_names or {}).items()):
         name = (meta or {}).get("name", "") or ""
         r = _rank(sym, name, q, q_norm, tokens)
         if r is not None:

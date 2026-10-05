@@ -329,3 +329,27 @@ def test_funds_the_sec_file_lacks_are_added_from_the_broker_listing(monkeypatch)
     assert "BRK-B" in cfg._names and "037833100" not in cfg._names
     assert cfg.search_symbols("near", limit=3)[0]["symbol"] == "NEAR"
     assert cfg.register_equity_listing(listing) == 0                          # idempotent
+
+
+def test_a_search_survives_the_list_being_extended_underneath_it(monkeypatch):
+    """Seen live 2026-10-05: the funds list merged in during a search ("dictionary changed size")."""
+    import threading
+    from alphadesk import config as cfg
+    base = {f"S{i:04d}": {"name": f"Name {i}", "exchange": "Nasdaq", "class": "us_equity"} for i in range(3000)}
+    monkeypatch.setattr(cfg, "_names", base, raising=False)
+    monkeypatch.setattr(cfg, "_load_names", lambda: None, raising=False)
+    errors = []
+
+    def search():
+        try:
+            for _ in range(60):
+                cfg.search_symbols("name", limit=5)
+        except Exception as exc:                     # noqa: BLE001
+            errors.append(exc)
+
+    t = threading.Thread(target=search)
+    t.start()
+    for i in range(40):
+        cfg.register_equity_listing({f"ZZ{chr(65 + i % 26)}{chr(65 + i // 26)}": (f"Fund {i}", "NYSE")})
+    t.join()
+    assert errors == []
