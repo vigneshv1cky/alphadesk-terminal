@@ -242,3 +242,11 @@ def test_stablecoins_stay_in_all_but_not_in_active_gainers_or_losers():
     base = lambda tab: [r["symbol"].split("-")[0] for r in got[tab]]   # noqa: E731
     assert set(base("all")) == {"BTC", "USDC", "USDT", "USDG", "XRP"}
     assert base("active") == ["BTC", "XRP"] and base("gainers") == ["BTC"] and base("losers") == ["XRP"]
+
+
+def test_a_stale_last_trade_is_replaced_by_the_midpoint_of_the_live_quote():
+    from alphadesk.providers.alpaca import settled_crypto_price as px
+    assert px(0.06824, 0.10442, 0.104899) == (0.10442 + 0.104899) / 2        # BAT/USDC: last trade hours old
+    assert px(86547.0, 86540.0, 86550.0) == 86547.0                          # a liquid coin: the last trade stands
+    assert px(86556.0, 86540.0, 86550.0) == 86556.0                          # just outside the spread, within tolerance
+    assert px(None, 1.0, 1.2) == 1.1 and px(5.0, None, None) == 5.0 and px(None, None, None) is None

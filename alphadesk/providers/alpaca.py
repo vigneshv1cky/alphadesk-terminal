@@ -170,6 +170,23 @@ def stale_pair_changes_blanked(rows: list[dict]) -> list[dict]:
     return out
 
 
+def settled_crypto_price(last: float | None, bid: float | None, ask: float | None) -> float | None:
+    """The price to show for a coin: its last trade, unless that trade sits
+    clear of the live bid and ask, in which case the midpoint. A thinly traded
+    pair's last trade can be hours old (BAT/USDC read 0.068 beside a bid of
+    0.104, 2026-10-05); ranked on it, LDO, XTZ and POL sat in the Losers tab
+    while the live feed showed them up. "Clear of" is more than the spread, or
+    0.1% of the price, outside it. Pure."""
+    if bid and ask and bid > 0 and ask >= bid:
+        mid = (bid + ask) / 2
+        if last is None:
+            return mid
+        tol = max(ask - bid, 0.001 * mid)
+        if last < bid - tol or last > ask + tol:
+            return mid
+    return last
+
+
 #: Coins pegged to a currency. Listed under All, but kept out of the Active,
 #: Gainers and Losers tabs (2026-10-05, the owner): their dollar volume is large
 #: and none of it is a market move, so they would hold the top of Active.
@@ -1119,7 +1136,9 @@ class AlpacaPrices:
             for pair, sym in pairs.items():
                 snap = snaps.get(pair)
                 trade = getattr(snap, "latest_trade", None)
-                price = _f(getattr(trade, "price", None))
+                tick = getattr(snap, "latest_quote", None)
+                bid, ask = _f(getattr(tick, "bid_price", None)), _f(getattr(tick, "ask_price", None))
+                price = settled_crypto_price(_f(getattr(trade, "price", None)), bid, ask)
                 if price is None:
                     continue
                 day = getattr(snap, "daily_bar", None)
@@ -1129,6 +1148,7 @@ class AlpacaPrices:
                             "change_pct": round(100 * (price - prev) / prev, 2) if prev else None,
                             "previous_close": prev, "open": _f(getattr(day, "open", None)),
                             "day_low": _f(getattr(day, "low", None)), "day_high": _f(getattr(day, "high", None)),
+                            "bid": bid, "ask": ask,
                             "volume": _f(getattr(day, "volume", None)), "quote_source": "Alpaca crypto",
                             "as_of": getattr(trade, "timestamp", None).isoformat() if getattr(trade, "timestamp", None) else None,
                             "vendor": self.name}
