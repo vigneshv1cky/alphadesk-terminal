@@ -421,3 +421,26 @@ class TestOneSubscribeMessageForMany:
         hello = mux.open()
         assert len(calls) <= 2                                       # trades and quotes, not 300
         assert hello["quotes"]["live"] is True and hello["trades"] == {"S000": True}
+
+
+class TestCoinChartsSeeTradesNotMidpoints:
+    """2026-10-05: a coin chart's live edge jittered because every bid/ask change was handed to it as a trade."""
+
+    def test_a_quote_midpoint_is_not_a_trade(self, market):
+        import asyncio
+        async def go():
+            await market._on_trade(SimpleNamespace(symbol="BTC/USD", price=86000.0, size=1, timestamp="t1"))
+            await market._on_quote(SimpleNamespace(symbol="BTC/USD", bid_price=86010.0, ask_price=86030.0, timestamp="q1"))
+        asyncio.run(go())
+        assert market.latest_trade("BTC/USD")["price"] == 86000.0            # the chart still sees the trade
+        assert market.latest("BTC/USD")["price"] == 86020.0                  # the price rows see the newer midpoint
+        assert market.latest("BTC/USD")["mid"] is True
+
+    def test_the_chart_channel_emits_nothing_for_a_midpoint_alone(self, market):
+        import asyncio
+        asyncio.run(market._on_quote(SimpleNamespace(symbol="BTC/USD", bid_price=1.0, ask_price=1.2, timestamp="q1")))
+        mux = stream_mod.LiveMux(None, market, ["BTC-USD"], [], [], panel_push_s=5, coin_push_s=2, pair_of=lambda s: "BTC/USD")
+        mux.open()
+        assert [f for f in mux.frames(time.time()) if f.startswith("event: trade")] == []
+        asyncio.run(market._on_trade(SimpleNamespace(symbol="BTC/USD", price=1.1, size=1, timestamp="t1")))
+        assert len([f for f in mux.frames(time.time()) if f.startswith("event: trade")]) == 1

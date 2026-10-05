@@ -152,6 +152,11 @@ class _MarketStream:
         self._thread: Optional[threading.Thread] = None
         self._refs: dict[str, int] = {}
         self._last: dict[str, dict] = {}
+        # The bid/ask midpoint of a coin, kept APART from its trades: it moves
+        # many times a second where trades are sparse, and when both shared one
+        # slot every midpoint reached the chart as a trade, so the live edge of a
+        # coin chart jittered (2026-10-05, the owner).
+        self._mid: dict[str, dict] = {}
         # When the last start attempt failed. Not a permanent verdict: a
         # transient constructor failure held the process off streaming for
         # its whole life. After FAILED_RETRY_S the next subscriber tries again.
@@ -253,7 +258,7 @@ class _MarketStream:
         try:
             bid, ask = float(q.bid_price), float(q.ask_price)
             if bid > 0 and ask > 0:
-                self._last[str(q.symbol).upper()] = {
+                self._mid[str(q.symbol).upper()] = {
                     "symbol": str(q.symbol).upper(), "price": round((bid + ask) / 2, 8), "size": 0,
                     "at": str(getattr(q, "timestamp", "")), "received": time.time(), "mid": True}
         except Exception:
@@ -376,6 +381,7 @@ class _MarketStream:
         except Exception as exc:
             log.debug("unsubscribe failed for %s: %s", sym, exc)
         self._last.pop(sym, None)
+        self._mid.pop(sym, None)
 
     def shutdown(self) -> None:
         """Close the upstream socket for process exit.
@@ -401,17 +407,28 @@ class _MarketStream:
 
     # ── reading ─────────────────────────────────────────────────────────────
 
-    def latest(self, symbol: str) -> Optional[dict]:
-        """The most recent trade seen for `symbol`, or None if this feed has
-        not printed one since we subscribed. None is a real answer — see the
-        module docstring — not a failure to report."""
-        tick = self._last.get(symbol.upper())
+    @staticmethod
+    def _aged(tick: Optional[dict]) -> Optional[dict]:
         if not tick:
             return None
         out = dict(tick)
         out["age_s"] = round(time.time() - tick["received"], 2)
         out["stale"] = out["age_s"] > TICK_STALE_AFTER_S
         return out
+
+    def latest(self, symbol: str) -> Optional[dict]:
+        """The most recent price seen for `symbol` — a trade, or for a coin the
+        bid/ask midpoint when that is newer — or None if this feed has not
+        printed anything since we subscribed. None is a real answer — see the
+        module docstring — not a failure to report."""
+        sym = symbol.upper()
+        trade, mid = self._last.get(sym), self._mid.get(sym)
+        tick = trade if not mid or (trade and trade["received"] >= mid["received"]) else mid
+        return self._aged(tick)
+
+    def latest_trade(self, symbol: str) -> Optional[dict]:
+        """The most recent TRADE only: what a chart's live edge is made of."""
+        return self._aged(self._last.get(symbol.upper()))
 
     def status(self) -> dict:
         with self._lock:
@@ -715,7 +732,7 @@ class LiveMux:
         import json as _json
         out: list[str] = []
         for sym, market, upstream in self._trades:
-            tick = market.latest(upstream)
+            tick = (getattr(market, "latest_trade", None) or market.latest)(upstream)
             if tick and tick.get("at") != self._trade_at.get(sym):
                 self._trade_at[sym] = tick.get("at")
                 out.append(f"event: trade\ndata: {_json.dumps({**tick, 'symbol': sym})}\n\n")
