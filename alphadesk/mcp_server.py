@@ -78,6 +78,10 @@ mcp = FastMCP(
         "order book depth, funding rate, open interest, liquidation or on-chain "
         "data here. A coin agent can send the header X-Agent-Toolset: crypto to "
         "have only the tools above listed.\n"
+        "* WHICH BROKER'S NUMBERS: quote, quotes, movers, price_history, price_chart "
+        "and entry_facts carry `data_venue`, the broker the prices and tradable flags "
+        "came from (today alpaca). Read it before acting on a price: it is that "
+        "broker's market, not every broker's.\n"
         "* Another asset class: movers takes a category — stocks, etfs, "
         "indices, crypto, currencies, options, bonds. Do not reach for a "
         "per-class tool; there is one.\n"
@@ -161,7 +165,62 @@ async def _list_tools_for_caller():
 mcp._mcp_server.list_tools()(_list_tools_for_caller)       # replaces the default listing handler
 
 
+# ── Which broker's numbers these are (2026-10-05) ─────────────────────────
+#
+# An agent trades on ONE broker and reads prices from another source's idea of the
+# market if nothing says otherwise. Every answer that carries a price or a
+# tradable flag names where those figures came from, in `data_venue`, so a price
+# read here is never mistaken for another broker's. The name is taken from the
+# answer itself (the vendor that served it), and from the reader's router when the
+# answer does not say.
+
+
+def venue_name(raw) -> str | None:
+    """A vendor or source string as a venue name: Alpaca's feeds (SIP, IEX, its
+    crypto feed) are all "alpaca"; anything else is passed on as it is, lowercased."""
+    text = str(raw or "").strip().lower()
+    if not text:
+        return None
+    if text.startswith("alpaca") or text in ("sip", "iex", "boats", "overnight"):
+        return "alpaca"
+    return text
+
+
+def venue_of(result) -> str | None:
+    """The venue that supplied a tool's answer, from its own `vendor` or `source`
+    (or a nested quote's), else from the router that served it."""
+    if isinstance(result, dict):
+        for holder in (result, result.get("quote") if isinstance(result.get("quote"), dict) else {}):
+            for key in ("vendor", "source", "quote_source"):
+                v = venue_name(holder.get(key))
+                if v:
+                    return v
+    # Not named in the answer: the vendor the reader's quote surface is served
+    # by (the first connected one that quotes), which is the one that priced it.
+    try:
+        from alphadesk.providers import get_prices
+        router = get_prices()
+        said = venue_name(getattr(router, "answered_by", None))
+        if said:
+            return said
+        return venue_name(getattr(router.vendor_for("quote", "quotes"), "name", None))
+    except Exception:
+        return None
+
+
+def with_venue(fn):
+    """Add `data_venue` to a tool's dict answer. Anything else passes through."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        out = fn(*args, **kwargs)
+        if isinstance(out, dict) and "data_venue" not in out:
+            out = {**out, "data_venue": venue_of(out) or "unknown"}
+        return out
+    return wrapper
+
+
 @mcp.tool(annotations=READ_ONLY)
+@with_venue
 def quote(symbol: str) -> dict:
     """One US-listed symbol's live quote: price and change, the day's range,
     open, previous close and volume — always — and `vendor` says which of the
@@ -188,6 +247,7 @@ def quote(symbol: str) -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
+@with_venue
 def movers(category: str = "stocks", top: int = 20, session: str = "") -> dict:
     """Most active, gainers and losers, for one asset class.
 
@@ -300,6 +360,7 @@ def catalysts(limit: int = 60, feeds: str = "") -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
+@with_venue
 def price_chart(symbol: str, days: int = 2, points: int = 120, date: str = "") -> dict:
     """Intraday bars for one symbol with RSI-9 and MACD(12,26,9), thinned to
     at most `points` (default 120, max 400) evenly spaced samples — the last
@@ -695,6 +756,7 @@ def _http_errors(fn, *args, **kwargs):
 
 
 @mcp.tool(annotations=READ_ONLY)
+@with_venue
 def quotes(symbols: list[str] | str) -> dict:
     """Quotes for up to 50 symbols in one call: price, change, day range,
     volume, 52-week high and low, and market cap where the reader's vendors
@@ -715,6 +777,7 @@ _MAX_INTRADAY_POINTS = 400
 
 
 @mcp.tool(annotations=READ_ONLY)
+@with_venue
 def price_history(symbol: str, range: str = "1Y") -> dict:
     """Daily price history for one symbol over `range` (1M, 3M, 6M, YTD, 1Y,
     5Y, MAX): first/last close, trailing returns (1w, 1m, 3m, 6m, 1y where
@@ -1372,6 +1435,7 @@ def news_scan(hours: int = 18, kinds: str = "", min_stories: int = 1, limit: int
 
 
 @mcp.tool(annotations=READ_ONLY)
+@with_venue
 def entry_facts(symbol: str, risk_dollars: float = 0.0, stop_pct: float = 0.0) -> dict:
     """THE FACTS BEFORE ENTERING A POSITION, for "can we get in, and what would
     we be walking into": whether the symbol can be traded or sold short at the

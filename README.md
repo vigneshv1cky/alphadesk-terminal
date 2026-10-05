@@ -543,7 +543,11 @@ a free plan's volume is one exchange's alone and understates the market.
 `X-Agent-Toolset: crypto` and only the 17 tools that apply to coins are listed
 (about 28,000 characters); a tool left out of the list still answers if called by
 name. A coin is written `BTC-USD`; `BTC/USD` and `BTCUSD` are accepted too, but a
-bare `BTC` means a listed fund. A token may make 120 calls a minute; set
+bare `BTC` means a listed fund. The answers that carry a price or a tradable flag
+(`quote`, `quotes`, `movers`, `price_history`, `price_chart`, `entry_facts`) include
+`data_venue`, the broker those figures came from (today `alpaca`; `unknown` when
+none can be named), so an agent that trades on one broker can see whose market it
+is reading. A token may make 120 calls a minute; set
 `ALPHADESK_AGENT_RATE_PER_MIN` to change that.
 
 **Watching how agents use it.** Every tool call is logged: the tool, its

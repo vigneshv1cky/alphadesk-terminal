@@ -176,3 +176,50 @@ def test_the_tool_listing_handler_is_the_filtered_one():
     import mcp.types as types
     handler = mcp_server.mcp._mcp_server.request_handlers[types.ListToolsRequest]
     assert handler is not None
+
+
+def test_every_price_answer_names_the_broker_its_numbers_came_from(monkeypatch):
+    from alphadesk import mcp_server
+    assert [mcp_server.venue_name(x) for x in ("alpaca", "Alpaca-crypto", "sip", "IEX", "polygon", "", None)] == \
+        ["alpaca", "alpaca", "alpaca", "alpaca", "polygon", None, None]
+    assert mcp_server.venue_of({"vendor": "alpaca", "price": 1}) == "alpaca"
+    assert mcp_server.venue_of({"source": "alpaca-crypto"}) == "alpaca"
+    assert mcp_server.venue_of({"quote": {"vendor": "polygon"}}) == "polygon"
+
+    @mcp_server.with_venue
+    def tool(x):
+        return x
+    assert tool({"vendor": "alpaca"})["data_venue"] == "alpaca"
+    assert tool({"source": "polygon"})["data_venue"] == "polygon"
+    assert tool({"vendor": "alpaca", "data_venue": "kept"})["data_venue"] == "kept"      # never overwritten
+    assert tool([1, 2]) == [1, 2] and tool(None) is None                                  # only dict answers are touched
+    class R:
+        answered_by = "alpaca"
+    monkeypatch.setattr("alphadesk.providers.get_prices", lambda: R())
+    assert tool({"price": 1})["data_venue"] == "alpaca"                                   # not named in the answer: the router's
+
+    class Fresh:                                          # a router that has not answered yet names its quote vendor
+        answered_by = None
+        def vendor_for(self, surface, method):
+            assert (surface, method) == ("quote", "quotes")
+            return type("V", (), {"name": "alpaca"})()
+    monkeypatch.setattr("alphadesk.providers.get_prices", lambda: Fresh())
+    assert tool({"price": 1})["data_venue"] == "alpaca"
+
+    class Nothing:
+        answered_by = None
+        def vendor_for(self, surface, method):
+            raise RuntimeError("no vendor connected")
+    monkeypatch.setattr("alphadesk.providers.get_prices", lambda: Nothing())
+    assert tool({"price": 1})["data_venue"] == "unknown"                                  # never an error, never a guess
+
+
+def test_the_price_tools_are_the_ones_that_carry_it():
+    import asyncio
+    from alphadesk import mcp_server
+    names = {"quote", "quotes", "movers", "price_history", "price_chart", "entry_facts"}
+    tools = {t.name: t for t in asyncio.run(mcp_server.mcp.list_tools())}
+    assert names <= set(tools)
+    for n in names:                                       # the wrapper keeps each tool's own inputs
+        assert tools[n].inputSchema.get("properties"), n
+    assert "data_venue" in mcp_server.mcp.instructions

@@ -101,6 +101,9 @@ to 120 requests a minute per credential. Two credentials exist:
   lists only the 17 that apply to coins (about 28,000 characters); a tool left out
   of the list still answers if called by name. The call limit is 120 a minute
   per credential, and `ALPHADESK_AGENT_RATE_PER_MIN` changes it.
+- **Which broker's numbers.** `quote`, `quotes`, `movers`, `price_history`,
+  `price_chart` and `entry_facts` include `data_venue`, the broker the prices and
+  tradable flags came from (today `alpaca`), named from the answer itself.
 - **OAuth 2.1** for connector apps that add a server by URL (Claude.ai,
   ChatGPT): registration, PKCE, refresh and revoke, with clients sealed and
   codes and tokens stored as hashes; a single-use 5-minute code, one-hour
