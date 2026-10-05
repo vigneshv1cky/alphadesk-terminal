@@ -695,10 +695,11 @@ export function ChartCanvas({
     // A crowded view draws one candle per pixel column, not one per bar: a month
     // of minute bars is tens of thousands of shapes rebuilt on every zoom step
     // and tick, which is what made the chart stutter (lib/chartBuckets).
-    const items = bucketBars(drawBars, lo, hi, seriesW)
+    // At most one candle to each 2 pixels, so neighbours never overlap (lib/chartBuckets).
+    const items = bucketBars(drawBars, lo, hi, Math.floor(seriesW / 2))
     const folded = items.some(b => b.n > 1)
-    const perBar = Math.max(1, (hi - lo + 1) / Math.max(1, items.length))
-    const barW = folded ? Math.max(1, (seriesW / Math.max(1, to - from)) * perBar * 0.7) : barW0
+    const slot = items.length > 1 ? items[1].i - items[0].i : 1                 // bars from one candle to the next
+    const barW = folded ? Math.max(1, (seriesW / Math.max(1, to - from)) * slot * 0.7) : barW0
     const half = barW / 2
     let prevClose: number | null = null
 

@@ -22,7 +22,14 @@ export interface Bucketed {
 
 /** Bars `lo` to `hi` (inclusive) of `bars`, folded so that no more than about
  * `columns` candles come back. Returns the bars unchanged, one each, while they
- * fit with room to spare. Pure. */
+ * fit.
+ *
+ * The groups are FIXED positions in the data: a group of 1, 2, 4, 8… bars (a power
+ * of two, so a coarser grouping always nests whole groups of the finer one) that
+ * starts at a multiple of its own size. Panning therefore moves candles without
+ * regrouping any of them, and zooming regroups only when the size steps, which
+ * is what kept the chart from shimmering (2026-10-05). A group is always whole,
+ * even where it reaches past `lo` or `hi`. Pure. */
 export function bucketBars(
   bars: { o: number; h: number; l: number; c: number }[],
   lo: number,
@@ -30,12 +37,14 @@ export function bucketBars(
   columns: number,
 ): Bucketed[] {
   const count = hi - lo + 1
-  if (count <= 0) return []
+  if (count <= 0 || !bars.length) return []
   const cols = Math.max(1, Math.floor(columns))
-  const per = count > cols * 1.5 ? Math.ceil(count / cols) : 1
+  const need = count / cols
+  const per = need <= 1 ? 1 : 2 ** Math.ceil(Math.log2(need))
+  const last = bars.length - 1
   const out: Bucketed[] = []
-  for (let start = lo; start <= hi; start += per) {
-    const end = Math.min(hi, start + per - 1)
+  for (let start = Math.floor(Math.max(0, lo) / per) * per; start <= hi; start += per) {
+    const end = Math.min(last, start + per - 1)
     const first = bars[start]
     if (!first) continue
     let h = first.h, l = first.l, c = first.c, n = 1
