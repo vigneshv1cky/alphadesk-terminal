@@ -423,3 +423,31 @@ def test_a_coin_day_not_yet_finished_is_never_recorded(store):
     movers._crypto_session(_R(), today, 20, None, None, None, None)
     assert store.recorded_movers_days("reader-1", "crypto") == []
     assert today not in movers.crypto_days(5)
+
+
+def test_a_coin_day_measures_volatility_and_liquidity_on_the_days_ending_it(store):
+    import datetime as dt
+    day = "2020-01-25"
+    end = dt.datetime(2020, 1, 25, tzinfo=dt.timezone.utc)
+    # Twenty-five calm days up to the 25th, then a wild week after it that
+    # must not leak into the figure.
+    hist = [{"ts": end - dt.timedelta(days=24 - i), "close": 100.0 + (i % 2), "volume": 2.0} for i in range(25)]
+    hist += [{"ts": end + dt.timedelta(days=i), "close": 100.0 * (3 if i % 2 else 1), "volume": 2.0} for i in range(1, 8)]
+
+    class _R:
+        owner = "reader-1"
+        answered_by = "alpaca"
+
+        def ask(self, method, d):
+            return {"BTC-USD": {"close": 101.0, "prev_close": 100.0, "volume": 2.0}}
+
+        def get(self, method, syms, days):
+            assert method == "crypto_daily_history"
+            return {"BTC-USD": hist}
+
+    movers._cache.clear()
+    out = movers._crypto_session(_R(), day, 20, None, None, None, None)
+    row = next(t for t in out["tabs"] if t["id"] == "gainers")["rows"][0]
+    calm = movers.stats_from_bars([b["close"] for b in hist[:25]], [b["volume"] for b in hist[:25]], periods=365)
+    assert row["volatility"] == calm["volatility"] and row["volatility"] is not None
+    assert row["liquidity"] == calm["liquidity"]

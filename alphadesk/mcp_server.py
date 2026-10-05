@@ -272,7 +272,8 @@ def movers(category: str = "stocks", top: int = 20, session: str = "") -> dict:
     `session` (YYYY-MM-DD) asks for a PAST day instead of now. Stocks and
     ETFs: the whole market that day against the session before it. Crypto:
     that day's close of each coin against the day before, as the vendor's
-    daily bars date them (UTC), no volatility or liquidity. Options: the list
+    daily bars date them (UTC), volatility and liquidity over the twenty days
+    ending that day. Options: the list
     AS RECORDED after that session's close — no vendor keeps a past day's
     busiest contracts, so a day before recording began says `not_recorded`.
     Indices, currencies and bonds answer only for the present. Call

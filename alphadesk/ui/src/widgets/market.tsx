@@ -767,8 +767,8 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         {halted ? <HaltsTable /> : <MoversTable rows={shown} changeHead={q.data?.change_label ?? "1D"} session={q.data?.session_label ?? null}
                        changeTip={category === "currencies" ? "Change since the 5pm New York rollover, where the currency trading day begins" : undefined}
                        {...(category === "crypto" ? {
-                         volTip: session ? "Not measured for a past day" : "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",
-                         liqTip: session ? "Not measured for a past day" : q.data?.liquidity_scope === "venue"
+                         volTip: session ? `Annualised volatility of daily returns over the twenty days ending ${session}` : "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",
+                         liqTip: session ? `Average dollar volume a day over the twenty days ending ${session}, on ${SOURCE_LABELS[q.data?.source ?? ""] ?? q.data?.source ?? "the exchange"}'s own exchange only` : q.data?.liquidity_scope === "venue"
                            ? `Average dollar volume a day over the last twenty days on ${SOURCE_LABELS[q.data.source ?? ""] ?? q.data.source}'s own exchange only — worldwide volume is far larger`
                            : "Dollar volume traded worldwide over the last 24 hours",
                        } : category === "currencies" ? {

@@ -1165,13 +1165,47 @@ def _crypto_session(router, day: str, top: int, min_price, min_turnover, min_liq
     lists = crypto_tabs(rows, 50)
     tabs = [{"id": ("most_active" if k == "active" else k), "label": lbl, "rows": lists.get(k) or []}
             for k, lbl in (("all", "All"), ("active", "Active"), ("gainers", "Gainers"), ("losers", "Losers"))]
-    apply_floors(tabs, floors[0], floors[1], floors[2], floors[3])
+    # The live order: the cheap floors first, the survivors measured, then the
+    # floors that read a measurement (a wider cut when one was asked for).
+    mp, mt, ml, mv = floors[0], floors[1], floors[2], floors[3]
+    apply_floors(tabs, mp, mt)
+    for t in tabs:
+        t["rows"] = t["rows"][:max(top, 50) if (ml > 0 or mv > 0) else top]
+    _enrich_coin_day_stats(router, tabs, day)
+    apply_floors(tabs, 0.0, 0.0, ml, mv)
     for t in tabs:
         t["rows"] = t["rows"][:top]
     return _past_result("crypto", day, prev_day, vendor,
                         f"{day} close against {prev_day}, as {SOURCE_NAMES.get(vendor, vendor)}'s daily bars date them (UTC). "
-                        f"Volume is that exchange's alone. Volatility and liquidity are not measured for a past day.",
+                        f"Volume is that exchange's alone. Volatility and liquidity are the twenty days ending {day}.",
                         tabs, floors, liquidity_scope="venue")
+
+
+def _enrich_coin_day_stats(router, tabs: list[dict], day: str) -> None:
+    """A past coin day's volatility and liquidity over the twenty days ENDING
+    THAT DAY (2026-10-05, the reader: the columns showed a dash). The coins'
+    daily history is asked from now back far enough to hold twenty days
+    before `day`, and every bar after it is dropped. A vendor that refuses
+    leaves dashes, never a failed list."""
+    syms = sorted({r["symbol"] for t in tabs for r in t["rows"]})
+    if not syms:
+        return
+    try:
+        back = (datetime.now(timezone.utc).date() - date.fromisoformat(day)).days
+    except ValueError:
+        return
+    try:
+        bars = router.get("crypto_daily_history", syms, back + STATS_DAYS + 3) or {}
+    except Exception as exc:
+        log.debug("coin day statistics: no daily history (%s)", exc)
+        return
+    for t in tabs:
+        for r in t["rows"]:
+            kept = [b for b in (bars.get(r["symbol"]) or [])
+                    if b.get("ts") and b["ts"].astimezone(timezone.utc).date().isoformat() <= day]
+            if kept:
+                st = stats_from_bars([b["close"] for b in kept], [b["volume"] for b in kept], periods=365)
+                r["volatility"], r["liquidity"] = st["volatility"], st["liquidity"]
 
 
 SOURCE_NAMES = {"alpaca": "Alpaca", "recorded": "the recorded"}
