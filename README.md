@@ -344,6 +344,7 @@ and why. Bring evidence and open an issue.
 | **Analysis** | One name end to end: chart, filings, price performance, key statistics, earnings history and consensus, analysts, rating changes, financials as filed, splits, dividends, institutional and insider ownership, news. Funds add holdings and breakdown |
 | **Profile** | Who a company is: EDGAR registrant facts, the latest 10-K/20-F business and properties sections verbatim, locations, officers |
 | **News** | Each reader's merged feeds, three days deep, newest first; filter by words, source or board; search by words and by meaning; an in-page reader with full text where the feed carries it |
+| **Filings** | What companies just filed with the SEC, newest first, as a reader: a list down the left (time, ticker, company, form, grouped by day) and the chosen filing in full on the right, with every item the company declared in its own wording and the SEC's number, its tickers, and a link to EDGAR. Narrow it by item; move with the arrow keys (or j and k). Nothing is ranked or coloured by importance |
 | **Earnings** | The week's reporters, dated by the company's own release and joined to its SEC results filing; sessions predicted from history; estimates, actuals, surprise, market cap, volatility, liquidity |
 | **Calendars** | Economic releases, dividends, corroborated splits and IPOs |
 | **Options** | Chains with implied volatility, calls green and puts red; options flow seen live |

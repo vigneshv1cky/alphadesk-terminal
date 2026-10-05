@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
-import { Widget } from "@/components/terminal"
-import { MarketFilings } from "@/widgets/desk"
+import { Empty, Widget } from "@/components/terminal"
+import { FilingsReader } from "@/components/FilingsReader"
+import { QueryFailure } from "@/components/KeyPrompt"
 import { useFilingFeed } from "@/lib/queries"
 import { shortItem } from "@/lib/filingItem"
 
@@ -32,6 +33,10 @@ export default function FilingsPage() {
   const [item, setItem] = useState("")
   const q = useFilingFeed()
   const filings = useMemo(() => q.data?.filings ?? [], [q.data])
+  // Narrowed by the picked item; the reader shows these in the SEC's own order.
+  const rows = useMemo(
+    () => (item ? filings.filter(f => (f.items ?? []).some(i => i.number === item)) : filings),
+    [filings, item])
 
   // ONLY THE ITEMS THE WINDOW HOLDS, with counts — offering an item with
   // nothing behind it is the same fault as a key prompt for a vendor the
@@ -77,7 +82,9 @@ export default function FilingsPage() {
       span={12}
       title="Market filings"
       subtitle="what companies just filed with the SEC — most of it never reaches a newswire"
-      scroll="fit"
+      // A fixed box the reader's two panes scroll inside (2026-10-05): the list and
+      // the filing each scroll on their own, so neither carries the other away.
+      scroll="calc(100vh - 230px)"
       // OUTSIDE THE SCROLLER, like the News toolbar beside it: a control that
       // names what the list shows must not scroll away with the rows it
       // labels. It wraps rather than scrolling sideways, which is the rule for
@@ -105,7 +112,10 @@ export default function FilingsPage() {
         </>
       ) : undefined}
     >
-      <MarketFilings onlyItem={item || undefined} />
+      {q.isPending ? <Empty>loading…</Empty>
+        : q.isError ? <QueryFailure error={q.error}>the market's filings are unavailable right now</QueryFailure>
+        : <FilingsReader rows={rows} unavailable={q.data?.unavailable} groups={q.data?.groups}
+                         unlistedHidden={q.data?.unlisted_hidden ?? 0} filtered={!!item} />}
     </Widget>
       </div>
     </>
