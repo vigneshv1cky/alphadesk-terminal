@@ -206,6 +206,41 @@ def fetch_articles(since: datetime, limit: int = 200, provider=None,
     return out
 
 
+#: The coins whose stories the poll asks the feed for BY NAME, beside the newest
+#: of everything. Crypto stories are a small share of the feed, so the newest
+#: 200 across all of it held few (2026-10-05: coin news panels were empty).
+#: Alpaca's news writes a coin as BTCUSD.
+CRYPTO_NEWS_SYMBOLS = ("BTCUSD", "ETHUSD", "SOLUSD", "XRPUSD", "DOGEUSD", "ADAUSD", "LINKUSD", "AVAXUSD",
+                       "DOTUSD", "LTCUSD", "BCHUSD", "UNIUSD", "AAVEUSD", "SHIBUSD", "PEPEUSD")
+CRYPTO_NEWS_LIMIT = 60
+
+
+class _BySymbols:
+    """A news provider asked for a fixed set of symbols, so the ordinary
+    fetch path (dedupe, shaping) can be reused for them."""
+
+    def __init__(self, inner, symbols) -> None:
+        self._inner, self._symbols = inner, list(symbols)
+        self.name = getattr(inner, "name", "")
+
+    def fetch(self, since, limit: int = 200):
+        return self._inner.fetch(since, limit=limit, symbols=self._symbols)
+
+
+def crypto_batch(provider, since: datetime, owner: str) -> list[dict]:
+    """The feed's stories tagged with the main coins, or none when the feed
+    cannot be asked by symbol or the request fails. Never raises."""
+    import inspect
+    try:
+        if "symbols" not in inspect.signature(provider.fetch).parameters:
+            return []
+        return fetch_articles(since, limit=CRYPTO_NEWS_LIMIT, provider=_BySymbols(provider, CRYPTO_NEWS_SYMBOLS),
+                              owner=f"{owner}:crypto")
+    except Exception as exc:
+        log.debug("crypto news fetch: %s", exc)
+        return []
+
+
 def poll_user(user_id: str, since: datetime, limit: int | None = None) -> int:
     """One reader's feed cycle: their vaulted news key fetches and their rows
     are owned by them. Nothing is labelled or summarised — no model runs here
@@ -230,6 +265,7 @@ def poll_user(user_id: str, since: datetime, limit: int | None = None) -> int:
         batch, live = _memoized_user_fetch(user_id, row["provider"], provider,
                                            since, limit or NEWS_USER_LIMIT)
         batch = [{**a, "feeds": [row["provider"]]} for a in batch]
+        batch += [{**a, "feeds": [row["provider"]]} for a in crypto_batch(provider, since, user_id)]
         if batch and live:
             served.append(row["provider"])
         batches.append(batch)

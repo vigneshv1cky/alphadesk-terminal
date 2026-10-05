@@ -170,6 +170,15 @@ def stale_pair_changes_blanked(rows: list[dict]) -> list[dict]:
     return out
 
 
+def chart_window_days(span_days: int, is_coin: bool) -> int:
+    """Calendar days of bars to fetch for a range. A stock needs three spare
+    days for the weekend and a holiday; a coin trades every day, so one is
+    enough — the extra three made a coin's one-day chart read four days of
+    minute bars, two to three times what it shows (2026-10-05, the owner:
+    coin charts are slower than stocks'). Pure."""
+    return span_days + (1 if is_coin else 3)
+
+
 def settled_crypto_price(last: float | None, bid: float | None, ask: float | None) -> float | None:
     """The price to show for a coin: its last trade, unless that trade sits
     clear of the live bid and ask, in which case the midpoint. A thinly traded
@@ -349,20 +358,31 @@ def option_underlyings(pool_rows: list[dict], names: int) -> list[str]:
     return out
 
 
+#: A starting price older than this, before the moment asked about, is not that
+#: moment's price: a pair that did not trade for hours then has no honest 24h
+#: change (2026-10-05, thin coins ranked on a base from the day before).
+STALE_BASE_HOURS = 6
+
+
 def rolling_change(price: float | None, bars: list[dict], now: datetime, bar_minutes: int,
                    hours: int = 24) -> float | None:
     """Percent change from the price `hours` ago to `price`: the close of the
     last bar that ended at or before that moment (at most one bar's length
-    early). None when no bar ended in time. Pure."""
+    early). None when no bar ended in time, or the last one ended more than
+    STALE_BASE_HOURS before it. Pure."""
     if not price:
         return None
     cutoff = now - timedelta(hours=hours)
     base = None
+    base_end = None
     for b in bars:
         if b["ts"] + timedelta(minutes=bar_minutes) <= cutoff:
             base = b["close"]
+            base_end = b["ts"] + timedelta(minutes=bar_minutes)
         else:
             break
+    if base_end is not None and cutoff - base_end > timedelta(hours=STALE_BASE_HOURS):
+        return None
     return round(100 * (price / base - 1), 2) if base else None
 
 
@@ -879,7 +899,8 @@ class AlpacaPrices:
         elif rk == "MAX":
             windows = [(datetime(2016, 1, 1, tzinfo=timezone.utc), None)]
         else:
-            windows = [(now_et() - timedelta(days=ip.RANGE_DAYS.get(rk, days) + 3), None)]
+            pair_ = coin_pair(sym)
+            windows = [(now_et() - timedelta(days=chart_window_days(ip.RANGE_DAYS.get(rk, days), bool(pair_))), None)]
 
         pair = coin_pair(sym)
         delay = 0

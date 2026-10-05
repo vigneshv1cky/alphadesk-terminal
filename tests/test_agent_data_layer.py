@@ -95,3 +95,25 @@ def test_the_board_repair_asks_each_symbol_once(store, monkeypatch):
     assert news.repair_board_tickers(uid, max_symbols=3) == 1      # the rest, nothing twice
     assert news.repair_board_tickers(uid, max_symbols=3) == 0
     assert sorted(asked) == ["AAPL", "MU", "NVDA", "SVRN"]
+
+
+def test_the_news_poll_also_asks_the_feed_for_the_main_coins_by_name():
+    from datetime import datetime, timezone
+    from alphadesk.ingest import news
+    from alphadesk.providers.news import Article
+
+    class Feed:
+        name = "alpaca"
+        def fetch(self, since, limit=200, until=None, symbols=None):
+            assert symbols and "BTCUSD" in symbols
+            return [Article(id="c1", title="Bitcoin rises", url="u", published_at="2026-10-05T01:00:00+00:00",
+                            symbols=["BTCUSD"], summary="", source="x")]
+
+    got = news.crypto_batch(Feed(), datetime(2026, 10, 4, tzinfo=timezone.utc), "u-test-crypto")
+    assert [a["id"] for a in got] == ["c1"] and got[0]["tickers"] == ["BTCUSD"]
+
+    class NoSymbols:                                    # a feed that cannot be asked by symbol
+        name = "finnhub"
+        def fetch(self, since, limit=200):
+            raise AssertionError("must not be called")
+    assert news.crypto_batch(NoSymbols(), datetime(2026, 10, 4, tzinfo=timezone.utc), "u-test-crypto") == []

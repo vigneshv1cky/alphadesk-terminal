@@ -250,3 +250,20 @@ def test_a_stale_last_trade_is_replaced_by_the_midpoint_of_the_live_quote():
     assert px(86547.0, 86540.0, 86550.0) == 86547.0                          # a liquid coin: the last trade stands
     assert px(86556.0, 86540.0, 86550.0) == 86556.0                          # just outside the spread, within tolerance
     assert px(None, 1.0, 1.2) == 1.1 and px(5.0, None, None) == 5.0 and px(None, None, None) is None
+
+
+def test_a_24h_change_needs_a_starting_price_from_the_same_stretch():
+    from datetime import datetime, timedelta, timezone
+    from alphadesk.providers.alpaca import rolling_change
+    now = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
+    cutoff = now - timedelta(hours=24)
+    near = [{"ts": cutoff - timedelta(minutes=3), "close": 100.0}]
+    old = [{"ts": cutoff - timedelta(hours=9), "close": 100.0}]             # last traded 9 hours before the moment
+    assert rolling_change(110.0, near, now, 1) == 10.0
+    assert rolling_change(110.0, old, now, 1) is None
+
+
+def test_a_coin_chart_reads_fewer_spare_days_than_a_stock_chart():
+    from alphadesk.providers.alpaca import chart_window_days
+    assert chart_window_days(1, True) == 2 and chart_window_days(1, False) == 4
+    assert chart_window_days(5, True) == 6 and chart_window_days(5, False) == 8
