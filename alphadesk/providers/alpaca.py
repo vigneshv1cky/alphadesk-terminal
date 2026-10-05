@@ -170,6 +170,25 @@ def stale_pair_changes_blanked(rows: list[dict]) -> list[dict]:
     return out
 
 
+#: Coins pegged to a currency. Listed under All, but kept out of the Active,
+#: Gainers and Losers tabs (2026-10-05, the owner): their dollar volume is large
+#: and none of it is a market move, so they would hold the top of Active.
+STABLECOINS = frozenset({"USDT", "USDC", "USDG"})
+
+
+def crypto_tabs(rows: list[dict], top: int) -> dict:
+    """The crypto lists from priced rows: All in coin-size order, the rest
+    without the stablecoins. Pure."""
+    rank = {c: i for i, c in enumerate(COIN_ORDER)}
+    moving = [r for r in rows if r["symbol"].split("-")[0] not in STABLECOINS]
+    changed = [r for r in moving if r["change_pct"] is not None]
+    return {"all": sorted(rows, key=lambda r: (rank.get(r["symbol"].split("-")[0], len(rank)), r["symbol"]))[:top],
+            # Busiest first by dollars traded on this venue (price × coins).
+            "active": sorted([r for r in moving if r["volume"]], key=lambda r: -(r["price"] or 0) * r["volume"])[:top],
+            "gainers": sorted([r for r in changed if r["change_pct"] > 0], key=lambda r: -r["change_pct"])[:top],
+            "losers": sorted([r for r in changed if r["change_pct"] < 0], key=lambda r: r["change_pct"])[:top]}
+
+
 def common_stock_symbol(symbol: str) -> bool:
     """A screener row worth listing: letters only, and not a Nasdaq
     fifth-letter warrant, right or unit (ACMEW, ACMER, ACMEU), which top
@@ -1429,13 +1448,7 @@ class AlpacaPrices:
         # extra rows here (2026-10-05, the owner's pick).
         pairs = sorted({str(a.symbol) for a in assets if str(a.symbol).endswith("/USD") and getattr(a, "tradable", True)})
         rows = self._crypto_rows(pairs)
-        rank = {c: i for i, c in enumerate(COIN_ORDER)}
-        changed = [r for r in rows if r["change_pct"] is not None]
-        return {"all": sorted(rows, key=lambda r: (rank.get(r["symbol"].split("-")[0], len(rank)), r["symbol"]))[:top],
-                # Busiest first by dollars traded on this venue (price × coins).
-                "active": sorted([r for r in rows if r["volume"]], key=lambda r: -(r["price"] or 0) * r["volume"])[:top],
-                "gainers": sorted([r for r in changed if r["change_pct"] > 0], key=lambda r: -r["change_pct"])[:top],
-                "losers": sorted([r for r in changed if r["change_pct"] < 0], key=lambda r: r["change_pct"])[:top]}
+        return crypto_tabs(rows, top)
 
     def option_movers(self, top: int = 20) -> dict | None:
         """The busiest option contracts across today's most traded names,

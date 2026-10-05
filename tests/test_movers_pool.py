@@ -229,3 +229,16 @@ def test_a_coin_traded_in_fractions_keeps_its_dollars():
     got = movers._normalize_tabs({"tabs": [{"id": "all", "label": "All", "rows": [
         {"symbol": "BTC-USD", "price": 86000.0, "change_pct": 1.0, "volume": 0.04, "turnover": 3440.0, "display": "BTC"}]}]}, "crypto")
     assert got[0]["rows"][0]["turnover"] == 3440.0
+
+
+def test_stablecoins_stay_in_all_but_not_in_active_gainers_or_losers():
+    from alphadesk.providers.alpaca import crypto_tabs
+    rows = [{"symbol": "BTC-USD", "price": 86000.0, "change_pct": 2.0, "volume": 0.05},
+            {"symbol": "USDC-USD", "price": 1.0, "change_pct": 0.1, "volume": 700000.0},
+            {"symbol": "USDT-USD", "price": 1.0, "change_pct": -0.1, "volume": 200.0},
+            {"symbol": "USDG-USD", "price": 1.0, "change_pct": None, "volume": 999990.0},
+            {"symbol": "XRP-USD", "price": 1.5, "change_pct": -1.0, "volume": 2000.0}]
+    got = crypto_tabs(rows, 20)
+    base = lambda tab: [r["symbol"].split("-")[0] for r in got[tab]]   # noqa: E731
+    assert set(base("all")) == {"BTC", "USDC", "USDT", "USDG", "XRP"}
+    assert base("active") == ["BTC", "XRP"] and base("gainers") == ["BTC"] and base("losers") == ["XRP"]
