@@ -1233,6 +1233,8 @@ export interface CategoryMovers {
    * closed market, and from having no key for it. */
   unavailable?: boolean
   rate_limited?: boolean
+  /** A past day of a category that exists only as recorded (options) and was not. */
+  not_recorded?: boolean
   category: MoverCategory
   label: string
   change_label: string

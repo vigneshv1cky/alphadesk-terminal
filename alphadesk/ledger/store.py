@@ -16,11 +16,12 @@ and `init()` removes them from pre-existing databases.
 """
 
 import json
-import time
 import logging
 import os
-from html import unescape
+import time
 from datetime import datetime, timedelta, timezone
+from html import unescape
+from typing import Any
 
 from alphadesk.config import DATA_DIR
 from alphadesk.ledger import db
@@ -493,6 +494,21 @@ CREATE TABLE IF NOT EXISTS session_days (
     bars       TEXT NOT NULL,
     saved_at   BIGINT NOT NULL,
     PRIMARY KEY (owner, day)
+);
+
+-- Recorded movers days for the lists no vendor can rebuild later
+-- (2026-10-05): "options" holds a session's option movers list as the tile
+-- showed it after the close; "crypto" holds one UTC day's coin bars with each
+-- coin's previous close. Same encoding and same rule as session_days: a
+-- finished day is written once and kept.
+CREATE TABLE IF NOT EXISTS movers_days (
+    owner      TEXT NOT NULL,
+    category   TEXT NOT NULL,
+    day        TEXT NOT NULL,
+    vendor     TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    saved_at   BIGINT NOT NULL,
+    PRIMARY KEY (owner, category, day)
 );
 
 -- Access tokens a reader issues so THEIR OWN agent (Claude, Cursor,
@@ -1630,6 +1646,39 @@ def recorded_session_days(owner: str) -> set[str]:
         return {r["day"] for r in conn.execute("SELECT day FROM session_days WHERE owner=?", (owner,)).fetchall()}
 
 
+def save_movers_day(owner: str, category: str, day: str, vendor: str, payload: Any) -> None:
+    """Keep one finished day of a movers category. First write wins."""
+    import base64
+    import zlib
+    blob = base64.b64encode(zlib.compress(json.dumps(payload, separators=(",", ":"), default=str).encode(), 6)).decode()
+    with _lock, _connect() as conn:
+        conn.execute(
+            "INSERT INTO movers_days (owner, category, day, vendor, payload, saved_at) VALUES (?,?,?,?,?,?)"
+            " ON CONFLICT (owner, category, day) DO NOTHING", (owner, category, day, vendor, blob, int(time.time())))
+
+
+def get_movers_day(owner: str, category: str, day: str) -> Any:
+    import base64
+    import zlib
+    with _connect() as conn:
+        row = conn.execute("SELECT payload FROM movers_days WHERE owner=? AND category=? AND day=?",
+                           (owner, category, day)).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(zlib.decompress(base64.b64decode(row["payload"])))
+    except (ValueError, zlib.error):
+        return None
+
+
+def recorded_movers_days(owner: str, category: str) -> list[str]:
+    """The recorded days of one category, newest first."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT day FROM movers_days WHERE owner=? AND category=? ORDER BY day DESC",
+                            (owner, category)).fetchall()
+    return [r["day"] for r in rows]
+
+
 def create_agent_access_token(user_id: str, token_id: str, name: str, token_hash: str,
                               hint: str, allowed_ips: str = "") -> None:
     with _lock, _connect() as conn:
@@ -2458,7 +2507,7 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
     reader's feeds also delivered keeps its row, without this feed's name.
     Market data: the forecast log and the dollar-volume pool are per vendor.
     """
-    out = {"news": 0, "forecasts": 0, "dollar_pools": 0, "session_days": 0}
+    out = {"news": 0, "forecasts": 0, "dollar_pools": 0, "session_days": 0, "movers_days": 0}
     with _lock, _connect() as conn:
         if seam == "news":
             rows = conn.execute("SELECT article_id, feeds FROM news_articles WHERE owner=?"
@@ -2482,6 +2531,7 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
                 out["forecasts"] = conn.execute("DELETE FROM earnings_forecasts WHERE owner=?", (owner,)).rowcount or 0
                 out["dollar_pools"] = conn.execute("DELETE FROM reader_dollar_pools WHERE owner=?", (owner,)).rowcount or 0
                 out["session_days"] = conn.execute("DELETE FROM session_days WHERE owner=?", (owner,)).rowcount or 0
+                out["movers_days"] = conn.execute("DELETE FROM movers_days WHERE owner=?", (owner,)).rowcount or 0
             else:
                 out["forecasts"] = conn.execute("DELETE FROM earnings_forecasts WHERE owner=? AND vendor=?",
                                                 (owner, provider)).rowcount or 0
@@ -2489,6 +2539,8 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
                                                    (owner, provider)).rowcount or 0
                 out["session_days"] = conn.execute("DELETE FROM session_days WHERE owner=? AND vendor=?",
                                                    (owner, provider)).rowcount or 0
+                out["movers_days"] = conn.execute("DELETE FROM movers_days WHERE owner=? AND vendor=?",
+                                                  (owner, provider)).rowcount or 0
     return out
 
 
@@ -2501,7 +2553,7 @@ _ACCOUNT_TABLES_BY_USER = ("user_sign_ins", "user_api_keys", "user_views", "user
                            "user_boards", "user_layouts", "agent_access_tokens", "oauth_codes",
                            "oauth_grants", "user_chart_state", "warm_paths", "agent_calls")
 _ACCOUNT_TABLES_BY_OWNER = ("news_articles", "news_tickers", "vendor_cache", "news_vectors", "earnings_announcements", "release_habits",
-                            "press_release_checks", "earnings_forecasts", "reader_dollar_pools", "session_days")
+                            "press_release_checks", "earnings_forecasts", "reader_dollar_pools", "session_days", "movers_days")
 
 
 def user_layouts(user_id: str) -> dict[str, dict]:

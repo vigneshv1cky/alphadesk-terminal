@@ -339,7 +339,7 @@ and why. Bring evidence and open an issue.
 | Page | What it shows |
 |---|---|
 | **Landing** (`/`) | Product overview with blurred screenshots; sign-in |
-| **Markets** | A composable board: chart, equity overview, funds built on the stock, stock/ETF/crypto/currency/option movers, Treasury yields, heatmap, news. Stock and ETF movers **step back to a past session**, computed from the whole market that day against the session before it. **Every finished session's close is recorded in your own store** (Alpaca or Polygon, whichever your keys reach), the last 15 sessions are filled in at start and each new close is added after the market shuts, and past days are read from the store first, so they keep working whatever a vendor later lets your key read |
+| **Markets** | A composable board: chart, equity overview, funds built on the stock, stock/ETF/crypto/currency/option movers, Treasury yields, heatmap, news. Stock, ETF, crypto and option movers **step back to a past session**: stocks and ETFs from the whole market that day against the session before it, coins from each day's close against the day before (UTC days, Alpaca's venue), and options from the list **recorded after each close** — no vendor keeps a past day's busiest contracts, so option history starts on the first evening the server recorded one. **Every finished session's close is recorded in your own store** (Alpaca or Polygon, whichever your keys reach), the last 15 sessions are filled in at start and each new close is added after the market shuts, and past days are read from the store first, so they keep working whatever a vendor later lets your key read |
 | **Chart** | Full workspace: candles, line, area, step and other styles; 1-minute to multi-year intervals; indicators and templates; drawing tools (desktop, per visit); multi-chart layouts; overnight, pre-market, after-hours and weekend session shading; a crowded view draws one candle per pixel column so zooming stays smooth, a range you press shows a loading state, and the percent scale measures from one bar (the first the chart opened with, or any bar you pick from the right-click menu) |
 | **Analysis** | One name end to end: chart, filings, price performance, key statistics, earnings history and consensus, analysts, rating changes, financials as filed, splits, dividends, institutional and insider ownership, news. Funds add holdings and breakdown |
 | **Profile** | Who a company is: EDGAR registrant facts, the latest 10-K/20-F business and properties sections verbatim, locations, officers |
@@ -521,7 +521,7 @@ rate-limited to 120 requests a minute per token.
 | Calendars | `earnings_calendar` (upcoming, and reported with `days_back`), `economic_calendar`, `corporate_calendar` |
 | Options | `option_expirations`, `option_chain`, `options_flow` |
 | What just happened | `catalysts` (filings, halts, government action and social posts on one tape), `filing_feed`, `trading_halts`, `government_actions`, `social_posts` |
-| A past session | `movers(session=…)` for stocks and ETFs, with `market_sessions` for the days the market actually opened; read from the recorded closes first |
+| A past session | `movers(session=…)` for stocks, ETFs, crypto and options, with `market_sessions(category=…)` for the days that exist; read from the recorded closes first |
 | Provenance | `data_sources` — whether a figure came from a licensed vendor or a scraped page |
 
 **Which address.** The tools answer only on the names the server is set to answer

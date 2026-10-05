@@ -588,11 +588,12 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   const [tab, setTab] = useState<string | null>(null)
   const [floors, setFloorsState] = useState<Floors | null>(() => readFloors(initial, initial))
   const setFloors = (f: Floors | null) => { setFloorsState(f); writeFloors(initial, category, f) }
-  // LOOKING BACK A SESSION (2026-09-26, #87). Stocks and ETFs only: every
-  // other category's movers come from a today-only vendor endpoint, so
-  // there is nothing to step back to. Not kept across visits — a tile
+  // LOOKING BACK A SESSION (2026-09-26, #87). Stocks and ETFs from the whole
+  // market that day; crypto from that day's coin bars and options from the
+  // list recorded after each close (2026-10-05). Indices, currencies and
+  // Treasury yields answer only for now. Not kept across visits — a tile
   // silently showing last Tuesday would be the worst kind of stale.
-  const canStep = category === "stocks" || category === "etfs"
+  const canStep = category === "stocks" || category === "etfs" || category === "options" || category === "crypto"
   const [session, setSession] = useState<string | null>(null)
   const sessions = useQuery({
     queryKey: ["mover-sessions", category, SESSIONS_BACK],
@@ -680,7 +681,8 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
       // rate limit — and calling that a closed market told the reader the
       // history stops there.
       ? `${session} · ${q.data.rate_limited ? "vendor rate limit — try again shortly" : "vendor would not answer"}`
-      : `${session}${q.data?.closed ? " · market closed" : q.data?.previous_session ? ` · against ${q.data.previous_session}` : ""} · past session`
+      : q.data?.not_recorded ? `${session} · not recorded`
+      : `${session}${q.data?.closed ? " · market closed" : q.data?.previous_session ? ` · against ${q.data.previous_session}` : category === "options" ? " · as recorded after the close" : ""} · ${category === "crypto" ? "past day" : "past session"}`
     : q.data?.source
     ? `${q.data.change_label === "24h" ? "rolling 24h" : q.data.change_label === "1D bp" ? "daily curve · change in bp"
         : category === "currencies" ? "since 5pm New York"
@@ -761,8 +763,8 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         {halted ? <HaltsTable /> : <MoversTable rows={shown} changeHead={q.data?.change_label ?? "1D"} session={q.data?.session_label ?? null}
                        changeTip={category === "currencies" ? "Change since the 5pm New York rollover, where the currency trading day begins" : undefined}
                        {...(category === "crypto" ? {
-                         volTip: "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",
-                         liqTip: q.data?.liquidity_scope === "venue"
+                         volTip: session ? "Not measured for a past day" : "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",
+                         liqTip: session ? "Not measured for a past day" : q.data?.liquidity_scope === "venue"
                            ? `Average dollar volume a day over the last twenty days on ${SOURCE_LABELS[q.data.source ?? ""] ?? q.data.source}'s own exchange only — worldwide volume is far larger`
                            : "Dollar volume traded worldwide over the last 24 hours",
                        } : category === "currencies" ? {
@@ -786,7 +788,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
                            // A coin list's Active tab ranks by dollars traded on Alpaca's venue.
                            ? (category === "options" ? "contracts" : category === "crypto" ? "dollars" : "shares")
                            : null}
-                       empty={active?.id === "losers" ? "nothing is down" : active?.id === "gainers" ? "nothing is up" : `no ${CATEGORY_LABELS[category].toLowerCase()} quotes right now`} />}
+                       empty={q.data?.not_recorded ? "no list was recorded for this session" : active?.id === "losers" ? "nothing is down" : active?.id === "gainers" ? "nothing is up" : `no ${CATEGORY_LABELS[category].toLowerCase()} quotes right now`} />}
         </>}
     </Widget>
   )

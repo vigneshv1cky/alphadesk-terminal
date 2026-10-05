@@ -2,7 +2,9 @@
 
 A finished session's whole-market daily bars never change, so each one is
 saved the first time it can be read and served from AlphaDesk's own store
-afterwards. Past-session movers read the store first; a vendor is asked only
+afterwards. The same goes for each session's option movers list, recorded
+after the close (no vendor keeps a past day's), and each finished day of coin
+bars. Past-session movers read the store first; a vendor is asked only
 for a day not yet recorded. On a fresh start the last two weeks of sessions
 are filled in, then each new close is added once the market has shut.
 """
@@ -28,7 +30,12 @@ def run_once() -> int:
     for user_id, _email in prewarm._owners():
         token = identity.set_request_user(user_id)
         try:
-            saved += movers.record_closes(get_prices(), BACKFILL_SESSIONS)
+            router = get_prices()
+            saved += movers.record_closes(router, BACKFILL_SESSIONS)
+            # The option list exists only as recorded, once each session closes;
+            # coin days are computed from bars and kept like the stock closes.
+            saved += int(movers.record_options_close(router))
+            saved += movers.record_crypto_days(router, BACKFILL_SESSIONS)
         except Exception as exc:
             log.warning("recording closes for a reader failed: %s", exc)
         finally:

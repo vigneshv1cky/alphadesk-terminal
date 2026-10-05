@@ -1529,6 +1529,35 @@ class AlpacaPrices:
         rows = self._crypto_rows(pairs)
         return crypto_tabs(rows, top)
 
+    def crypto_market_day(self, day: str) -> dict[str, dict]:
+        """Every Alpaca dollar coin's daily bar for one day, with the close
+        of the bar before it, keyed "BTC-USD" (2026-10-05). The day is the
+        date of Alpaca's own daily bar, read in UTC. A coin with no bar that
+        day is absent; an empty dict means none traded, never None."""
+        from alpaca.data.requests import CryptoBarsRequest
+        from alpaca.trading.enums import AssetClass
+        from alpaca.trading.requests import GetAssetsRequest
+        assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
+        pairs = sorted({str(a.symbol) for a in assets if str(a.symbol).endswith("/USD") and getattr(a, "tradable", True)})
+        if not pairs:
+            return {}
+        at = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        try:
+            resp = self._client("crypto").get_crypto_bars(CryptoBarsRequest(
+                symbol_or_symbols=pairs, timeframe=self._timeframe(self._INTERVALS["1d"]),
+                start=at - timedelta(days=5), end=at + timedelta(days=1, hours=12)))
+        except Exception as exc:
+            raise self._wrap("crypto daily bars", exc) from exc
+        out: dict[str, dict] = {}
+        for p in pairs:
+            rows = sorted(self._rows(resp, p), key=lambda b: b["ts"])
+            for i, b in enumerate(rows):
+                if b["ts"].astimezone(timezone.utc).date().isoformat() == day and i > 0:
+                    out[p.replace("/", "-")] = {"open": b["open"], "high": b["high"], "low": b["low"],
+                                                "close": b["close"], "volume": b["volume"],
+                                                "prev_close": rows[i - 1]["close"]}
+        return out
+
     def option_movers(self, top: int = 20) -> dict | None:
         """The busiest option contracts across today's most traded names,
         expiring within OPTION_MOVERS_DAYS, from the reader's chain snapshots —

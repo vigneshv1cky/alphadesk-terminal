@@ -505,7 +505,7 @@ def test_an_unknown_category_says_which_exist():
 
 
 def test_a_past_session_is_refused_where_it_cannot_be_built():
-    """Only stocks and ETFs can be looked back at — every other category's
+    """Indices, currencies and bonds cannot be looked back at — their
     movers come from a vendor endpoint that answers only for the present."""
     import alphadesk.mcp_server as m
     from alphadesk.ingest import movers as mv

@@ -204,7 +204,7 @@ METHOD_SURFACE: dict[str, str] = {
     "quote": "quote", "quotes": "quote", "context": "quote", "asset_info": "quote", "asset_listing": "quote",
     "movers": "stock_movers", "market_day": "market_day",
     "market_tape": "index_board", "index_board": "index_board",
-    "crypto_movers": "crypto", "crypto_bars": "crypto", "crypto_daily_history": "crypto", "crypto_symbols": "crypto", "crypto_pairs": "crypto", "crypto_rows": "crypto", "fx_daily_history": "currencies",
+    "crypto_movers": "crypto", "crypto_bars": "crypto", "crypto_daily_history": "crypto", "crypto_market_day": "crypto", "crypto_symbols": "crypto", "crypto_pairs": "crypto", "crypto_rows": "crypto", "fx_daily_history": "currencies",
     "option_expirations": "options", "option_chain": "options", "option_active_contracts": "options",
     "option_trades": "options", "option_latest_quotes": "options", "option_movers": "option_movers",
     "fundamentals": "key_stats", "key_stats": "key_stats", "compare_metrics": "compare",

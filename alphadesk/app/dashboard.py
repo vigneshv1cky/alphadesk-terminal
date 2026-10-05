@@ -1309,16 +1309,15 @@ def api_category_movers(category: str, top: int = 20,
     (ingest/movers.py). The floors are the reader's when given, the
     category's defaults otherwise. 404 for a category that does not exist.
 
-    `session` asks for a PAST session instead of now, computed from the
-    whole market that day against the session before it. Stocks and ETFs
-    only: every other category's movers come from a today-only vendor
-    endpoint, and a crypto or options list for the 24th cannot be built
-    from anything we can reach. 404 names the ones that can."""
+    `session` asks for a PAST session instead of now: stocks and ETFs from
+    the whole market that day against the session before it, crypto from
+    that day's coin bars against the day before, options from the list
+    recorded after that close (2026-10-05). 404 names the ones that can."""
     from alphadesk.ingest import movers
     if session:
         if category not in movers.SESSION_CATEGORIES:
             raise HTTPException(404, f"a past session is only available for "
-                                     f"{' and '.join(movers.SESSION_CATEGORIES)}")
+                                     f"{', '.join(movers.SESSION_CATEGORIES)}")
         try:
             return movers.session_movers(category, session, top=max(1, min(top, 50)),
                                          min_price=min_price, min_turnover=min_turnover,
@@ -1348,12 +1347,11 @@ def api_movers_sessions(category: str, before: str | None = Query(None, pattern=
     from alphadesk.providers import get_prices
     if category not in movers.SESSION_CATEGORIES:
         raise HTTPException(404, f"a past session is only available for "
-                                 f"{' and '.join(movers.SESSION_CATEGORIES)}")
+                                 f"{', '.join(movers.SESSION_CATEGORIES)}")
     router = get_prices()
     want = max(1, min(count, 30))
-    days = movers.trading_sessions(router, want + 5)
     cut = before or (now_et().date() + timedelta(days=1)).isoformat()
-    return {"sessions": [d for d in days if d < cut][:want]}
+    return {"sessions": movers.past_days(router, category, want, cut)}
 
 
 @app.get("/api/tape")

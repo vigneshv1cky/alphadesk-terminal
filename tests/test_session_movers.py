@@ -107,11 +107,11 @@ def test_a_weekend_is_never_asked_for():
         assert date.fromisoformat(day).weekday() < 5, f"asked about a weekend: {day}"
 
 
-def test_only_stocks_and_etfs_can_be_asked_about_a_past_session():
-    # Every other category's movers come from a today-only vendor endpoint.
-    assert movers.SESSION_CATEGORIES == ("stocks", "etfs")
+def test_which_categories_can_be_asked_about_a_past_session():
+    # Indices, currencies and bonds come from today-only endpoints.
+    assert movers.SESSION_CATEGORIES == ("stocks", "etfs", "options", "crypto")
     with pytest.raises(KeyError):
-        movers.session_movers("crypto", (date.today() - timedelta(days=1)).isoformat())
+        movers.session_movers("currencies", (date.today() - timedelta(days=1)).isoformat())
 
 
 def test_a_refused_request_is_never_a_closed_market():
@@ -333,3 +333,93 @@ def test_closes_are_recorded_oldest_first_and_only_once(store, monkeypatch):
     assert movers.record_closes(_R()) == 2
     assert asked == ["2020-01-02", "2020-01-03"]
     assert movers.record_closes(_R()) == 0
+
+
+# OPTIONS AND CRYPTO DAYS (2026-10-05) ----------------------------------------
+
+def _opt_row(sym, vol, chg):
+    return {"symbol": sym, "display": sym, "name": None, "price": 1.0, "change_pct": chg, "volume": vol,
+            "turnover": vol * 100.0, "volatility": None, "liquidity": None, "spark": []}
+
+
+def test_an_option_list_is_recorded_after_the_close_and_read_back(store, monkeypatch):
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    tabs = [{"id": "most_active", "label": "Active", "rows": [_opt_row("SPY260105C00600000", 9000, 12.0)]}]
+    built: list[str] = []
+
+    def fake_build(router, key, cat, top, mp, floors):
+        built.append(cat)
+        return {"tabs": tabs, "source": "alpaca", "as_of": "2026-10-05T21:00:00+00:00"}
+
+    monkeypatch.setattr(movers, "_build", fake_build)
+
+    class _R:
+        owner = "reader-1"
+
+    ny = ZoneInfo("America/New_York")
+    before = datetime(2026, 10, 5, 15, 59, tzinfo=ny).astimezone(timezone.utc)
+    after = datetime(2026, 10, 5, 16, 30, tzinfo=ny).astimezone(timezone.utc)
+    sunday = datetime(2026, 10, 4, 18, 0, tzinfo=ny).astimezone(timezone.utc)
+    assert movers.record_options_close(_R(), before) is False      # the session is not over
+    assert movers.record_options_close(_R(), sunday) is False      # not a session
+    assert movers.record_options_close(_R(), after) is True
+    assert movers.record_options_close(_R(), after) is False       # once
+    assert built == ["options"]
+
+    out = movers._options_session(_R(), "2026-10-05", 20, None, None, None, None)
+    assert out["tabs"][0]["rows"][0]["symbol"] == "SPY260105C00600000" and not out.get("not_recorded")
+    assert movers.past_days(_R(), "options", 5) == ["2026-10-05"]
+
+
+def test_an_unrecorded_option_day_says_so(store):
+    class _R:
+        owner = "reader-1"
+
+    out = movers._options_session(_R(), "2026-09-01", 20, None, None, None, None)
+    assert out["not_recorded"] is True and out["tabs"] == []
+    assert "recorded" in out["note"]
+
+
+def test_a_coin_day_is_close_against_the_day_before_and_recorded(store):
+    asked: list[str] = []
+
+    class _R:
+        owner = "reader-1"
+        answered_by = "alpaca"
+
+        def ask(self, method, day):
+            asked.append(day)
+            return {"BTC-USD": {"close": 110.0, "prev_close": 100.0, "volume": 0.5},
+                    "ETH-USD": {"close": 90.0, "prev_close": 100.0, "volume": 3.0},
+                    "USDC-USD": {"close": 1.0, "prev_close": 0.999, "volume": 1e6}}
+
+    movers._cache.clear()
+    out = movers._crypto_session(_R(), "2020-01-02", 20, None, None, None, None)
+    tabs = {t["id"]: t["rows"] for t in out["tabs"]}
+    assert [r["symbol"] for r in tabs["gainers"]] == ["BTC-USD"]
+    assert tabs["gainers"][0]["change_pct"] == 10.0
+    assert tabs["gainers"][0]["turnover"] == 55.0               # fractions of a coin count
+    assert [r["symbol"] for r in tabs["losers"]] == ["ETH-USD"]
+    assert all(r["symbol"] != "USDC-USD" for r in tabs["gainers"] + tabs["losers"] + tabs["most_active"])
+    assert out["previous_session"] == "2020-01-01"
+    movers._cache.clear()
+    movers._crypto_session(_R(), "2020-01-02", 20, None, None, None, None)
+    assert asked == ["2020-01-02"]                              # the second read is the record
+
+
+def test_a_coin_day_not_yet_finished_is_never_recorded(store):
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    class _R:
+        owner = "reader-1"
+        answered_by = "alpaca"
+
+        def ask(self, method, day):
+            return {"BTC-USD": {"close": 1.0, "prev_close": 1.0, "volume": 1.0}}
+
+    movers._cache.clear()
+    movers._crypto_session(_R(), today, 20, None, None, None, None)
+    assert store.recorded_movers_days("reader-1", "crypto") == []
+    assert today not in movers.crypto_days(5)

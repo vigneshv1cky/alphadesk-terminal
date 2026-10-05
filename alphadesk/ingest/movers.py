@@ -39,7 +39,7 @@ import re
 import threading
 import time
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -584,7 +584,15 @@ __all__ = ["CATEGORIES", "DEFAULT_FLOORS", "NeedsKey", "apply_floors", "category
 # changes under you. A past session cannot change, so it wants the opposite
 # — fetch once, keep it for a long time, and never refresh in the
 # background.
-SESSION_CATEGORIES = ("stocks", "etfs")
+SESSION_CATEGORIES = ("stocks", "etfs", "options", "crypto")
+#: The ones whose past days exist ONLY as recorded (2026-10-05): an option
+#: movers list is built from live chain snapshots, and no vendor keeps which
+#: contracts were busiest on a past day, so a day before recording began has
+#: no answer at all.
+RECORDED_ONLY = ("options",)
+#: When a session's option list is final enough to keep: a quarter of an hour
+#: after the 4pm close, so the closing prints are in the day's volume.
+OPTIONS_RECORD_AFTER = (16, 15)
 
 # EXCHANGE TEST SYMBOLS. They print real prices and real volume and are not
 # securities: ZVZZT closed at 25.12 with a 89% "gain" in the first list this
@@ -773,6 +781,10 @@ def session_movers(category: str, day: str, top: int = 20,
         raise KeyError(cat)
     router = get_prices()
     top = max(1, min(int(top), 50))
+    if cat == "options":
+        return _options_session(router, day, top, min_price, min_turnover, min_liquidity, min_volatility)
+    if cat == "crypto":
+        return _crypto_session(router, day, top, min_price, min_turnover, min_liquidity, min_volatility)
     d_price, d_turn = DEFAULT_FLOORS.get(cat, (0.0, 0.0))
     mp = max(0.0, float(min_price)) if min_price is not None else d_price
     mt = max(0.0, float(min_turnover)) if min_turnover is not None else d_turn
@@ -987,3 +999,209 @@ def _unavailable(cat: str, day: str, why: str) -> dict:
             "floors": {"min_price": 0.0, "min_turnover": 0.0, "min_liquidity": 0.0, "min_volatility": 0.0,
                        "default_min_price": 0.0, "default_min_turnover": 0.0},
             "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": []}
+
+
+# ── recorded options and crypto days (2026-10-05) ─────────────────────────
+
+def _floors_asked(cat: str, min_price, min_turnover, min_liquidity, min_volatility,
+                  venue: bool = False) -> tuple[float, float, float, float, float, float]:
+    d_price, d_turn = DEFAULT_FLOORS.get(cat, (0.0, 0.0))
+    if venue:                        # one venue's volume cannot meet a market-wide floor (see _build)
+        d_turn = 0.0
+    mp = max(0.0, float(min_price)) if min_price is not None else d_price
+    mt = max(0.0, float(min_turnover)) if min_turnover is not None else d_turn
+    return mp, mt, max(0.0, float(min_liquidity or 0.0)), max(0.0, float(min_volatility or 0.0)), d_price, d_turn
+
+
+def _past_result(cat: str, day: str, prev_day: Optional[str], source: str, note: str, tabs: list[dict],
+                 floors: tuple, **extra: Any) -> dict:
+    mp, mt, ml, mv, d_price, d_turn = floors
+    out = {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
+           "session": day, "previous_session": prev_day, "historical": True,
+           "extended": False, "session_label": None, "official": True, "source": source,
+           "filling": False, "note": note,
+           "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
+                      "default_min_price": d_price, "default_min_turnover": d_turn},
+           "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": tabs}
+    out.update(extra)
+    return out
+
+
+def _recorded_movers(owner: Optional[str], cat: str, day: str) -> Any:
+    if not owner:
+        return None
+    try:
+        from alphadesk.ledger import store
+        return store.get_movers_day(owner, cat, day)
+    except Exception as exc:
+        log.debug("recorded %s day %s unreadable: %s", cat, day, exc)
+        return None
+
+
+def _save_movers(router, cat: str, day: str, vendor: str, payload: Any) -> None:
+    try:
+        from alphadesk.ledger import store
+        store.save_movers_day(router.owner, cat, day, vendor or "unknown", payload)
+    except Exception as exc:                      # an unsaved day is asked again next time
+        log.warning("recording %s for %s failed: %s", cat, day, exc)
+
+
+def _options_session(router, day: str, top: int, min_price, min_turnover, min_liquidity, min_volatility) -> dict:
+    """A past session's option movers: the list as it stood after that close,
+    read back from the record. Nothing else can answer it."""
+    floors = _floors_asked("options", min_price, min_turnover, min_liquidity, min_volatility)
+    saved = _recorded_movers(router.owner, "options", day)
+    if not saved or not saved.get("tabs"):
+        return _past_result("options", day, None, "recorded",
+                            f"no option movers were recorded for {day}. Options lists exist only from the "
+                            f"evenings AlphaDesk recorded them; no vendor keeps a past day's busiest contracts.",
+                            [], floors, not_recorded=True)
+    tabs = [{"id": t["id"], "label": t["label"], "rows": [dict(r) for r in t.get("rows") or []]}
+            for t in saved["tabs"]]
+    apply_floors(tabs, floors[0], floors[1], floors[2], floors[3])
+    for t in tabs:
+        t["rows"] = t["rows"][:top]
+    when = saved.get("as_of") or ""
+    return _past_result("options", day, None, saved.get("source") or "recorded",
+                        f"The option movers as recorded after the {day} close"
+                        + (f" ({when[11:16]} UTC)" if len(when) >= 16 else "") + ".", tabs, floors)
+
+
+def record_options_close(router, now: Optional[datetime] = None) -> bool:
+    """Keep today's option movers list once the session has closed. True when
+    a list was saved. Only between 4:15pm and midnight New York on a trading
+    day: before that the day is not over, after it the next day's list starts."""
+    from alphadesk.desk.sessions import is_session
+    if not router.owner:
+        return False
+    now = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("America/New_York"))
+    day = now.date()
+    if not is_session(day) or (now.hour, now.minute) < OPTIONS_RECORD_AFTER:
+        return False
+    if _recorded_movers(router.owner, "options", day.isoformat()):
+        return False
+    try:
+        got = _build(router, f"record|{router.owner}|options", "options", 50, 0.0, (None, 0.0, 0.0))
+    except NeedsKey:
+        return False
+    if not any(t.get("rows") for t in got.get("tabs") or []):
+        return False
+    _save_movers(router, "options", day.isoformat(), got.get("source") or "unknown",
+                 {"tabs": got["tabs"], "source": got.get("source"), "as_of": got.get("as_of")})
+    return True
+
+
+#: A coin day is final some hours after midnight UTC, whichever midnight the
+#: vendor's daily bar is aligned to.
+CRYPTO_DAY_SETTLE_H = 6
+
+
+def crypto_day_finished(day: str, now: Optional[datetime] = None) -> bool:
+    now = now or datetime.now(timezone.utc)
+    return day < (now - timedelta(hours=CRYPTO_DAY_SETTLE_H)).date().isoformat()
+
+
+def crypto_days(count: int, before: Optional[str] = None) -> list[str]:
+    """The last `count` finished coin days, newest first. Coins trade every
+    day, so every finished calendar day is one."""
+    now = datetime.now(timezone.utc)
+    out: list[str] = []
+    d = now.date()
+    while len(out) < count:
+        d -= timedelta(days=1)
+        iso = d.isoformat()
+        if crypto_day_finished(iso, now) and (before is None or iso < before):
+            out.append(iso)
+    return out
+
+
+def _crypto_day(router, day: str) -> tuple[dict, str]:
+    """(bars, vendor) for one coin day: the record first, then the vendor,
+    recording a finished day it answered."""
+    finished = crypto_day_finished(day)
+    if finished:
+        saved = _recorded_movers(router.owner, "crypto", day)
+        if saved:
+            return saved.get("bars") or {}, saved.get("vendor") or "recorded"
+    key = f"cryptoday|{router.owner}|{day}"
+    with _lock:
+        hit = _cache.get(key)
+    if hit and time.time() - hit[0] < SESSION_TTL_S:
+        return hit[1], "alpaca"
+    try:
+        got = router.ask("crypto_market_day", day)
+    except NeedsKey as exc:
+        if getattr(exc, "failed", None):
+            raise VendorRefused("; ".join(exc.failed.values())) from exc
+        raise
+    got = got if isinstance(got, dict) else {}
+    vendor = router.answered_by or "alpaca"
+    if got and finished and router.owner:
+        _save_movers(router, "crypto", day, vendor, {"bars": got, "vendor": vendor})
+    with _lock:
+        _cache[key] = (time.time(), got)
+    return got, vendor
+
+
+def _crypto_session(router, day: str, top: int, min_price, min_turnover, min_liquidity, min_volatility) -> dict:
+    """One past day's coin movers: that day's close against the day before,
+    on Alpaca's dollar pairs, stablecoins out of Active, Gainers and Losers."""
+    from alphadesk.providers.alpaca import crypto_tabs
+    floors = _floors_asked("crypto", min_price, min_turnover, min_liquidity, min_volatility, venue=True)
+    prev_day = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+    try:
+        bars, vendor = _crypto_day(router, day)
+    except VendorRefused as exc:
+        return _unavailable("crypto", day, str(exc))
+    rows = []
+    for sym, b in bars.items():
+        close, was = b.get("close"), b.get("prev_close")
+        if not close or not was:
+            continue
+        r = _row(sym, close, (close - was) / was * 100.0, b.get("volume"), name=sym.split("-")[0],
+                 display=sym.split("-")[0])
+        r["turnover"] = float(close) * float(b.get("volume") or 0)     # coins trade in fractions
+        rows.append(r)
+    lists = crypto_tabs(rows, 50)
+    tabs = [{"id": ("most_active" if k == "active" else k), "label": lbl, "rows": lists.get(k) or []}
+            for k, lbl in (("all", "All"), ("active", "Active"), ("gainers", "Gainers"), ("losers", "Losers"))]
+    apply_floors(tabs, floors[0], floors[1], floors[2], floors[3])
+    for t in tabs:
+        t["rows"] = t["rows"][:top]
+    return _past_result("crypto", day, prev_day, vendor,
+                        f"{day} close against {prev_day}, as {SOURCE_NAMES.get(vendor, vendor)}'s daily bars date them (UTC). "
+                        f"Volume is that exchange's alone. Volatility and liquidity are not measured for a past day.",
+                        tabs, floors, liquidity_scope="venue")
+
+
+SOURCE_NAMES = {"alpaca": "Alpaca", "recorded": "the recorded"}
+
+
+def record_crypto_days(router, count: int = 15) -> int:
+    """Record every finished coin day among the last `count` not saved yet."""
+    if not router.owner:
+        return 0
+    from alphadesk.ledger import store
+    have = set(store.recorded_movers_days(router.owner, "crypto"))
+    saved = 0
+    for day in sorted(d for d in crypto_days(count) if d not in have):
+        try:
+            bars, _vendor = _crypto_day(router, day)
+        except (NeedsKey, VendorRefused) as exc:
+            log.info("coin day %s not recorded: %s", day, exc)
+            break
+        saved += 1 if bars else 0
+    return saved
+
+
+def past_days(router, category: str, count: int, before: Optional[str] = None) -> list[str]:
+    """The past days a category's stepper can offer, newest first."""
+    if category == "crypto":
+        return crypto_days(count, before)
+    if category == "options":
+        if not router.owner:
+            return []
+        from alphadesk.ledger import store
+        return [d for d in store.recorded_movers_days(router.owner, "options") if before is None or d < before][:count]
+    days = trading_sessions(router, count + 5)
+    return [d for d in days if before is None or d < before][:count]

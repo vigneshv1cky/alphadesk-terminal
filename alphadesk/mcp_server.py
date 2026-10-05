@@ -85,9 +85,10 @@ mcp = FastMCP(
         "* Another asset class: movers takes a category — stocks, etfs, "
         "indices, crypto, currencies, options, bonds. Do not reach for a "
         "per-class tool; there is one.\n"
-        "* A PAST session's movers: movers(session=...), stocks and ETFs "
-        "only, and take the date from market_sessions — a weekend or a "
-        "holiday is not a session and guessing one wastes a vendor call.\n\n"
+        "* A PAST session's movers: movers(session=...) for stocks, ETFs, "
+        "crypto and options; take the date from market_sessions(category=...) "
+        "— a weekend or a holiday is not a session, and options exist only "
+        "for the days AlphaDesk recorded.\n\n"
         "ALPHADESK RUNS NO MODEL. Every tool returns records — prices, filings, "
         "statements, holdings, news, calendars — and you do the reading and the "
         "reasoning. Quote what the records say and name where each figure came "
@@ -268,12 +269,14 @@ def movers(category: str = "stocks", top: int = 20, session: str = "") -> dict:
     small-cap, as a percentage screen over the whole market always does;
     large names appear on most_active, which ranks by volume.
 
-    `session` (YYYY-MM-DD) asks for a PAST session instead of now, computed
-    from the whole market that day against the session before it. STOCKS AND
-    ETFS ONLY: every other category comes from a vendor endpoint that answers
-    only for the present, so there is nothing to look back at. Call
-    `market_sessions` for the days that exist — a weekend or holiday is not a
-    session, and guessing one spends a request against a rate limit.
+    `session` (YYYY-MM-DD) asks for a PAST day instead of now. Stocks and
+    ETFs: the whole market that day against the session before it. Crypto:
+    that day's close of each coin against the day before, as the vendor's
+    daily bars date them (UTC), no volatility or liquidity. Options: the list
+    AS RECORDED after that session's close — no vendor keeps a past day's
+    busiest contracts, so a day before recording began says `not_recorded`.
+    Indices, currencies and bonds answer only for the present. Call
+    `market_sessions(category=...)` for the days that exist.
 
     On a past session `volatility` and `liquidity` describe the twenty
     sessions ENDING THAT DAY, not the twenty ending now — the only window
@@ -289,7 +292,7 @@ def movers(category: str = "stocks", top: int = 20, session: str = "") -> dict:
     top = max(1, min(int(top), 50))
     if session:
         if cat not in mv.SESSION_CATEGORIES:
-            return {"error": f"a past session is only available for {' and '.join(mv.SESSION_CATEGORIES)}",
+            return {"error": f"a past session is only available for {', '.join(mv.SESSION_CATEGORIES)}",
                     "category": cat, "session": session}
         return _mover_lists(mv.session_movers(cat, session, top=top))
     if cat not in mv.CATEGORIES:
@@ -320,8 +323,11 @@ def _mover_lists(payload: dict) -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
-def market_sessions(count: int = 10) -> dict:
-    """The recent days the US market ACTUALLY OPENED, newest first.
+def market_sessions(count: int = 10, category: str = "stocks") -> dict:
+    """The recent days the US market ACTUALLY OPENED, newest first — or, with
+    `category`, the past days that category's movers can answer: every
+    finished day for crypto (coins trade daily), the recorded sessions for
+    options.
 
     Read from a liquid symbol's own daily bars — a bar exists only on a
     session — so weekends and holidays are absent because they never traded,
@@ -331,7 +337,11 @@ def market_sessions(count: int = 10) -> dict:
     """
     from alphadesk.ingest import movers as mv
     from alphadesk.providers import get_prices
-    return {"sessions": mv.trading_sessions(get_prices(), max(1, min(int(count), 30)))}
+    cat = (category or "stocks").strip().lower()
+    n = max(1, min(int(count), 30))
+    if cat in ("crypto", "options"):
+        return {"category": cat, "sessions": mv.past_days(get_prices(), cat, n)}
+    return {"sessions": mv.trading_sessions(get_prices(), n)}
 
 
 @mcp.tool(annotations=READ_ONLY)
