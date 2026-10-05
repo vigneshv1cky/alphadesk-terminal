@@ -16,7 +16,7 @@ Where the rows come from:
               quote vendor (Alpaca), or Polygon's snapshot.
   indices     market ETFs standing in for the indices — an index level is
               licensed data no free key carries — labelled as the funds.
-  crypto      CoinGecko by market cap on the user's key, or Alpaca's coins.
+  crypto      Alpaca's dollar coins (their venue's volume); CoinGecko by market cap only for a reader with no Alpaca key.
   currencies  Polygon's forex snapshot (paid).
   options     Polygon's option snapshots, busiest contracts (paid).
   bonds       the US Treasury's daily par yield curve — public government

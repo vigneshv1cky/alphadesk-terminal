@@ -1419,9 +1419,10 @@ class AlpacaPrices:
             assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
         except ProviderError:
             raise
-        # Every pair the account trades, the stablecoin ones too (BAT/USDC) —
-        # the owner wants all Alpaca crypto visible (2026-10-04).
-        pairs = sorted({str(a.symbol) for a in assets if "/" in str(a.symbol) and getattr(a, "tradable", True)})
+        # The dollar pairs. The pairs against a stablecoin or BTC are the same
+        # coins again, priced another way: searchable and chartable, but not
+        # extra rows here (2026-10-05, the owner's pick).
+        pairs = sorted({str(a.symbol) for a in assets if str(a.symbol).endswith("/USD") and getattr(a, "tradable", True)})
         rows = self._crypto_rows(pairs)
         rank = {c: i for i, c in enumerate(COIN_ORDER)}
         changed = [r for r in rows if r["change_pct"] is not None]

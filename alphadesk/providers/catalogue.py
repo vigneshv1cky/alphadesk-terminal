@@ -110,7 +110,10 @@ SURFACES: dict[str, Surface] = {
         Surface("market_day", "A past session's whole market", (("polygon", FREE),)),
         Surface("etf_movers", "ETF movers", (("alpaca", FREE), ("polygon", PAID))),
         Surface("index_board", "Market tape", (("alpaca", FREE), ("polygon", PAID))),
-        Surface("crypto", "Crypto", (("coingecko", FREE), ("alpaca", FREE))),
+        # Alpaca first (2026-10-05, the owner: trading is on Alpaca, so its coins and its
+        # venue's numbers are the ones that matter); CoinGecko answers only for a
+        # reader with no Alpaca key.
+        Surface("crypto", "Crypto", (("alpaca", FREE), ("coingecko", FREE))),
         # FMP first: its quotes answer on Premium (2026-09-15, 12 pairs in
         # 0.09s); Polygon's forex snapshot has not been run on a paid key.
         Surface("currencies", "Currencies", (("fmp", PAID), ("polygon", PAID))),
