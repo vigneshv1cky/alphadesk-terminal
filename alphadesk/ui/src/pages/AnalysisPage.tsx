@@ -4,7 +4,7 @@ import { MarketChart } from "@/widgets/chart"
 import { SymbolFilings } from "@/components/SymbolFilings"
 import { RelatedFundsPanel } from "@/components/RelatedFunds"
 import { SymbolNews } from "@/components/SymbolNews"
-import { CoinRecordPanel, FinancialsPanel } from "@/pages/CompanyPage"
+import { FinancialsPanel } from "@/pages/CompanyPage"
 import { EarningsHistoryPanel, EarningsInsightsPanel } from "@/components/EarningsPanels"
 import { DividendsPanel, SplitsPanel } from "@/components/CorporateActions"
 import { InsiderTradesPanel, InstitutionalOwnershipPanel, StockOwnershipPanel } from "@/components/Ownership"
@@ -36,7 +36,7 @@ export default function AnalysisPage() {
   // A COIN has no filings, earnings, analysts, splits, dividends, holders or
   // insiders: no key fills those, and each asked for one (2026-09-19, the
   // owner: "analysis page also has this issue"). A coin gets the chart, its
-  // performance, its CoinGecko record and its news.
+  // performance, its news.
   const isCoin = /-(USD|USDT|USDC|BTC)$/.test(symbol)
   const STOCK_ONLY = new Set(["filings", "stats", "history", "consensus", "related-funds", "analysts", "ratings",
     "financials", "splits", "dividends", "institutional", "holders", "insiders"])
@@ -78,8 +78,7 @@ export default function AnalysisPage() {
       page="analysis"
       panels={isCoin
         ? [...panels.filter(p => !STOCK_ONLY.has(p.id)).slice(0, 2),
-           { id: "coin", label: "What it is", node: <CoinRecordPanel symbol={symbol} span={12} /> },
-           ...panels.filter(p => !STOCK_ONLY.has(p.id)).slice(2)]
+            ...panels.filter(p => !STOCK_ONLY.has(p.id)).slice(2)]
         : panels}
     />
   )

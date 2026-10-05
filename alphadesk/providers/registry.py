@@ -534,6 +534,12 @@ class DataRouter:
         return lambda *args, **kwargs: self.get(attr, *args, **kwargs)
 
 
+#: Vendors this version no longer carries. A key still saved for one (until the
+#: ledger's start-up drops it) is passed over rather than failing every price
+#: call; any OTHER unopenable key stays a hard error, below.
+REMOVED_VENDORS = frozenset({"coingecko"})
+
+
 def get_prices() -> DataRouter:
     """The market-data router for THIS call: the signed-in user's connected
     vendors, nothing else. Anonymous calls, background loops and the MCP
@@ -548,6 +554,8 @@ def get_prices() -> DataRouter:
         return DataRouter(None, {})
     vendors: dict[str, Any] = {}
     for row in _user_prices_rows(uid):
+        if row["provider"] in REMOVED_VENDORS:
+            continue
         vendors[row["provider"]] = _user_prices_provider(uid, row["created_at"], row["provider"], row["config"])
     return DataRouter(uid, vendors)
 

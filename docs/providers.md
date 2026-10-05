@@ -60,7 +60,7 @@ that are easy to get wrong:
   indices, futures, bonds, currencies — and asks the selected provider for
   each one first. Answer `{tabs: [{id, label, rows: [{symbol, display, name,
   price, change_pct, volume}]}]}` for a category your feed carries whole
-  and `None` for the rest: the free path (Yahoo's screeners, CoinGecko, the
+  and `None` for the rest: the free path (Yahoo's screeners, the
   option chains) then serves those, so a keyed feed replaces what it can
   and never blanks a tile. Twenty-session volatility and average dollar
   volume are added by the route afterwards from one source for everyone,
@@ -185,7 +185,6 @@ A new market-data vendor therefore needs an implementation registered under
 | prices | `polygon` | bars, quotes, dividends and splits; currencies and option movers on paid plans |
 | prices | `alphavantage` | overview-based statistics, estimates, earnings calendar |
 | prices | `fmp` | statistics, peers, grades, ETF holdings, corporate actions, economic calendar |
-| prices | `coingecko` | crypto movers and coin profiles |
 
 ## Testing yours
 

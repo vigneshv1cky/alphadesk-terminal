@@ -280,40 +280,6 @@ export function Financials({ c, span = 7 }: { c: CompanyProfile; span?: number }
   )
 }
 
-/** CoinGecko's record for a coin: what it is, its categories, links,
- * supply and launch, with attribution and the coin's page. */
-function CoinPanel({ c, span = 7 }: { c: CompanyProfile; span?: number }) {
-  const k = c.coin
-  if (!k) return null
-  const links = [
-    k.homepage ? { label: "Homepage", url: k.homepage } : null,
-    k.whitepaper ? { label: "Whitepaper", url: k.whitepaper } : null,
-    ...k.explorers.map((u, i) => ({ label: i === 0 ? "Explorer" : `Explorer ${i + 1}`, url: u })),
-  ].filter((x): x is { label: string; url: string } => !!x)
-  return (
-    <Widget span={span} title={`What ${k.name ?? k.symbol} is`} subtitle={k.categories.join(" · ") || undefined}>
-      {k.description && (
-        <div className="border-b border-row-rule px-3 py-3">
-          <p className="text-body leading-[1.6] text-foreground/90">{k.description}</p>
-        </div>
-      )}
-      <div className="grid grid-cols-2 sm:grid-cols-4">
-        {k.market_cap_rank != null && <Stat label="Market cap rank" value={`#${k.market_cap_rank}`} />}
-        {k.circulating_supply != null && <Stat label="Circulating" value={compact(k.circulating_supply)} sub={k.symbol} />}
-        {k.max_supply != null && <Stat label="Max supply" value={compact(k.max_supply)} sub={k.symbol} />}
-        {k.genesis_date && <Stat label="Genesis" value={<span className="text-body font-semibold">{k.genesis_date}</span>} sub={k.hashing_algorithm ?? undefined} />}
-      </div>
-      <p className="border-t border-row-rule px-3 py-2 text-caption text-muted-foreground">
-        <a href="https://www.coingecko.com" target="_blank" rel="noreferrer" className="font-semibold text-accent-700 underline decoration-dotted hover:text-foreground">{k.attribution}</a> ·{" "}
-        <a href={k.url} target="_blank" rel="noreferrer" className="font-semibold text-accent-700 underline decoration-dotted hover:text-foreground">{k.name ?? k.symbol} on CoinGecko</a>
-        {links.map(l => (
-          <span key={l.url}> · <a href={l.url} target="_blank" rel="noreferrer" className="font-semibold text-accent-700 underline decoration-dotted hover:text-foreground">{l.label}</a></span>
-        ))}
-      </p>
-    </Widget>
-  )
-}
-
 function Business({ c }: { c: CompanyProfile }) {
   return (
     <Widget span={7} title={`What the ${kindOf(c).noun} does`} subtitle="the profile feed's summary, and where the filing says it">
@@ -376,17 +342,6 @@ function Officers({ c }: { c: CompanyProfile }) {
 /** The filed financials for a symbol, self-loading — so a page other than
  * the Profile (Analysis, 2026-09-12) can place the same panel. Nothing
  * while the record loads or when the registrant has no statements. */
-/** A coin's CoinGecko record as a board tile (Analysis, 2026-09-19); the
- * key prompt when no coin vendor is connected. */
-export function CoinRecordPanel({ symbol, span = 12 }: { symbol: string; span?: number }) {
-  const { data, error } = useCompany(symbol)
-  if (isNeedsKey(error)) {
-    return <Widget span={span} title={symbol}><KeyPrompt prompt={error.prompt} /></Widget>
-  }
-  if (!data?.coin) return null
-  return <CoinPanel c={data} span={span} />
-}
-
 export function FinancialsPanel({ symbol, span = 7 }: { symbol: string; span?: number }) {
   const { data } = useCompany(symbol)
   if (!data?.financials) return null
@@ -441,9 +396,7 @@ export default function CompanyPage() {
         ] : []),
         registrant
           ? { id: "business", label: "What it does", node: <Business c={data} /> }
-          : data.coin
-            ? { id: "business", label: "What it is", node: <CoinPanel c={data} /> }
-            : { id: "business", label: "What it is", node: <WhatItIs c={data} /> },
+          : { id: "business", label: "What it is", node: <WhatItIs c={data} /> },
         // The record panels — financials, dividends, splits, ownership,
         // insiders — moved to Analysis (2026-09-12); the Profile is who the
         // company is, where it is and who runs it.

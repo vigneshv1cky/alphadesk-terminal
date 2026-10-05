@@ -43,7 +43,7 @@ export const HEAT_FILL: Record<Heat, string | undefined> = {
  * equal tiles that read as equal values. */
 export const HEAT_NONE: Record<Heat, string> = {
   move: "No move for these symbols yet today.",
-  market_cap: "No market cap for these symbols — a coin needs a CoinGecko key, and a fund has none.",
+  market_cap: "No market cap for these symbols — a coin or a fund has none.",
   volume: "No volume for these symbols yet today.",
   avg_volume: "No average volume for these symbols — no daily bars from your data keys.",
   pe_trailing: "No P/E for these symbols — coins and funds have no earnings.",

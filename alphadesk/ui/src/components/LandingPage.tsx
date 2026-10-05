@@ -224,7 +224,7 @@ export function LandingPage({ signedIn = false, onPasswordSignIn, tokenMode = fa
         <p className="mt-4 max-w-[62ch] text-[17px] leading-[1.6] text-muted-foreground">
           A terminal usually rents you its data at its price. AlphaDesk connects the
           providers you already pay for — Alpaca, Financial Modeling Prep, Finnhub,
-          Polygon, Alpha Vantage, CoinGecko and others — and reads them as you.
+          Polygon, Alpha Vantage and others — and reads them as you.
           Your keys are sealed with AES-256-GCM and serve only your screen.
         </p>
         <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">

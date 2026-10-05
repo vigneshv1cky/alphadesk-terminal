@@ -11,7 +11,7 @@ import pytest
 
 from alphadesk.ingest import movers
 from alphadesk.providers.base import NeedsKey
-from alphadesk.providers.prices import CoinGeckoPrices, PolygonPrices
+from alphadesk.providers.prices import PolygonPrices
 
 
 @pytest.fixture(autouse=True)
@@ -105,21 +105,6 @@ def test_bonds_need_no_key(vendors, monkeypatch):
     out = movers.category_movers("bonds")
     assert out["source"] == "treasury" and out["change_label"] == "1D bp"
     assert out["tabs"][0]["rows"][0]["price"] == 4.96
-
-
-def test_coingecko_markets_on_the_users_key(monkeypatch):
-    from alphadesk.providers import prices as pp
-    seen = {}
-    def get_json(url, headers, timeout=20.0):
-        seen.update(url=url, headers=headers)
-        return [{"symbol": "btc", "name": "Bitcoin", "current_price": 77300.0, "price_change_percentage_24h": 0.4, "total_volume": 2.1e10},
-                {"symbol": "eth", "name": "Ethereum", "current_price": 2508.0, "price_change_percentage_24h": -0.5, "total_volume": 9e9}]
-    monkeypatch.setattr(pp, "_get_json", get_json)
-    out = CoinGeckoPrices(api_key="CG-key").category_movers("crypto", 20)
-    assert seen["headers"] == {"x-cg-demo-api-key": "CG-key"}
-    assert [r["symbol"] for r in out["tabs"][0]["rows"]] == ["BTC-USD", "ETH-USD"]
-    assert out["tabs"][0]["rows"][0]["turnover"] == 2.1e10
-    assert CoinGeckoPrices(api_key="k").category_movers("stocks") is None
 
 
 def test_polygon_option_movers_from_the_chain_snapshot(monkeypatch):
@@ -275,44 +260,6 @@ def test_option_rows_keep_the_underlying_and_expiry_a_click_opens(vendors):
     vendors(alpaca=_Opts())
     row = movers.category_movers("options")["tabs"][0]["rows"][0]
     assert row["underlying"] == "SPY" and row["expiry"] == "2026-09-18" and row["turnover"] == 18_900_000
-
-
-def test_a_coins_impossible_volume_is_discarded_without_dropping_the_coin(vendors, monkeypatch):
-    """2026-09-15: CoinGecko sent Ethereum's 24h volume as ~$1.19e19 beside a
-    ~$290B market cap; the tile printed $11,899,776.32T as its liquidity."""
-    from alphadesk.providers import prices as pp
-    assert pp.coingecko_volume(3.47e10, 1.5e12) == (3.47e10, False)
-    assert pp.coingecko_volume(1.19e19, 2.9e11) == (0.0, True)
-    assert pp.coingecko_volume(5e6, None) == (5e6, False)          # no cap to judge by
-    monkeypatch.setattr(pp, "_get_json", lambda url, headers, timeout=20.0: [
-        {"symbol": "btc", "name": "Bitcoin", "current_price": 76219.0, "price_change_percentage_24h": -3.3,
-         "total_volume": 3.475e10, "market_cap": 1.5e12},
-        {"symbol": "eth", "name": "Ethereum", "current_price": 2415.8, "price_change_percentage_24h": -4.6,
-         "total_volume": 1.19e19, "market_cap": 2.9e11},
-    ])
-    vendors(coingecko=CoinGeckoPrices(api_key="CG-key"))
-    rows = {r["symbol"]: r for r in movers.category_movers("crypto")["tabs"][0]["rows"]}
-    assert set(rows) == {"BTC-USD", "ETH-USD"}                     # the $1M floor keeps ETH
-    assert rows["ETH-USD"]["liquidity"] is None and rows["BTC-USD"]["liquidity"] == 3.475e10
-
-
-def test_a_coingecko_list_is_rebuilt_every_two_minutes_not_thirty_seconds(vendors, monkeypatch):
-    """The free Demo key allows 10,000 calls a month."""
-    from alphadesk.providers import prices as pp
-    calls = []
-    monkeypatch.setattr(pp, "_get_json", lambda url, headers, timeout=20.0: calls.append(url) or [
-        {"symbol": "btc", "name": "Bitcoin", "current_price": 76219.0, "price_change_percentage_24h": -3.3,
-         "total_volume": 3.475e10, "market_cap": 1.5e12}])
-    vendors(coingecko=CoinGeckoPrices(api_key="CG-key"))
-    movers.category_movers("crypto")
-    key = next(iter(movers._cache))
-    stamp, payload = movers._cache[key]
-    movers._cache[key] = (stamp - 60, payload)                      # a minute old: past crypto's 30s
-    movers.category_movers("crypto")
-    assert len(calls) == 1
-    movers._cache[key] = (stamp - 121, payload)
-    movers.category_movers("crypto")
-    assert len(calls) == 2
 
 
 def test_the_currency_day_turns_at_5pm_new_york_and_skips_the_weekend():

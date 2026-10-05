@@ -458,7 +458,7 @@ const CATEGORY_LABELS: Record<MoverCategory, string> = {
   indices: "Market ETFs", bonds: "Treasury yields", currencies: "Currencies",
 }
 const SOURCE_LABELS: Record<string, string> = {
-  coingecko: "CoinGecko", alpaca: "Alpaca", treasury: "US Treasury",
+  alpaca: "Alpaca", treasury: "US Treasury",
   polygon: "Polygon", finnhub: "Finnhub", alphavantage: "Alpha Vantage", fmp: "FMP",
 }
 
@@ -773,18 +773,10 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
                        linkable={category !== "options" && category !== "currencies" && category !== "bonds"} options={category === "options"}
                        rank={active?.id === "dollar_volume" ? "dollars"
                          : active?.id === "most_active"
-                           // A coin list's volume is dollars (CoinGecko) or one venue's coins (Alpaca, no Active tab).
+                           // A coin list's Active tab ranks by dollars traded on Alpaca's venue.
                            ? (category === "options" ? "contracts" : category === "crypto" ? "dollars" : "shares")
                            : null}
                        empty={active?.id === "losers" ? "nothing is down" : active?.id === "gainers" ? "nothing is up" : `no ${CATEGORY_LABELS[category].toLowerCase()} quotes right now`} />}
-        {/* CoinGecko's paid plans require the credit wherever their data
-            shows (2026-09-19); the coin list is theirs when they answered. */}
-        {q.data?.source === "coingecko" && (
-          <p className="order-last border-t border-row-rule px-3 py-2 text-caption text-muted-foreground">
-            <a href="https://www.coingecko.com" target="_blank" rel="noreferrer"
-               className="font-semibold text-accent-700 underline decoration-dotted hover:text-foreground">Powered by CoinGecko</a>
-          </p>
-        )}
         </>}
     </Widget>
   )

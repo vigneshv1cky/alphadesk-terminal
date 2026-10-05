@@ -6,7 +6,7 @@ import pytest
 from alphadesk.ledger import envkeys, vault
 
 _VENDOR_ENV = ["ALPACA_API_KEY", "ALPACA_SECRET_KEY", "POLYGON_API_KEY", "FINNHUB_API_KEY",
-               "ALPHAVANTAGE_API_KEY", "FMP_API_KEY", "COINGECKO_API_KEY"]
+               "ALPHAVANTAGE_API_KEY", "FMP_API_KEY"]
 
 
 @pytest.fixture

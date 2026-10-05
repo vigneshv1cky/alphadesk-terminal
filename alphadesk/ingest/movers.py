@@ -1,6 +1,5 @@
 """Market movers by CATEGORY, from the user's own vendors (2026-09-13 — the
-Yahoo screeners, the keyless CoinGecko page and the fixed Yahoo universes
-are gone).
+Yahoo screeners and the fixed Yahoo universes are gone).
 
 Every category answers the same shape so one tile draws all of them:
 
@@ -16,7 +15,7 @@ Where the rows come from:
               quote vendor (Alpaca), or Polygon's snapshot.
   indices     market ETFs standing in for the indices — an index level is
               licensed data no free key carries — labelled as the funds.
-  crypto      Alpaca's dollar coins (their venue's volume); CoinGecko by market cap only for a reader with no Alpaca key.
+  crypto      Alpaca's dollar coins, on its own venue's volume.
   currencies  Polygon's forex snapshot (paid).
   options     Polygon's option snapshots, busiest contracts (paid).
   bonds       the US Treasury's daily par yield curve — public government
@@ -60,10 +59,6 @@ CATEGORIES: dict[str, str] = {
 CHANGE_LABEL = {"crypto": "24h", "bonds": "1D bp"}
 
 TTL_S = {"stocks": 30, "crypto": 30, "indices": 30, "etfs": 60, "currencies": 120, "options": 120, "bonds": 900}
-# CoinGecko's free Demo key allows 10,000 calls a month; rebuilding every 30s
-# while a tab is open eight hours a day spends ~21,000. Its payload is kept
-# two minutes instead (~5,000).
-SOURCE_TTL_S = {"coingecko": 120}
 # How long a request past the lifetime waits for the rebuild before it takes
 # the old payload (2026-09-15). Handing the old copy back at once and
 # rebuilding behind it meant the tile, which asks every 30 seconds, showed a
@@ -272,10 +267,8 @@ def _normalize_tabs(got: dict, category: str) -> list[dict]:
         rows = []
         for r in t.get("rows") or []:
             row = _row(r["symbol"], r.get("price"), r.get("change_pct"), r.get("volume"), name=r.get("name"),
-                       display=r.get("display") or (r["symbol"].split("-")[0] if coin else r["symbol"]),
-                       # CoinGecko states volume in dollars; Alpaca's crypto
-                       # volume is in coins, so its turnover is price × volume.
-                       turnover_is_volume=bool(r.get("volume_is_dollars")))
+                       # A coin's volume is in coins, so its turnover is price × volume.
+                       display=r.get("display") or (r["symbol"].split("-")[0] if coin else r["symbol"]))
             # An option row keeps its underlying and expiry: a click opens the
             # chain there, and without them the row opened nothing.
             for k in ("volatility", "liquidity", "open_interest", "underlying", "expiry", "volume_suspect",
@@ -358,53 +351,6 @@ def _enrich_session_stats(router, tabs: list[dict], day: str) -> None:
             st = stats_from_bars([b["close"] for b in kept], [b["volume"] for b in kept])
             r["volatility"], r["liquidity"] = st["volatility"], st["liquidity"]
 
-def only_tradable_coins(router, tabs: list[dict], got: dict) -> None:
-    """With an Alpaca key connected, a crypto list from another vendor keeps
-    only the coins that account can trade against the dollar (2026-09-19,
-    the owner: "only show crypto I can trade in alpaca" — 29 of CoinGecko's
-    top 47 were not on Alpaca and had no volatility either). Without Alpaca
-    the list stands: nothing says what the reader can trade."""
-    try:
-        coins = router.get("crypto_symbols")
-    except Exception:
-        coins = None
-    if not coins:
-        return
-    pairs = {f"{c}-USD" for c in coins}               # the dollar pair, as Alpaca lists it
-    for t in tabs:
-        t["rows"] = [r for r in t["rows"] if f"{str(r.get('display') or r['symbol'].split('-')[0]).upper()}-USD" in pairs]
-    add_alpaca_only_coins(router, tabs, coins)
-    got["note"] = "coins you can trade on Alpaca"
-
-
-def add_alpaca_only_coins(router, tabs: list[dict], coins) -> None:
-    """A CoinGecko list reaches its top 250 coins by market cap, so a coin
-    Alpaca trades below that (SUSHI, YFI on 2026-10-05) never appeared. Its
-    dollar pair is read off Alpaca and added to the list, at the foot of
-    "All" and in the other tabs by their own order. Nothing is added if Alpaca
-    cannot answer."""
-    if not coins or not tabs:
-        return
-    have = {r["symbol"] for t in tabs for r in t["rows"]}
-    missing = sorted(f"{c}-USD" for c in coins if f"{c}-USD" not in have)
-    if not missing:
-        return
-    try:
-        got = router.get("crypto_rows", missing) or []
-    except Exception as exc:
-        log.debug("alpaca-only coins: %s", exc)
-        return
-    new = [_row(r["symbol"], r.get("price"), r.get("change_pct"), r.get("volume"), name=r.get("name"),
-                display=r.get("display") or r["symbol"].split("-")[0]) for r in got if r.get("price") is not None]
-    if not new:
-        return
-    by_id = {t["id"]: t for t in tabs}
-    base = by_id.get("all", tabs[0])["rows"]
-    rebuilt = tabs_from_list(base + new, with_active=any(t["id"] == "most_active" for t in tabs))
-    tabs[:] = [{"id": t["id"], "label": next((x["label"] for x in tabs if x["id"] == t["id"]), t["label"]),
-                "rows": t["rows"]} for t in rebuilt]
-
-
 def _enrich_currencies(router, tabs: list[dict]) -> None:
     """A pair's volatility from its last twenty daily closes (2026-09-19),
     annualised by the bars a year its own dates show. No liquidity: currency
@@ -423,9 +369,7 @@ def _enrich_currencies(router, tabs: list[dict]) -> None:
 def _enrich_coins(router, tabs: list[dict], venue: bool) -> None:
     """Coins' volatility and liquidity (2026-09-19, the owner's request).
     Volatility from the last twenty DAILY closes, annualised over 365 days.
-    Liquidity: a vendor whose volume is worldwide dollars (CoinGecko) keeps
-    its 24-hour turnover; a venue's (Alpaca, `venue`) is the twenty-day mean
-    of close × volume ON THAT VENUE — Bitcoin about $1.2M a day there against
+    Liquidity: the twenty-day mean of close × volume ON ALPACA'S VENUE — Bitcoin about $1.2M a day there against
     tens of billions worldwide, so the payload marks it and the column says
     so (the owner's pick of three, 2026-09-19: fill it, labelled)."""
     syms = sorted({r["symbol"] for t in tabs for r in t["rows"]})
@@ -508,8 +452,6 @@ def _build(router, key: str, cat: str, top: int, mp: float, ml_floor: tuple[Opti
         tabs = _normalize_tabs(got, cat)
         if got.get("funds") in ("only", "exclude"):
             split_funds(tabs, got["funds"], fund_list(router))
-        if cat == "crypto" and source != "alpaca":
-            only_tradable_coins(router, tabs, got)
     # A vendor whose volume is one venue's (Alpaca's crypto: Bitcoin about
     # $1.2M a day there, 2026-09-15) cannot meet a market-wide turnover
     # floor — the default $1M left Crypto movers one row. Its default is
@@ -603,7 +545,7 @@ def category_movers(category: str, top: int = 20, min_price: Optional[float] = N
     with _lock:
         hit = _cache.get(key)
     if hit:
-        ttl = max(TTL_S.get(cat, 60), SOURCE_TTL_S.get(hit[1].get("source") or "", 0))
+        ttl = TTL_S.get(cat, 60)
         if hit[1].get("filling"):
             ttl = FILLING_TTL_S
         if time.time() - hit[0] >= ttl:

@@ -23,7 +23,7 @@ import logging
 import re
 import threading
 
-from alphadesk.ingest import coingecko, edgar, secfacts
+from alphadesk.ingest import edgar, secfacts
 
 log = logging.getLogger(__name__)
 
@@ -403,29 +403,8 @@ def _sources(sym: str, name: str, facts: dict | None, prof: dict | None) -> list
     qt = ((prof or {}).get("quote_type") or "").upper()
     if qt == "CRYPTOCURRENCY":
         base = sym.split("-")[0]
-        out.append({"label": "CoinGecko (search)", "url": f"https://www.coingecko.com/en/search?query={quote_plus(base)}"})
         out.append({"label": "CoinMarketCap (search)", "url": f"https://coinmarketcap.com/search/?q={quote_plus(base)}"})
     return out
-
-
-def _crypto_key() -> str | None:
-    """The user's own CoinGecko key from their market-data vendors, or None
-    — without it no coin profile is fetched (2026-09-13: no keyless calls)."""
-    try:
-        from alphadesk.providers import get_prices
-        vendor = get_prices().vendors.get("coingecko")
-        inner = getattr(vendor, "_inner", vendor)
-        return (getattr(inner, "api_key", "") or "").strip() or None
-    except Exception:
-        return None
-
-
-def _coin(sym: str) -> dict | None:
-    from alphadesk.providers.alpaca import coin_pair
-    key = _crypto_key()
-    if not coin_pair(sym) or not key:
-        return None
-    return coingecko.coin(sym, key)
 
 
 def _financials(sym: str, facts: dict | None) -> dict | None:
@@ -455,17 +434,12 @@ def profile(symbol: str) -> dict | None:
     # memo holds it) and the EDGAR half caches itself.
     facts = _edgar_facts(sym)
     prof, officers = _vendor_profile(sym)
-    # A coin has no company record and no reference entry; its CoinGecko
-    # record alone makes the page (2026-09-19: with the key connected, a
-    # coin still showed "needs a data key", because the coin was only
-    # looked up after a company record had been found).
-    coin = _coin(sym)
     out: dict | None
-    if not facts and not prof and sym not in REFERENCE and not coin:
+    if not facts and not prof and sym not in REFERENCE:
         out = None
     else:
         name = ((prof or {}).get("name") or (facts or {}).get("legal_name") or REFERENCE.get(sym, {}).get("name")
-                or (coin or {}).get("name") or sym)
+                or sym)
         out = {
             "symbol": sym,
             "name": name,
@@ -476,10 +450,8 @@ def profile(symbol: str) -> dict | None:
             "reference": REFERENCE.get(sym),
             "sources": _sources(sym, name, facts, prof),
             # The outside sources that are FETCHED, not only cited: the
-            # SEC's structured facts for a registrant, CoinGecko's record
-            # for a coin.
+            # SEC's structured facts for a registrant.
             "financials": _financials(sym, facts),
-            "coin": coin,
             # The share count, with its basis: a foreign filer's structured
             # record can stop years back, so it may be derived from a holder's
             # notice (ingest/edgar.shares_outstanding).

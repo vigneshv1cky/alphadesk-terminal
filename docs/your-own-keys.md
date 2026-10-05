@@ -63,7 +63,6 @@ that convenience for control, cost and privacy.
 | **Finnhub** | Key statistics, comparison, peers, analyst ratings, earnings history and calendar, company profiles; more on paid plans |
 | **Polygon** | Charts, quotes, dividends and splits, news; currencies and option movers on paid plans |
 | **Alpha Vantage** | Key statistics, analyst ratings, estimates, earnings calendar, company profiles, ETF holdings |
-| **CoinGecko** | The crypto list and coin profiles, worldwide prices and turnover |
 | **News feeds** (Polygon, Finnhub, Alpaca, Marketaux and more) | Your news window, merged across whichever you key |
 | **SEC EDGAR, US Treasury** | **No key.** Filings and their text, financial statements, insider trades, yield curve |
 

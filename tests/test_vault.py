@@ -461,14 +461,17 @@ class TestUserPricesKeys:
         rows = [k for k in store.list_user_keys("u3") if k["seam"] == "prices"]
         assert sorted(r["provider"] for r in rows) == ["fake-prices", "polygon"]
 
-    def test_the_crypto_seam_folds_into_market_data(self, store):
+    def test_a_saved_coingecko_key_is_dropped(self, store):
+        """CoinGecko was removed (2026-10-05): its saved keys have no vendor to serve."""
         store.create_user("u4", "d@e.f", "sso-only")
         from alphadesk.ledger import store as store_mod
         with store_mod._connect() as conn:
             conn.execute("INSERT INTO user_api_keys (user_id, seam, provider, config, key_hint, created_at)"
                          " VALUES ('u4', 'crypto', 'coingecko', 'sealed', 'cccc', '2026-01-01')")
+            conn.execute("INSERT INTO user_api_keys (user_id, seam, provider, config, key_hint, created_at)"
+                         " VALUES ('u4', 'prices', 'coingecko', 'sealed', 'cccc', '2026-01-01')")
         store_mod.init()
-        assert [(r["seam"], r["provider"]) for r in store_mod.list_user_keys("u4")] == [("prices", "coingecko")]
+        assert store_mod.list_user_keys("u4") == []
 
     def test_pre_prices_check_table_is_rebuilt(self, tmp_path, monkeypatch):
         import importlib
@@ -627,3 +630,12 @@ def test_init_drops_the_retired_agent_tables(store):
     with store._connect() as conn:
         for t in dead:
             assert not db.table_columns(conn, t), t
+
+
+def test_a_key_saved_for_a_removed_vendor_does_not_break_price_calls(monkeypatch):
+    from alphadesk.providers import registry
+    monkeypatch.setattr(registry, "_request_uid", lambda: "u9")
+    monkeypatch.setattr(registry, "_user_prices_rows", lambda uid: [
+        {"provider": "coingecko", "created_at": "2026-01-01", "config": "sealed"}])
+    router = registry.get_prices()
+    assert router.vendors == {} and router.uid == "u9"

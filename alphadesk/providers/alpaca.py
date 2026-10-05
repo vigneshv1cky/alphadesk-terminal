@@ -800,7 +800,7 @@ class AlpacaPrices:
         from alpaca.data.requests import CryptoBarsRequest
         import re
         pairs = {s: coin_pair(s) for s in symbols}
-        # Only symbols in Alpaca's own spelling: CoinGecko lists coins like
+        # Only symbols in Alpaca's own spelling: another vendor lists coins like
         # FIGR_HELOC, and ONE symbol Alpaca calls invalid fails the whole
         # request — every coin's volatility went blank on a reader with both
         # keys (2026-09-19). A coin Alpaca does not trade is simply absent.
@@ -1368,7 +1368,7 @@ class AlpacaPrices:
         # The change over the last 24 hours, like every crypto venue shows
         # and the column says (2026-09-15). The quote's change runs from
         # Alpaca's last daily bar close, a clock cut crypto does not observe:
-        # BTC read -2.48% there against CoinGecko's rolling -3.30%. One
+        # BTC read -2.48% there against a rolling -3.30%. One
         # request of 1-minute bars over the two hours before that moment, for
         # every coin, sets each base to within a minute (15-minute bars were
         # 0.13 points off on BTC); a coin quiet for two hours shows no change.
@@ -1427,6 +1427,8 @@ class AlpacaPrices:
         rank = {c: i for i, c in enumerate(COIN_ORDER)}
         changed = [r for r in rows if r["change_pct"] is not None]
         return {"all": sorted(rows, key=lambda r: (rank.get(r["symbol"].split("-")[0], len(rank)), r["symbol"]))[:top],
+                # Busiest first by dollars traded on this venue (price × coins).
+                "active": sorted([r for r in rows if r["volume"]], key=lambda r: -(r["price"] or 0) * r["volume"])[:top],
                 "gainers": sorted([r for r in changed if r["change_pct"] > 0], key=lambda r: -r["change_pct"])[:top],
                 "losers": sorted([r for r in changed if r["change_pct"] < 0], key=lambda r: r["change_pct"])[:top]}
 
@@ -1546,8 +1548,8 @@ class AlpacaPrices:
             c = self.crypto_movers(top)
             if not c:
                 return None
-            return {"tabs": [{"id": k, "label": lbl, "rows": c.get(k) or []}
-                             for k, lbl in (("all", "All"), ("gainers", "Gainers"), ("losers", "Losers"))],
+            return {"tabs": [{"id": ("most_active" if k == "active" else k), "label": lbl, "rows": c.get(k) or []}
+                             for k, lbl in (("all", "All"), ("active", "Active"), ("gainers", "Gainers"), ("losers", "Losers"))],
                     "source": "alpaca", "venue_volume": True}
         if category == "options":
             return self.option_movers(top)

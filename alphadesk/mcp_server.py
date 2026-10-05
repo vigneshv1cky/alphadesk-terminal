@@ -682,14 +682,9 @@ def price_history(symbol: str, range: str = "1Y") -> dict:
     return summarize_history(sym, key, bars, vendor)
 
 
-_RANGE_DAYS = {"1M": 31, "3M": 93, "6M": 186, "YTD": 366, "1Y": 365, "5Y": 365, "MAX": 365}
-
-
 def _daily_bars(sym: str, key: str) -> tuple[list[dict], str | None]:
     """(daily bars oldest first, the vendor that gave them). The reader's chart
-    vendor first; for a coin pair that vendor does not list ("NEAR-USD" on
-    Alpaca), CoinGecko's daily series on the reader's own key. Raises
-    ValueError when neither has any (2026-10-03)."""
+    vendor. Raises ValueError when it has none (2026-10-03)."""
     from alphadesk.app import dashboard
     from alphadesk.providers.alpaca import coin_pair
     err: Exception | None = None
@@ -700,14 +695,6 @@ def _daily_bars(sym: str, key: str) -> tuple[list[dict], str | None]:
             return bars, series.get("vendor") or series.get("source")
     except Exception as exc:                      # a pair the vendor does not list
         err = exc
-    if coin_pair(sym):
-        from alphadesk.ingest import coingecko
-        from alphadesk.ingest.company import _crypto_key
-        api_key = _crypto_key()
-        if api_key:
-            got = coingecko.daily_bars(sym, _RANGE_DAYS.get(key, 365), api_key)
-            if got:
-                return got, "coingecko"
     if err is not None and not coin_pair(sym):
         from fastapi import HTTPException
         if isinstance(err, HTTPException):
@@ -1443,8 +1430,7 @@ def related_assets(symbol: str) -> dict:
       director's biography, not a tie to the company), the first source (an accession for `filing_text`, or a story) and
       the sentence. Each carries `price_symbol` and `priceable`: true means
       `price_history` works for it; false means the reader's price vendors do
-      not carry it (a CoinGecko key on the Account page adds many coins, with
-      daily closes and volume only: no daily high or low).
+      not carry it.
     * `from_own_words.companies` — other listed companies the text names, with
       tickers (a counterparty, an acquirer, a partner).
     * `vendor_peers`, `funds` and `baskets` — the vendor's peers (check them

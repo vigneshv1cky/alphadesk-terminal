@@ -269,8 +269,3 @@ def test_a_plan_that_refuses_executives_still_returns_the_profile():
               "key-executives": EntitlementError("HTTP 402")})
     got = f.company_profile("X")
     assert got["name"] == "X" and got["officers"] == []
-
-
-def test_a_coin_names_only_a_coin_vendor():
-    from alphadesk.providers.catalogue import prompt
-    assert [v["name"] for v in prompt("coin_profile")["vendors"]] == ["coingecko"]

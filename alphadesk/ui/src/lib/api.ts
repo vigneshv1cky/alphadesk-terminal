@@ -893,7 +893,7 @@ export interface CompanyProfile {
   /** An authored note for an index, contract or pair no feed describes. */
   reference: { name: string; what: string; publisher: string; url: string; sources: { label: string; url: string }[] } | null
   /** FETCHED outside sources: the SEC's structured facts (registrants),
-   * CoinGecko's record (coins). */
+   * */
   financials: {
     as_of: string | null
     items: Record<string, { val: number; end: string; fy: number | null; accn: string | null; unit: string; concept: string }>
@@ -901,13 +901,6 @@ export interface CompanyProfile {
     source_url: string
     /** The predecessor registrant's facts, for a successor with none yet. */
     predecessor?: { cik: string; name: string } | null
-  } | null
-  coin: {
-    id: string; name: string | null; symbol: string; description: string; categories: string[]
-    homepage: string | null; whitepaper: string | null; explorers: string[]
-    genesis_date: string | null; hashing_algorithm: string | null; market_cap_rank: number | null
-    circulating_supply: number | null; total_supply: number | null; max_supply: number | null
-    url: string; attribution: string
   } | null
 }
 

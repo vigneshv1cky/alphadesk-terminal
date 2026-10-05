@@ -1158,17 +1158,9 @@ def api_company(symbol: str):
         raise HTTPException(400, "bad symbol")
     out = profile(sym)
     if not out:
-        # A COIN is not a missing company: nothing in EDGAR or a company
-        # feed knows it, and the coin record needs a vendor that carries
-        # coins. Saying which one fills the panel beats "no company record"
-        # (2026-09-15).
-        from alphadesk.providers import get_prices
+        # A COIN is not a missing company: nothing in EDGAR or a company feed
+        # knows it, and no coin record source is connected.
         from alphadesk.providers.alpaca import coin_pair
-        from alphadesk.ingest.company import _crypto_key
-        # The key prompt only when there IS no CoinGecko key; with one, a
-        # coin CoinGecko does not know is simply not found.
-        if coin_pair(sym) and not _crypto_key():
-            raise NeedsKey("coin_profile", signed_in=get_prices().uid is not None)
         raise HTTPException(404, f"no {'coin' if coin_pair(sym) else 'company'} record for {sym}")
     return out
 
@@ -2045,7 +2037,7 @@ def api_keys_set(seam: str, body: KeyIn, request: Request, background: Backgroun
     from alphadesk.providers import registry
     user_id = _key_user(request)
     if seam == "crypto":
-        seam = "prices"      # CoinGecko is a market-data vendor since 2026-09-13
+        seam = "prices"
     if seam not in ("news", "prices", "transcripts"):
         raise HTTPException(422, "seam must be 'news', 'prices' or 'transcripts'")
     if not vault.enabled():

@@ -49,8 +49,6 @@ VENDORS: dict[str, Vendor] = {
         Vendor("fmp", "Financial Modeling Prep", "https://site.financialmodelingprep.com/register",
                note="Paid plans: analyst targets and rating changes, estimates, fund holdings, institutional ownership, "
                     "earnings and economic calendars."),
-        Vendor("coingecko", "CoinGecko", "https://www.coingecko.com/en/developers/dashboard",
-               note="Free demo key: crypto markets by market cap, coin profiles."),
         # SCRAPED, and listed on no surface above, so the router reaches it
         # only after every keyed vendor the reader connected (2026-09-22).
         Vendor("nasdaq", "Nasdaq calendars", "", official=False,
@@ -110,10 +108,9 @@ SURFACES: dict[str, Surface] = {
         Surface("market_day", "A past session's whole market", (("polygon", FREE),)),
         Surface("etf_movers", "ETF movers", (("alpaca", FREE), ("polygon", PAID))),
         Surface("index_board", "Market tape", (("alpaca", FREE), ("polygon", PAID))),
-        # Alpaca first (2026-10-05, the owner: trading is on Alpaca, so its coins and its
-        # venue's numbers are the ones that matter); CoinGecko answers only for a
-        # reader with no Alpaca key.
-        Surface("crypto", "Crypto", (("alpaca", FREE), ("coingecko", FREE))),
+        # Alpaca alone (2026-10-05, the owner: trading is on Alpaca, so its coins and its
+        # venue's numbers are the ones that matter).
+        Surface("crypto", "Crypto", (("alpaca", FREE),)),
         # FMP first: its quotes answer on Premium (2026-09-15, 12 pairs in
         # 0.09s); Polygon's forex snapshot has not been run on a paid key.
         Surface("currencies", "Currencies", (("fmp", PAID), ("polygon", PAID))),
@@ -166,10 +163,7 @@ SURFACES: dict[str, Surface] = {
         Surface("sp500", "S&P 500 members", (("fmp", PAID),)),
         Surface("day_changes", "Today's change for many stocks at once", (("alpaca", FREE),)),
         Surface("ipo_calendar", "IPO calendar", (("fmp", PAID),)),
-        Surface("company_profile", "Company profile", (("fmp", PAID), ("alphavantage", FREE), ("finnhub", FREE), ("coingecko", FREE))),
-        # A COIN's record comes from a coin vendor alone: naming the company
-        # feeds would send a reader to a key that cannot answer (2026-09-15).
-        Surface("coin_profile", "Coin profile", (("coingecko", FREE),)),
+        Surface("company_profile", "Company profile", (("fmp", PAID), ("alphavantage", FREE), ("finnhub", FREE))),
         # Alpaca first: the reader's chain snapshots over the most traded
         # option markets (OPRA on a paid plan, the indicative feed otherwise).
         Surface("option_movers", "Option movers", (("alpaca", FREE), ("polygon", PAID))),

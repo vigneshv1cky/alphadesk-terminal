@@ -216,7 +216,7 @@ see [Accounts](#accounts-security-and-privacy)).
    and sign in with the email and password its operator set. There is one
    user per server and no sign-up.
 2. On the **Account** page, connect the market-data and news providers you
-   already use (Alpaca, FMP, Finnhub, Polygon, CoinGecko, …). SEC
+   already use (Alpaca, FMP, Finnhub, Polygon, …). SEC
    EDGAR and the US Treasury need no key.
 3. Optional: connect your own agent from the **Agent access** page (in the
    sidebar, beside Account) — a token for Claude Code, Codex, Cursor or
@@ -241,7 +241,7 @@ cp alphadesk/deploy/env.example .env
 | `ALPHADESK_AUTH` | for one person | `off`: a single local account with no sign-in |
 | `ALPHADESK_ACCESS_TOKEN` | if reachable beyond your machine | with sign-in off, one shared secret (16+ characters) the browser asks for once; see Quick start |
 | `ALPHADESK_DATABASE_URL` | no | a `postgresql://` URL (recommended: the Docker setup and `init --like-cloud` use one, and it enables the word-search index, which needs the `pg_trgm` extension); unset, SQLite in `ALPHADESK_DATA` (`~/.alphadesk`) |
-| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY`, `COINGECKO_API_KEY` | no | your own keys. Found at start, they are sealed into your account — the local one with sign-in off, or the login's — so the settings file is the record: they add or update keys, never delete them, and win over a key changed on the Account page at the next start. You can still connect keys on the Account page instead |
+| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `FMP_API_KEY`, `FINNHUB_API_KEY`, `POLYGON_API_KEY`, `ALPHAVANTAGE_API_KEY` | no | your own keys. Found at start, they are sealed into your account — the local one with sign-in off, or the login's — so the settings file is the record: they add or update keys, never delete them, and win over a key changed on the Account page at the next start. You can still connect keys on the Account page instead |
 | `ALPHADESK_SEMANTIC_SEARCH` | no | `off` skips the ~1.2 GB embedding model; search then matches words only. Without the `search` extra installed it is off anyway |
 | `ALPHADESK_LOGIN_EMAIL` + `ALPHADESK_LOGIN_PASSWORD_HASH` | no | with sign-in on: your own sign-in, and the only user the server accepts. With sign-in on it is required; the server will not start without it. At start the account is made, or an existing account with that email gets the password and keeps its data. While set, the password form is the only door. Make the hash with `python -m alphadesk.main hash-password`; `ALPHADESK_LOGIN_PASSWORD` (12+ characters) also works but is readable to anyone who can read the settings. The identifier is an email address |
 
@@ -341,8 +341,8 @@ and why. Bring evidence and open an issue.
 | **Landing** (`/`) | Product overview with blurred screenshots; sign-in |
 | **Markets** | A composable board: chart, equity overview, funds built on the stock, stock/ETF/crypto/currency/option movers, Treasury yields, heatmap, news. Stock and ETF movers **step back to a past session**, computed from the whole market that day against the session before it |
 | **Chart** | Full workspace: candles, line, area, step and other styles; 1-minute to multi-year intervals; indicators and templates; drawing tools (desktop, per visit); multi-chart layouts; overnight, pre-market, after-hours and weekend session shading |
-| **Analysis** | One name end to end: chart, filings, price performance, key statistics, earnings history and consensus, analysts, rating changes, financials as filed, splits, dividends, institutional and insider ownership, news. Funds add holdings and breakdown; coins get their CoinGecko record instead of stock-only panels |
-| **Profile** | Who a company is: EDGAR registrant facts, the latest 10-K/20-F business and properties sections verbatim, locations, officers; a coin's CoinGecko record |
+| **Analysis** | One name end to end: chart, filings, price performance, key statistics, earnings history and consensus, analysts, rating changes, financials as filed, splits, dividends, institutional and insider ownership, news. Funds add holdings and breakdown |
+| **Profile** | Who a company is: EDGAR registrant facts, the latest 10-K/20-F business and properties sections verbatim, locations, officers |
 | **News** | Each reader's merged feeds, three days deep, newest first; filter by words, source or board; search by words and by meaning; an in-page reader with full text where the feed carries it |
 | **Earnings** | The week's reporters, dated by the company's own release and joined to its SEC results filing; sessions predicted from history; estimates, actuals, surprise, market cap, volatility, liquidity |
 | **Calendars** | Economic releases, dividends, corroborated splits and IPOs |
@@ -381,7 +381,6 @@ and why. Bring evidence and open an issue.
 | **Polygon (Massive)** | Bars, quotes, movers, currencies, options |
 | **Finnhub** | Company metrics, profiles, earnings calendar and sessions |
 | **Alpha Vantage** | Company overview, bars |
-| **CoinGecko** | Worldwide crypto prices, volume, market caps and coin records |
 
 For each panel the reader's connected vendors are asked in a fixed,
 documented order; the first that carries the figure answers. Charts and
@@ -596,7 +595,6 @@ The full account, session, key-vault and agent-credential design is in
                        │                                              │
                        │  Per-reader DataRouter ──► reader's vendors  │──► Alpaca · FMP · Polygon
                        │    (ordered per panel; 428 when none carry)  │    Finnhub · Alpha Vantage
-                       │                                              │    CoinGecko
                        │  Background:                                 │
                        │    news poll (5 min) + held news sockets     │──► each reader's feeds
                        │    EDGAR results sweep (15 min, weekdays)    │──► SEC EDGAR
