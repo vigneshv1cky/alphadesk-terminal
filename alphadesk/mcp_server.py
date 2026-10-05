@@ -795,7 +795,6 @@ def price_history(symbol: str, range: str = "1Y") -> dict:
     up to 130 {date, close, volume} points (thinned evenly; `thinned_every`
     says how many sessions each point stands for).
     For intraday bars use price_chart."""
-    from alphadesk.app import dashboard
     key = (range or "1Y").upper()
     if key not in ("1M", "3M", "6M", "YTD", "1Y", "5Y", "MAX"):
         raise ValueError("range must be one of 1M, 3M, 6M, YTD, 1Y, 5Y, MAX")
@@ -1563,7 +1562,6 @@ def related_assets(symbol: str) -> dict:
     A mention is a mention: it says what the text names, not that the price
     follows it. Measure that with `price_history` on both and compare, as
     `what_moved` does for filings. `unavailable` names any source not read."""
-    from alphadesk.app import dashboard
     from alphadesk.desk import filings as filings_desk, related
     from alphadesk.identity import request_user
     from alphadesk.ingest.news import news_owner

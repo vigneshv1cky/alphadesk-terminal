@@ -580,8 +580,12 @@ const MOVERS_RESERVE = MOVERS_TOP * MOVERS_ROW_H + MOVERS_ROW_H
  * now, but the better fix is not to offer a wall to walk into.
  *
  * Raising this means paying for the requests: a deeper history wants either
- * a paid vendor plan or the sessions cached once for everyone. */
-const SESSIONS_BACK = 2
+ * a paid vendor plan or the sessions cached once for everyone.
+ *
+ * FIVE since 2026-10-05 (the owner: "lets go back 5 days"): finished days are
+ * recorded now and read back from the store, and Alpaca, which has no
+ * five-a-minute limit, is asked first for a day not yet recorded. */
+const SESSIONS_BACK = 5
 
 function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title: string }) {
   const category = initial
