@@ -1725,7 +1725,12 @@ def api_crypto_tradable():
     the list the crypto movers are cut to. Read-only, no keys in it."""
     from alphadesk.providers import get_prices
     coins = get_prices().get("crypto_symbols")
-    return {"count": len(coins or ()), "coins": sorted(coins or ()), "connected": bool(coins)}
+    try:
+        pairs = get_prices().get("crypto_pairs") or []
+    except Exception:
+        pairs = []
+    return {"count": len(coins or ()), "coins": sorted(coins or ()), "connected": bool(coins),
+            "pairs": list(pairs), "pairs_against_stablecoins": [p for p in pairs if not p.endswith("/USD")]}
 
 
 @app.get("/api/widgets/external")

@@ -1311,6 +1311,20 @@ class AlpacaPrices:
         self._assets["__crypto__"] = (time.time(), coins)
         return coins or None
 
+    def crypto_pairs(self) -> list[str] | None:
+        """Every crypto pair the account can trade, as Alpaca writes it
+        ("BAT/USD", "BTC/USDC"): the dollar pairs and the ones against
+        stablecoins. Read-only, kept a day with the coin list."""
+        hit = self._assets.get("__crypto_pairs__")
+        if hit and time.time() - hit[0] < 86400:
+            return hit[1]
+        from alpaca.trading.enums import AssetClass
+        from alpaca.trading.requests import GetAssetsRequest
+        assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
+        pairs = sorted(str(a.symbol) for a in assets if getattr(a, "tradable", True))
+        self._assets["__crypto_pairs__"] = (time.time(), pairs)
+        return pairs or None
+
     def crypto_movers(self, top: int = 20) -> dict | None:
         """Alpaca's USD coins. "all" runs largest coins first (COIN_ORDER, then
         the rest by symbol): Alpaca's volume counts only its own venue —
