@@ -222,3 +222,10 @@ def test_currencies_get_volatility_and_no_liquidity():
     eur, jpy = tabs[0]["rows"]
     assert eur["volatility"] > 0 and eur["liquidity"] is None
     assert jpy["volatility"] is None and jpy["liquidity"] is None
+
+
+def test_a_coin_traded_in_fractions_keeps_its_dollars():
+    """BTC trades 0.04 of a coin on Alpaca's venue; rounding the count first made its dollars zero."""
+    got = movers._normalize_tabs({"tabs": [{"id": "all", "label": "All", "rows": [
+        {"symbol": "BTC-USD", "price": 86000.0, "change_pct": 1.0, "volume": 0.04, "turnover": 3440.0, "display": "BTC"}]}]}, "crypto")
+    assert got[0]["rows"][0]["turnover"] == 3440.0

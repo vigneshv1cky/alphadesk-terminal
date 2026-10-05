@@ -1398,7 +1398,12 @@ class AlpacaPrices:
                  # BAT-USD shows as BAT; BAT-USDC as BAT/USDC, so the pairs tell apart.
                  "display": s.split("-")[0] if s.endswith("-USD") else s.replace("-", "/"), "price": r["price"],
                  "change_pct": rolling_change(r["price"], bars.get(s.replace("-", "/")) or [], now, 1),
-                 "volume": r.get("volume") or 0} for s, r in q.items()]
+                 "volume": r.get("volume") or 0,
+                 # Dollars traded, worked out HERE on the coin count: the list
+                 # builder rounds a volume to whole units, and Bitcoin trades a
+                 # fraction of one on this venue, so it read as zero dollars
+                 # (2026-10-05: BTC, ETH, AAVE, BCH, PAXG showed "—").
+                 "turnover": float(r["price"] or 0) * float(r.get("volume") or 0)} for s, r in q.items()]
         rows = stale_pair_changes_blanked(rows)
         return rows
 
