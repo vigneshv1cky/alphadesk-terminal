@@ -370,8 +370,16 @@ def register_coin_pairs(pairs) -> int:
     _load_names()
     if _names is None:
         return 0
+    pairs = [p for p in (pairs or ()) if "/" in str(p)]
+    if pairs:
+        # With the account's list in hand the search shows only what it can
+        # trade (2026-10-04: NEAR-USD was offered, then charted nothing — the
+        # fixed coin list had coins Alpaca does not carry).
+        keep = {str(p).upper().replace("/", "-") for p in pairs}
+        for sym in [k for k, v in _names.items() if v.get("class") == "crypto" and k not in keep]:
+            del _names[sym]
     added = 0
-    for pair in pairs or ():
+    for pair in pairs:
         base, _, quote = str(pair).upper().partition("/")
         if not base or not quote:
             continue

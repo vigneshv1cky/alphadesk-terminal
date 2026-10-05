@@ -295,3 +295,17 @@ def test_renamed_companies_are_found_by_their_old_names(monkeypatch):
                       ("viacom", "PSKY"), ("zoom video", "ZM")):
         assert cfg.search_symbols(word, limit=3)[0]["symbol"] == sym, word
     assert "PARA" not in [r["symbol"] for r in cfg.search_symbols("viacom", limit=3)][:1]
+
+
+def test_search_drops_coins_the_alpaca_account_does_not_carry(monkeypatch):
+    from alphadesk import config as cfg
+    monkeypatch.setattr(cfg, "_names", cfg._with_coins({}), raising=False)
+    monkeypatch.setattr(cfg, "_load_names", lambda: None, raising=False)
+    assert "NEAR-USD" in cfg._names
+    cfg.register_coin_pairs(["BAT/USD", "BAT/USDC", "BTC/USD"])
+    assert "NEAR-USD" not in cfg._names and "BAT-USDC" in cfg._names and "BTC-USD" in cfg._names
+    assert [r["symbol"] for r in cfg.search_symbols("near", limit=3)] == []
+    # No list (no Alpaca key): the fixed list stands.
+    monkeypatch.setattr(cfg, "_names", cfg._with_coins({}), raising=False)
+    cfg.register_coin_pairs(None)
+    assert "NEAR-USD" in cfg._names
