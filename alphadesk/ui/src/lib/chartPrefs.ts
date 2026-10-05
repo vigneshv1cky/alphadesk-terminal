@@ -2,6 +2,7 @@ import type { ChartRange } from "@/lib/api"
 import type { ScaleMode } from "@/components/chart/ChartCanvas"
 import { SERIES_KINDS, type SeriesKind } from "@/lib/series"
 import { DEFAULT_TIME_ZONE, validTimeZone } from "@/lib/chartTime"
+import { releaseLongMinutePins } from "@/lib/pinReset"
 import {
   INDICATORS, LEGACY, indicatorDef, newIndicator, type Indicator, type IndicatorType, quantizeParam, cleanParams } from "@/lib/indicators"
 
@@ -42,6 +43,10 @@ export type ChartPrefs = {
    * 1M's, and comes back with it; ranges without an entry open on the
    * finest bar they offer. */
   intervalByRange: Partial<Record<ChartRange, string>>
+  /** 1 once the one-time clearing of old second and minute pins on the long
+   * ranges has been applied to this record (2026-10-05). A record without it
+   * is cleaned as it loads; one with it keeps whatever the reader chose. */
+  pinsReset?: number
   type: SeriesKind
   scale: ScaleMode
   indicators: Indicator[]
@@ -136,8 +141,11 @@ export function normalizeChartPrefs(raw: unknown): ChartPrefs {
         // the range it was saved on.
         const r = pick(p.range, RANGES, DEFAULTS.range)
         if (p.intervalPinned === true && out[r] == null && typeof p.interval === "string" && INTERVAL_ID.test(p.interval)) out[r] = p.interval
-        return out
+        // ONCE (2026-10-05, the owner): second and minute bars pinned on a month or
+        // longer opened every long chart on tens of thousands of bars (lib/pinReset).
+        return releaseLongMinutePins(out, p.pinsReset === 1)
       })(),
+      pinsReset: 1,
       type: pick(p.type, KINDS, DEFAULTS.type),
       scale: pick(p.scale, SCALES, DEFAULTS.scale),
       indicators,

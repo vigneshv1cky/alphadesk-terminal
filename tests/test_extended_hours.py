@@ -129,10 +129,7 @@ class TestDefaultInterval:
         assert d("1D", table) == "1m" and d("5D", table) == "1m"      # where they were
         assert d("1M", table) == "5m"                                 # not 1m: 28,551 bars
         assert prices_mod._estimated_bars(31, "5m", table) <= prices_mod.DEFAULT_MAX_BARS
-        # No longer offered over a month (2026-10-05, the owner): minutes there are ~20,000
-        # bars to load and draw, and a pin on one is served as the bar below.
-        assert "1m" not in prices_mod.available_intervals("1M", table)
-        assert "5m" in prices_mod.available_intervals("1M", table)
+        assert "1m" in prices_mod.available_intervals("1M", table)    # still offered, if asked for
 
     def test_resolve_without_a_preference_is_the_default(self):
         for r in ("1D", "1M", "3M", "6M", "1Y"):
@@ -289,20 +286,3 @@ class TestNightFromPrints:
     def test_no_prints_is_no_bars(self):
         assert prices_mod.bars_from_trades([], 60) == []
         assert prices_mod.bars_from_trades([self._t("2026-09-15T21:00:10-04:00", 1, 1)], 0) == []
-
-
-class TestLongRangesStepUpAFinePin:
-    """2026-10-05: minutes pinned on a month or a quarter were 20,000 to 48,000 bars to load and draw."""
-
-    def test_a_pinned_minute_holds_for_a_day_and_a_week_and_steps_up_over_longer_ranges(self):
-        from alphadesk.ingest.prices import CHART_INTERVALS as T, PINNED_MAX_BARS, _estimated_bars, resolve_interval
-        assert resolve_interval("1D", "1m", T) == "1m" and resolve_interval("5D", "1m", T) == "1m"
-        for r, span in (("1M", 31), ("3M", 93), ("6M", 186)):
-            got = resolve_interval(r, "1m", T)
-            assert got != "1m"
-            assert got == "1d" or _estimated_bars(span, got, T) <= PINNED_MAX_BARS
-
-    def test_a_pin_that_is_affordable_is_left_alone(self):
-        from alphadesk.ingest.prices import CHART_INTERVALS as T, resolve_interval
-        assert resolve_interval("1M", "1h", T) == "1h" and resolve_interval("3M", "1d", T) == "1d"
-        assert resolve_interval("1M", "5m", T) == "5m"

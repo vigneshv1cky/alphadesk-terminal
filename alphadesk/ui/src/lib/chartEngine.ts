@@ -206,7 +206,7 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
     if (firstSave.current) { firstSave.current = false; return }
     const updatedAt = Date.now()
     stamp.current = updatedAt
-    const next: ChartPrefs = { range, type, scale, interval, intervalPinned, intervalByRange, indicators, paneHeights, timeZone, priceLine, updatedAt }
+    const next: ChartPrefs = { range, type, scale, interval, intervalPinned, intervalByRange, pinsReset: 1, indicators, paneHeights, timeZone, priceLine, updatedAt }
     saveChartPrefs(next, slot)
     if (!me?.user) return
     pending.current = next
@@ -220,7 +220,7 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
   }, [flush])
   /** The prefs as they stand — what a saved layout records for this cell. */
   const snapshotPrefs = (): ChartPrefs =>
-    ({ range, type, scale, interval, intervalPinned, intervalByRange, indicators, paneHeights, timeZone, priceLine })
+    ({ range, type, scale, interval, intervalPinned, intervalByRange, pinsReset: 1, indicators, paneHeights, timeZone, priceLine })
 
   // Drawings live here, not inside the canvas: that component is torn down
   // and rebuilt on every range or series change, and annotations must outlive

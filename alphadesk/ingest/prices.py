@@ -293,11 +293,6 @@ _MIN_OFFERABLE_BARS = 13
 #: which is what this module's own docstring already described. A reader who
 #: wants minutes over a month still picks them: the OFFER is unchanged.
 DEFAULT_MAX_BARS = 5_000
-#: Beyond this many days a range is a "long range": the most bars a fine
-#: interval may cost on it, estimated, before the next coarser bar is served.
-#: Under the default ceiling on purpose, so the default itself is never stepped.
-PIN_FREE_DAYS = 5
-PINNED_MAX_BARS = 4_000
 
 
 # Intraday bars are fetched over `span + 3` CALENDAR days (see the window built
@@ -425,19 +420,6 @@ def resolve_interval(range_key: str, wanted: str | None, table: dict | None = No
             if c is None or span <= c:
                 return key
         return max(table, key=lambda k: interval_seconds(table[k]))
-    # Past a week, a fine bar is a crowd, not a chart: a month of minutes is
-    # ~20,000 bars to fetch, hold and draw, and a quarter ~48,000 (2026-10-05,
-    # the owner: the chart is slow to load and hard to focus on; "larger bars
-    # by default on long ranges"). The finest bar under the ceiling is served
-    # instead, whether it was pinned or defaulted, and the menu does not offer
-    # what would be stepped up. A day and a week keep minutes and seconds.
-    if span > PIN_FREE_DAYS and _interval_minutes(want, table) is not None \
-            and _estimated_bars(span, want, table) > PINNED_MAX_BARS:
-        for key in sorted(table, key=lambda k: interval_seconds(table[k])):
-            if interval_seconds(table[key]) <= interval_seconds(table[want]):
-                continue
-            if _interval_minutes(key, table) is None or _estimated_bars(span, key, table) <= PINNED_MAX_BARS:
-                return key
     return want
 
 
