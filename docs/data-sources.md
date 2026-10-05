@@ -46,9 +46,9 @@ naming the vendors (and plans) that would.
 
 | Vendor | What it can serve | Terms |
 |---|---|---|
-| **Alpaca** (key + secret) | charts (consolidated SIP bars 15 minutes behind on the free plan, Blue Ocean overnight session), quotes, live stock and crypto streams, stock movers, market ETFs, crypto, option chains with implied volatility | [Alpaca terms](https://alpaca.markets/terms) |
+| **Alpaca** (key + secret) | charts (consolidated SIP bars 15 minutes behind on the free plan, Blue Ocean overnight session), quotes, live stock and crypto streams, stock movers, market ETFs, crypto, option chains with implied volatility, and a past session's whole market (each listed symbol's daily bar, read 500 symbols to a request and then recorded) | [Alpaca terms](https://alpaca.markets/terms) |
 | **Finnhub** | key statistics, comparison, peers, analyst ratings, earnings history and calendar, company profile; price targets, rating changes, short interest, fund holdings, institutional ownership, estimates on paid plans | [Finnhub terms](https://finnhub.io/terms-of-service) |
-| **Polygon** | charts, quotes, dividends and splits, news; currencies and option movers on paid plans | [Polygon terms](https://polygon.io/terms) |
+| **Polygon** | charts, quotes, dividends and splits, news, a past session's whole market in one request where the plan allows it; currencies and option movers on paid plans | [Polygon terms](https://polygon.io/terms) |
 | **Alpha Vantage** | key statistics, analyst ratings and mean target, estimates, earnings calendar, company profile, ETF holdings and sector weights | [Alpha Vantage terms](https://www.alphavantage.co/terms_of_service/) |
 | **Financial Modeling Prep** | key statistics, peers, grades, targets, ETF holdings, dividends and splits, earnings, economic calendar | [FMP terms](https://site.financialmodelingprep.com/terms-of-service) |
 | **News feeds** (Polygon, Finnhub, Alpaca, Marketaux, …) | the reader's news window, merged across the feeds they keyed | each provider's terms |
@@ -115,8 +115,9 @@ key.
 
 In its database (`ALPHADESK_DATA/ledger.db` locally, Postgres on Cloud SQL
 in production). **Vendor data is kept only as long as a feature reads it**,
-pruned hourly; removing a key deletes what that key fetched, and deleting an
-account deletes every row keyed to it.
+pruned hourly. Removing a key keeps what it fetched unless
+`ALPHADESK_PURGE_ON_KEY_REMOVAL` is set, and deleting an account deletes every
+row keyed to it.
 
 | Data | Whose | Kept |
 |---|---|---|
@@ -127,6 +128,7 @@ account deletes every row keyed to it.
 | Company announcements of report dates | the reader | 30 days past the report |
 | The earnings forecast log | the reader | 120 days |
 | Release-session habits, press-release checks | the reader | 3 days / 24 hours |
+| Recorded session closes: every listed symbol's open, high, low, close and volume for each finished session, compressed, one row per session | the reader | kept: a finished session never changes |
 | An owner's recent read requests, for prewarming (never the answers) | the owner | 24 hours unused |
 | SEC filing metadata, filing text, annual-report sections, 8-K/6-K results releases | public | kept |
 

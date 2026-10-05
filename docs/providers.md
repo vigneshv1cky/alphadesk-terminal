@@ -37,6 +37,7 @@ class PriceProvider(Protocol):
     def index_board(self) -> list[dict]: ...
     def crypto_movers(self, top=20) -> dict: ...
     def category_movers(self, category, top=20) -> dict | None: ...   # optional
+    def market_day(self, day) -> dict | None: ...    # optional: {SYMBOL: {open, high, low, close, volume}}
     def economic_calendar(self, start, end) -> list[dict] | None: ...  # optional
     # Options
     def option_expirations(self, symbol) -> list[str]: ...
@@ -69,6 +70,14 @@ that are easy to get wrong:
   from one request with no market-cap cap) and currencies (the forex
   snapshot mapped onto the same pairs the free tile lists); Finnhub and
   Alpha Vantage decline every category.
+- **`market_day` is a past session's whole market** (2026-10-05). Answer
+  every symbol's daily bar for one `YYYY-MM-DD` session, keyed by ticker, and
+  an EMPTY DICT (never `None`) for a day the market did not open: to the
+  router `None` means "not carried", so a holiday would read as a missing key.
+  Polygon answers in one grouped-daily request; Alpaca asks for each listed
+  symbol's bar, 500 to a request. A finished session's answer is recorded in
+  the store (`session_days`) and read from there afterwards, so a provider is
+  asked for a day only once; today's session is never recorded.
 - **`economic_calendar` is a keyed surface** (2026-09-13). Scheduled
   releases with consensus, previous and actual for an ISO date window:
   `[{time, country, event, impact, actual, estimate, previous, unit}]`.
@@ -180,9 +189,9 @@ A new market-data vendor therefore needs an implementation registered under
 | llm | `anthropic` | Messages API; JSON is forced by prefilling the assistant turn |
 | llm | `gemini` | Google's Generative Language API |
 | news | `polygon`, `alpaca`, `finnhub`, `benzinga`, `alphavantage`, `marketaux`, `fmp` | ticker-tagged feeds; a reader keying several has their window merged |
-| prices | `alpaca` | SIP bars (15 minutes behind on the free plan), overnight session, quotes, streams, movers, crypto (every pair the account trades, which also drives search and the crypto movers), option chains |
+| prices | `alpaca` | SIP bars (15 minutes behind on the free plan), overnight session, quotes, streams, movers, crypto (every pair the account trades, which also drives search and the crypto movers), option chains, a past session's whole market |
 | prices | `finnhub` | key statistics, analysts, peers, earnings history and calendar, profile; more on paid plans |
-| prices | `polygon` | bars, quotes, dividends and splits; currencies and option movers on paid plans |
+| prices | `polygon` | bars, quotes, dividends and splits, a past session's whole market (plan permitting); currencies and option movers on paid plans |
 | prices | `alphavantage` | overview-based statistics, estimates, earnings calendar |
 | prices | `fmp` | statistics, peers, grades, ETF holdings, corporate actions, economic calendar |
 

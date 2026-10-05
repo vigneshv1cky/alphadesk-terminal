@@ -521,7 +521,7 @@ rate-limited to 120 requests a minute per token.
 | Calendars | `earnings_calendar` (upcoming, and reported with `days_back`), `economic_calendar`, `corporate_calendar` |
 | Options | `option_expirations`, `option_chain`, `options_flow` |
 | What just happened | `catalysts` (filings, halts, government action and social posts on one tape), `filing_feed`, `trading_halts`, `government_actions`, `social_posts` |
-| A past session | `movers(session=…)` for stocks and ETFs, with `market_sessions` for the days the market actually opened |
+| A past session | `movers(session=…)` for stocks and ETFs, with `market_sessions` for the days the market actually opened; read from the recorded closes first |
 | Provenance | `data_sources` — whether a figure came from a licensed vendor or a scraped page |
 
 **Which address.** The tools answer only on the names the server is set to answer
@@ -614,6 +614,11 @@ and polling rather than streaming: see **[docs/rest-api.md](docs/rest-api.md)**.
   profiles, ratings, calendars) 14 days. Those copies make a restart warm,
   spare your vendor rate limit, and answer for a vendor that is down; live
   answers (quotes, movers, the tape, the intraday chart tail) are never kept.
+  **Recorded session closes** — each finished session's whole-market daily
+  bars, about 200 KB a session compressed — are kept for good whatever the
+  retention setting (only `ALPHADESK_PURGE_ON_KEY_REMOVAL` or deleting the
+  account removes them): a finished session never changes, and the record is what keeps
+  past-session movers working.
   Removing a key keeps what it fetched unless `ALPHADESK_PURGE_ON_KEY_REMOVAL`
   is set.
 - **Deletion**: a reader can delete their account, confirmed by typing its
@@ -678,7 +683,7 @@ alphadesk/
   main.py            entry point: web server + background loops, and the CLI
   app/               FastAPI app, auth, admin, agent access (tokens, OAuth, MCP mount), the plain-HTTP data API (rest_data.py)
   providers/         the plugin seams, vendor implementations, catalogue, per-reader router
-  ingest/            EDGAR, news polling, calendars, movers, prices and indicator math
+  ingest/            EDGAR, news polling, calendars, movers, recorded session closes, prices and indicator math
   desk/              screener window, filings, transcripts, market-today
   ledger/            store (SQLite / Postgres), database adapter, key vault and the sealed key export
   mcp_server.py      the agent tools
