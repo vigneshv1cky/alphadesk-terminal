@@ -313,6 +313,19 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
   // last 2,626 bars of the new series, as if they had merely grown. The
   // id changes when the server's bars for the new range actually land.
   const seriesKey = `${symbol}:${data?.range ?? range}:${data?.interval ?? ""}:${data?.source ?? ""}`
+  // THE PERCENT SCALE'S ZERO POINT (2026-10-05, the owner: the chart shakes in
+  // percent). It used to be the first bar on screen, so every pan or zoom moved it
+  // and the whole line slid. Now it is ONE bar for as long as the series lasts:
+  // the first bar the series opened with (older pages loading later do not move
+  // it), or the bar the reader picked from the right-click menu.
+  const [pctBase, setPctBase] = useState<{ key: string; t: string | null }>({ key: "", t: null })
+  const openedWith = useRef<{ key: string; t: string | null }>({ key: "", t: null })
+  if (data?.bars?.length && openedWith.current.key !== seriesKey) openedWith.current = { key: seriesKey, t: data.bars[0].t }
+  const percentFrom = pctBase.key === seriesKey && pctBase.t
+    ? pctBase.t
+    : (openedWith.current.key === seriesKey ? openedWith.current.t : null)
+  /** Move the percent scale's zero point to the bar at `t`; null returns it to the first bar. */
+  const setPercentFrom = useCallback((t: string | null) => setPctBase({ key: seriesKey, t }), [seriesKey])
   const [older, setOlder] = useState<{ key: string; bars: ChartBar[]; done: boolean; loading: boolean; note: string | null }>(
     { key: seriesKey, bars: [], done: false, loading: false, note: null })
   const pages = older.key === seriesKey ? older : { key: seriesKey, bars: [], done: false, loading: false, note: null }
@@ -541,7 +554,7 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
   return {
     provisional: replay.active ? [] : provisional,
     symbol, slot, applyPrefs, snapshotPrefs, replaceIndicators,
-    range, setRange, pickRange, type, setType, scale, setScale,
+    range, setRange, pickRange, type, setType, scale, setScale, percentFrom, setPercentFrom,
     loadHistory, historyLoading: pages.loading, historyDone: pages.done, historyNote: pages.note, focusFrom, seriesId: seriesKey,
     timeZone, setTimeZone, priceLine, setPriceLine, viewRef,
     interval, setInterval, intervalPinned, setIntervalPinned, pinInterval, intervalByRange,

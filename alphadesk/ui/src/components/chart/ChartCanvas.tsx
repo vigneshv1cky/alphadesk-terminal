@@ -5,7 +5,6 @@ import {
   RIGHT_GAP, scaledRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
 } from "@/lib/chartScales"
 import { bucketBars } from "@/lib/chartBuckets"
-import { percentBase } from "@/lib/percentBase"
 import { useSmoothedRange } from "@/lib/smoothRange"
 import { paneAxisLabel, paneExtent, sessionLayout, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
 import { heikinAshi, type SeriesKind } from "@/lib/series"
@@ -95,7 +94,7 @@ export function ChartCanvas({
   onProjection, onHover, overlays = [], seriesId, intraday = false, onRemovePane,
   onResizePane, onPaneSettings,
   timeZone = "America/New_York", interval, priceLine = true, live = false, controlRef, onContextMenu,
-  compares = [], topInset = 0,
+  compares = [], percentFrom = null, topInset = 0,
   ink,
   onNeedHistory, focusFrom = 0, historyNote, provisional = [],
 }: {
@@ -128,6 +127,9 @@ export function ChartCanvas({
   /** Other symbols on this pane, aligned to these bars, drawn percent-rebased
    * to the first visible bar. Only meaningful on the percent scale. */
   compares?: { symbol: string; color: string; points: { t: string; v: number }[] }[]
+  /** The bar the percent scale measures from: one bar for the life of the series, so
+   * panning and zooming move the chart sideways and do not slide the line. */
+  percentFrom?: string | null
   /** How the axis and the hover stamp label instants. */
   timeZone?: string
   /** The bar interval served, for the countdown to the forming bar's close. */
@@ -385,6 +387,12 @@ export function ChartCanvas({
    * projection all keep the real bars — the smoothing is for the eye. */
   const drawBars = useMemo(() => (kind === "heikin" ? heikinAshi(bars) : bars), [bars, kind])
 
+  // The percent scale's zero point: the close of the chosen bar, else the first bar.
+  const baseIdx = useMemo(() => {
+    const i = percentFrom ? bars.findIndex(b => b.t === percentFrom) : -1
+    return i >= 0 ? i : 0
+  }, [bars, percentFrom])
+  const baseClose = bars[baseIdx]?.c
   const targetRange = useMemo(() => {
     const ext = { ...visibleExtent(drawBars, from, to) }
     // The provisional line is on screen past the last bar: fit it too, or a
@@ -396,7 +404,7 @@ export function ChartCanvas({
       if (scaleMode !== "percent") return padRangeInset(ext.min, ext.max, topInset, priceH)
       // Percent rebases to the first visible bar, so two names of very
       // different price can be compared on one axis.
-      const base = percentBase(bars, from)
+      const base = baseClose
       if (!base) return padRangeInset(ext.min, ext.max, topInset, priceH)
       return padRangeInset((ext.min / base - 1) * 100, (ext.max / base - 1) * 100, topInset, priceH)
     })()
@@ -422,7 +430,7 @@ export function ChartCanvas({
     const centre = (fitted.min + fitted.max) / 2
     const half = (fitted.max - fitted.min) / 2 / yZoom
     return { min: centre - half, max: centre + half }
-  }, [bars, drawBars, from, to, scaleMode, yZoom, held, topInset, priceH, provSlots])
+  }, [bars, drawBars, from, to, scaleMode, yZoom, held, topInset, priceH, provSlots, baseClose])
   // The axis glides to the range the visible bars fit, rather than jumping at
   // every zoom or pan step; a new series, a hand-set scale and a dragged one
   // are not eased (lib/smoothRange).
@@ -441,7 +449,7 @@ export function ChartCanvas({
     [from, to, seriesW, priceH, min, max],
   )
   const log = scaleMode === "log"
-  const base = percentBase(bars, from) ?? 1
+  const base = baseClose ?? 1
   const toDisplay = useCallback(
     (p: number) => (scaleMode === "percent" ? (p / base - 1) * 100 : p), [scaleMode, base])
   const fromDisplay = useCallback(
@@ -487,7 +495,7 @@ export function ChartCanvas({
     return compares.flatMap(cs => {
       const byT = new Map(cs.points.map(p => [p.t, p.v]))
       let base: number | undefined
-      for (let i = Math.max(0, Math.floor(from)); i < bars.length; i++) {
+      for (let i = baseIdx; i < bars.length; i++) {
         const v = byT.get(bars[i].t)
         if (v != null) { base = v; break }
       }
@@ -501,7 +509,7 @@ export function ChartCanvas({
       }
       return [{ symbol: cs.symbol, d, color: cs.color }]
     })
-  }, [compares, scaleMode, s, log, from, visLo, visHi, bars, indexByTime])
+  }, [compares, scaleMode, s, log, baseIdx, visLo, visHi, bars, indexByTime])
 
 
   useEffect(() => {

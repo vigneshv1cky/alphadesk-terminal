@@ -17,6 +17,19 @@ export function easeRange(cur: Range, target: Range, factor: number): Range {
   return { min: cur.min + (target.min - cur.min) * factor, max: cur.max + (target.max - cur.max) * factor }
 }
 
+/** The range to settle on: it GROWS at once to hold the target, and only SHRINKS
+ * when the old range has become much larger than the target needs (2026-10-05,
+ * the owner: the chart shakes). The axis used to refit to the bars on screen at
+ * every step, so a small change in what was visible stretched and squeezed it.
+ * Here a small move leaves the axis where it is; a large one resets it. Pure. */
+export function settleRange(held: Range, target: Range, shrinkAbove = 1.35): Range {
+  if (![held.min, held.max, target.min, target.max].every(Number.isFinite)) return target
+  const need = target.max - target.min
+  if (need <= 0) return target
+  const union = { min: Math.min(held.min, target.min), max: Math.max(held.max, target.max) }
+  return (union.max - union.min) > need * shrinkAbove ? target : union
+}
+
 const reduced = () => {
   try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches } catch { return false }
 }
@@ -30,18 +43,22 @@ export function useSmoothedRange(target: Range, resetKey: string, enabled: boole
   const curRef = useRef<Range>(target)
   const keyRef = useRef(resetKey)
   const frame = useRef(0)
+  const settled = useRef<Range>(target)             // where the axis has settled, before easing
   useEffect(() => {
     if (!enabled || keyRef.current !== resetKey || reduced()) {
       keyRef.current = resetKey
       curRef.current = target
+      settled.current = target
       if (enabled) setCur(target)
       return
     }
+    const goal = settleRange(settled.current, target)
+    settled.current = goal
     const step = () => {
-      const next = easeRange(curRef.current, target, 0.32)
+      const next = easeRange(curRef.current, goal, 0.32)
       curRef.current = next
       setCur(next)
-      if (next !== target) frame.current = requestAnimationFrame(step)
+      if (next !== goal) frame.current = requestAnimationFrame(step)
     }
     cancelAnimationFrame(frame.current)
     frame.current = requestAnimationFrame(step)

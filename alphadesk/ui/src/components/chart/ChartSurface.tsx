@@ -64,6 +64,8 @@ function ContextMenu({ e, at, onClose, drawable }: { e: ChartEngine; at: MenuAt;
       {rule}
       {item("Logarithmic scale", () => e.setScale(e.scale === "log" ? "linear" : "log"), { on: e.scale === "log" })}
       {item("Percent scale", () => e.setScale(e.scale === "percent" ? "linear" : "percent"), { on: e.scale === "percent" })}
+      {e.scale === "percent" && item("Start percent from here", () => { if (at.time) e.setPercentFrom(at.time) }, { disabled: !at.time })}
+      {e.scale === "percent" && item("Start percent from the first bar", () => e.setPercentFrom(null))}
       {item("Last price line", () => e.setPriceLine(!e.priceLine), { on: e.priceLine })}
       {drawable && (
         <>
@@ -154,6 +156,7 @@ export function ChartSurface({ e, legendTop, toolsAlwaysOn = false, children }: 
           bars={e.bars}
           kind={e.type}
           scale={e.scale}
+          percentFrom={e.percentFrom}
           height={e.canvasHeight}
           panes={e.stacked}
           overlays={e.overlaySeries}
