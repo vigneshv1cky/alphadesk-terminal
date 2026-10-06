@@ -569,3 +569,55 @@ def test_a_day_recorded_before_the_vendor_was_kept_says_unknown(store):
         conn.execute("UPDATE session_days SET saved_at=? WHERE day=?", (store.SESSION_VENDOR_TRUSTED_FROM - 60, "2020-01-03"))
     assert store.session_day_vendor("reader-1", "2020-01-03") is None
     assert movers._recorded_vendor("reader-1", "2020-01-03") == "unknown"
+
+
+class _Feed(_Router):
+    def __init__(self, bars, events):
+        super().__init__(bars)
+        self._events = events
+
+    def get(self, method, *args, **kwargs):
+        if method == "corporate_action_events":
+            return self._events
+        return super().get(method, *args, **kwargs)
+
+
+def _corteva_bars(next_close=11.92, spike=88_000_000):
+    import datetime as dt
+    out = [_Bar((dt.date(2026, 9, 1) + dt.timedelta(days=i)).isoformat(), 80.0 - i * 0.1, 4_000_000) for i in range(29)]
+    out.append(_Bar("2026-09-30", 77.65, 4_000_000))
+    out.append(_Bar("2026-10-01", 12.57, spike))
+    out.append(_Bar("2026-10-02", next_close, 78_000_000))
+    return {"CTVA": out}
+
+
+def test_the_feed_names_the_event_and_the_row_is_marked():
+    rows = [movers._row("CTVA", 12.57, -83.81, 88_375_542)]
+    events = [{"type": "spin_offs", "symbols": ["CTVA", "NEWCO"], "dates": ["2026-10-01"], "detail": {}}]
+    out, _ = movers._verify_extremes(_Feed(_corteva_bars(), events), rows, "2026-09-30", "2026-10-01")
+    assert out[0]["corporate_action"] is True and out[0]["corporate_action_type"] == "spin-off"
+    assert not out[0].get("possible_corporate_event")
+
+
+def test_a_dividend_in_the_feed_does_not_explain_a_crash():
+    rows = [movers._row("CTVA", 12.57, -83.81, 88_375_542)]
+    events = [{"type": "cash_dividends", "symbols": ["CTVA"], "dates": ["2026-10-01"], "detail": {}}]
+    out, _ = movers._verify_extremes(_Feed(_corteva_bars(), events), rows, "2026-09-30", "2026-10-01")
+    assert not out[0].get("corporate_action")
+    assert out[0]["possible_corporate_event"] is True             # the pattern still fits
+
+
+def test_with_no_feed_the_pattern_marks_a_possible_event_without_changing_numbers():
+    rows = [movers._row("CTVA", 12.57, -83.81, 88_375_542)]
+    out, _ = movers._verify_extremes(_Router(_corteva_bars()), rows, "2026-09-30", "2026-10-01")
+    assert out[0]["possible_corporate_event"] is True
+    assert out[0]["volume_multiple"] >= 10
+    assert out[0]["change_pct"] == pytest.approx(-83.81, abs=0.1)
+
+
+def test_a_crash_that_keeps_falling_or_ordinary_volume_is_not_marked():
+    rows = [movers._row("CTVA", 12.57, -83.81, 88_375_542)]
+    falling = movers._verify_extremes(_Router(_corteva_bars(next_close=6.0)), rows, "2026-09-30", "2026-10-01")[0]
+    quiet = movers._verify_extremes(_Router(_corteva_bars(spike=8_000_000)), rows, "2026-09-30", "2026-10-01")[0]
+    assert not falling[0].get("possible_corporate_event")
+    assert not quiet[0].get("possible_corporate_event")

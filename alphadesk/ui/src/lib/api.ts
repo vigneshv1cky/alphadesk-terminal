@@ -1162,6 +1162,12 @@ export interface CategoryMoverRow {
    * change_pct is what a holder made, this is the price chart's own move. */
   price_change_pct?: number | null
   corporate_action?: boolean
+  /** What the vendor's corporate-actions feed called it ("spin-off", "name change"…). */
+  corporate_action_type?: string | null
+  /** No source names an event, but the day looks like one: volume this many
+   * times its twenty-session average and the new price held the next session. */
+  possible_corporate_event?: boolean
+  volume_multiple?: number | null
   volume: number
   /** Annualised realised volatility over the last twenty sessions, percent. */
   volatility: number | null

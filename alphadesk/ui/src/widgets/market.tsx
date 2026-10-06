@@ -430,14 +430,18 @@ function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = tru
               </TD>
               <TD align="right" mono className={`font-semibold ${up ? "text-gain" : "text-loss"}`}
                   title={r.corporate_action
-                    ? `Corporate action that day (a spin-off or dividend): the price moved ${moveText(r.price_change_pct ?? 0)} on the chart; a holder's move, counting what was handed out, was ${moveText(r.change_pct ?? 0)}`
+                    ? (r.price_change_pct != null && r.price_change_pct !== r.change_pct
+                      ? `Corporate action that day${r.corporate_action_type ? ` (${r.corporate_action_type})` : ""}: the price moved ${moveText(r.price_change_pct)} on the chart; a holder's move, counting what was handed out, was ${moveText(r.change_pct ?? 0)}`
+                      : `Corporate action that day${r.corporate_action_type ? `: ${r.corporate_action_type}` : ""}. The move is the price chart's and may not be what a holder made`)
+                    : r.possible_corporate_event
+                    ? `Possibly a corporate event, not trading: volume ${r.volume_multiple ?? "10+"}× its twenty-session average and the new price held the next session. No source names one, and a real crash can look the same`
                     : !session ? undefined
                     : r.extended ? `${session}, since the last close${r.extended_at ? ` · ${new Date(r.extended_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}${r.regular_pct != null ? ` · the closed session itself: ${moveText(r.regular_pct)}` : ""}`
                     : "No trade since the closing bell — this is the closed session's own move"}>
                 {r.change_pct == null ? "—" : bonds
                   ? `${up ? "+" : ""}${r.change_pct.toFixed(1)}`
                   : moveText(r.change_pct)}
-                {r.corporate_action && <span className="ml-0.5 text-muted-foreground">*</span>}
+                {(r.corporate_action || r.possible_corporate_event) && <span className="ml-0.5 text-muted-foreground">{r.corporate_action ? "*" : "?"}</span>}
               </TD>
               {rank && (
                 <TD align="right" mono>

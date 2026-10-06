@@ -975,6 +975,31 @@ class AlpacaPrices:
             return []
         return [{"t": b["ts"].isoformat(), "c": b["close"]} for b in got.get(sym, []) if b["ts"] > last]
 
+    def corporate_action_events(self, symbols: list[str], start: str, end: str) -> list[dict]:
+        """Alpaca's corporate-actions feed for these symbols between two ISO
+        dates: [{type, symbols, date, detail}] (2026-10-06). Read loosely — the
+        feed groups actions by type ("spin_offs", "name_changes", "stock_mergers",
+        …) and names symbols and dates differently per type, so every field
+        ending in "symbol" and every date field is collected rather than a
+        fixed set of names."""
+        out: list[dict] = []
+        token = None
+        for _ in range(10):
+            body = self._data_get("/v1/corporate-actions", symbols=",".join(sorted(set(symbols))),
+                                  start=start, end=end, limit=1000, page_token=token) or {}
+            groups = body.get("corporate_actions") or {}
+            for kind, items in (groups.items() if isinstance(groups, dict) else []):
+                for it in items or []:
+                    if not isinstance(it, dict):
+                        continue
+                    syms = sorted({str(v).upper() for k, v in it.items() if k.endswith("symbol") and v})
+                    dates = sorted({str(v)[:10] for k, v in it.items() if k.endswith("_date") and v})
+                    out.append({"type": kind, "symbols": syms, "dates": dates, "detail": it})
+            token = body.get("next_page_token")
+            if not token:
+                break
+        return out
+
     def adjusted_daily_history(self, symbols: list[str], sessions: int = 21) -> dict[str, list[dict]]:
         """daily_history adjusted for EVERY corporate action — splits, cash
         dividends and spin-offs — so a close-to-close change is what a holder

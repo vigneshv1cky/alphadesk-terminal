@@ -865,6 +865,7 @@ def session_movers(category: str, day: str, top: int = 20,
 
     rows, unverified = _verify_extremes(router, rows, prev_day, day)
     events = sum(1 for r in rows if r.get("corporate_action"))
+    maybe = sum(1 for r in rows if r.get("possible_corporate_event"))
     # NO "ALL" TAB HERE, deliberately. On the live list that tab is the
     # VENDOR'S curated set of what is moving; here the input is every symbol
     # that traded — twelve thousand of them — so "All" would be an arbitrary
@@ -924,8 +925,9 @@ def session_movers(category: str, day: str, top: int = 20,
                        f"twenty sessions ending {day}, not today's."
                        + (f" {unverified} large move{'s' if unverified != 1 else ''} left out: "
                           f"no second source to check it against." if unverified else "")
-                       + (f" {events} move{'s' if events != 1 else ''} measured through a corporate action "
-                          f"(spin-off or dividend): ranked by what a holder made." if events else "")),
+                       + (f" {events} move{'s' if events != 1 else ''} with a corporate action that day, marked." if events else "")
+                       + (f" {maybe} move{'s' if maybe != 1 else ''} marked as a possible corporate event: volume ten times "
+                          f"its average and the new price held the next session; no source names one." if maybe else "")),
               "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
                          "default_min_price": d_price, "default_min_turnover": d_turn},
               "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": tabs}
@@ -981,6 +983,73 @@ def _corporate_event(r: dict, adjusted: list[dict], prev_day: str, day: str) -> 
     return {**r, "price_change_pct": r["change_pct"], "change_pct": round(held, 2), "corporate_action": True}
 
 
+def _feed_events(router, syms: list[str], prev_day: str, day: str) -> list[dict]:
+    """The corporate actions a vendor's feed lists for these symbols around
+    the day, or [] when none carries the feed or it fails."""
+    try:
+        got = router.get("corporate_action_events", syms, prev_day, day) or []
+        log.info("corporate-actions feed: %d action(s) for %d symbol(s), %s to %s: %s", len(got), len(syms),
+                 prev_day, day, sorted({e.get("type") for e in got}))
+        return got
+    except Exception as exc:
+        log.info("session movers: corporate-actions feed unavailable (%s)", exc)
+        return []
+
+
+#: Plain names for the feed's groups.
+_EVENT_NAMES = {"spin_offs": "spin-off", "name_changes": "name change", "stock_mergers": "merger",
+                "cash_mergers": "cash merger", "stock_and_cash_mergers": "merger", "forward_splits": "split",
+                "reverse_splits": "reverse split", "unit_splits": "unit split", "stock_dividends": "stock dividend",
+                "cash_dividends": "dividend", "redemptions": "redemption", "worthless_removals": "delisting",
+                "rights_distributions": "rights distribution"}
+
+
+def _named_event(r: dict, events: list[dict], prev_day: str, day: str) -> dict:
+    """OPTION 1 (2026-10-06): the vendor's corporate-actions feed lists an
+    action for this symbol dated after the previous session and on or before
+    the day. The row is marked with what it was; its numbers stay unless an
+    earlier step already measured a holder's move."""
+    for e in events:
+        if r["symbol"] in e.get("symbols", []) and any(prev_day < d <= day for d in e.get("dates", [])):
+            if e.get("type") == "cash_dividends":
+                continue                              # a dividend cannot explain a move this size
+            out = {**r, "corporate_action": True,
+                   "corporate_action_type": _EVENT_NAMES.get(e.get("type"), str(e.get("type", "")).replace("_", " "))}
+            out.setdefault("price_change_pct", r.get("change_pct"))
+            return out
+    return r
+
+
+#: The pattern that marks a likely corporate event no source names: volume this
+#: many times its twenty-session average, and a new price level that holds.
+EVENT_VOLUME_MULTIPLE = 10.0
+EVENT_LEVEL_HOLDS_PCT = 15.0
+
+
+def _possible_event(r: dict, bars: list[dict], day: str) -> dict:
+    """OPTION 2 (2026-10-06): a move this size on volume at least ten times its
+    twenty-session average, with the next session's close within 15 percent of
+    the day's, looks like a separation or a share change rather than trading —
+    Corteva, 2026-10-01: 77.65 to 12.57 on 88M shares against about 4M a day,
+    then 11.92. Flagged as POSSIBLE, numbers unchanged: a real crash on huge
+    volume that does not bounce fits the pattern too."""
+    ordered = sorted((b for b in bars if b.get("ts")), key=lambda b: b["ts"])
+    dates = [b["ts"].date().isoformat() for b in ordered]
+    if day not in dates:
+        return r
+    i = dates.index(day)
+    before = [b.get("volume") or 0 for b in ordered[max(0, i - STATS_DAYS):i]]
+    if len(before) < 5 or i + 1 >= len(ordered):
+        return r
+    avg = sum(before) / len(before)
+    vol, close, nxt = ordered[i].get("volume") or 0, ordered[i].get("close"), ordered[i + 1].get("close")
+    if not avg or not close or not nxt or vol < EVENT_VOLUME_MULTIPLE * avg:
+        return r
+    if abs(nxt - close) / close * 100.0 > EVENT_LEVEL_HOLDS_PCT:
+        return r
+    return {**r, "possible_corporate_event": True, "volume_multiple": round(vol / avg, 1)}
+
+
 def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple[list[dict], int]:
     """Check the biggest moves against a SECOND source, and correct them.
 
@@ -1014,7 +1083,8 @@ def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple
         back = (date.today() - date.fromisoformat(day)).days
     except ValueError:
         back = 0
-    want = min(260, int(back * 0.72) + 8)
+    # Twenty more before the day, for the volume pattern (_possible_event).
+    want = min(280, int(back * 0.72) + 8 + STATS_DAYS)
     try:
         bars = router.get("daily_history", syms, want) or {}
     except Exception as exc:                  # no second vendor is not a verdict
@@ -1023,6 +1093,7 @@ def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple
     if not bars:
         return rows, 0
     adjusted = _adjusted_history(router, syms, want)
+    events = _feed_events(router, syms, prev_day, day)
     dropped = 0
     out: list[dict] = []
     for r in rows:
@@ -1038,6 +1109,9 @@ def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple
         if abs(truth - (r["change_pct"] or 0)) > 5.0:
             r = {**r, "price": now["close"], "change_pct": round(truth, 2)}
         r = _corporate_event(r, adjusted.get(r["symbol"]) or [], prev_day, day)
+        r = _named_event(r, events, prev_day, day)
+        if not r.get("corporate_action"):
+            r = _possible_event(r, bars.get(r["symbol"]) or [], day)
         out.append(r)
     return out, dropped
 
@@ -1334,7 +1408,7 @@ FINISHED_MIN_MEASURED = 0.8
 #: worked out again instead of read back (v2, 2026-10-05: the real source
 #: named, corporate events measured as a holder's move; v3: a recorded day
 #: saved before the source was kept says "unknown" rather than Polygon).
-FINISHED_VERSION = "v3"
+FINISHED_VERSION = "v4"
 
 
 def _finished_key(day: str, top: int, mp: float, mt: float, ml: float, mv: float) -> str:
