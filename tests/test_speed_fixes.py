@@ -215,3 +215,31 @@ def test_a_postgres_url_without_a_user_connects_as_the_os_user(monkeypatch):
     monkeypatch.setenv("ALPHADESK_DATABASE_URL", "postgresql://named@localhost/alphadesk")
     db._pg_connect()
     assert seen["user"] == "named"                                   # a user in the URL always wins
+
+
+def test_heavy_agent_tools_run_a_few_at_a_time(monkeypatch):
+    """A burst of heavy calls waits its turn instead of all running at once
+    (2026-10-06: four what_moved calls in one second slowed every page)."""
+    import time
+    from alphadesk import mcp_server
+    monkeypatch.setattr(mcp_server, "_heavy_slots", threading.BoundedSemaphore(2))
+    running, peak = [0], [0]
+    lock = threading.Lock()
+
+    def what_moved():
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        time.sleep(0.15)
+        with lock:
+            running[0] -= 1
+        return "ok"
+
+    capped = mcp_server._capped(what_moved)
+    threads = [threading.Thread(target=capped) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert peak[0] == 2
+    assert "what_moved" in mcp_server.HEAVY_TOOLS and "quote" not in mcp_server.HEAVY_TOOLS

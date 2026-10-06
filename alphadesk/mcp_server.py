@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
+import threading
 
 from mcp.server.fastmcp import FastMCP
 
@@ -2273,6 +2275,37 @@ def data_sources() -> dict:
             "connected": connected}
 
 
+#: THE HEAVY AGENT TOOLS RUN A FEW AT A TIME (2026-10-06). An agent sent four
+#: or more `what_moved` calls in the same second, each reading 45 days of
+#: bars, news and filings; on a 2-CPU server every call then took 40-58 s and
+#: the reader's own pages took 9-13 s behind them (802 of 2,000 requests over
+#: 5 s in one hour). Past this many at once a heavy call WAITS its turn — it is
+#: never refused — and everything else (pages, light tools) is untouched.
+HEAVY_TOOLS = frozenset({
+    "what_moved", "related_assets", "news_search", "movers_in_context", "candidates",
+    "earnings_calendar", "entry_facts", "options_flow", "priced_in", "analyst_view",
+})
+HEAVY_AT_ONCE = max(1, int(os.environ.get("ALPHADESK_AGENT_HEAVY_CONCURRENCY", "2") or 2))
+_heavy_slots = threading.BoundedSemaphore(HEAVY_AT_ONCE)
+
+
+def _capped(fn):
+    """`fn` behind the heavy-tool limit, for the worker thread it runs on. The
+    wait is logged when it passes a second, so a queue is visible."""
+    import functools
+    import time
+
+    @functools.wraps(fn)
+    def run(*args, **kwargs):
+        asked = time.perf_counter()
+        with _heavy_slots:
+            waited = time.perf_counter() - asked
+            if waited >= 1.0:
+                log.info("agent tool %s waited %.1fs for a heavy slot (%d at once)", fn.__name__, waited, HEAVY_AT_ONCE)
+            return fn(*args, **kwargs)
+    return run
+
+
 def _run_tools_in_threads() -> int:
     """Run every plain (sync) tool on a worker thread instead of the event loop.
 
@@ -2291,11 +2324,13 @@ def _run_tools_in_threads() -> int:
     from alphadesk import agent_log
 
     def threaded(fn):
+        body = _capped(fn) if fn.__name__ in HEAVY_TOOLS else fn
+
         @functools.wraps(fn)
         async def run(**kwargs):
             started, result, failed = time.perf_counter(), None, None
             try:
-                result = await anyio.to_thread.run_sync(functools.partial(fn, **kwargs))
+                result = await anyio.to_thread.run_sync(functools.partial(body, **kwargs))
                 return result
             except Exception as exc:
                 failed = exc
