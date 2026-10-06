@@ -1332,8 +1332,9 @@ FINISHED_MIN_MEASURED = 0.8
 
 #: Bumped when the calculation changes, so lists kept under an older one are
 #: worked out again instead of read back (v2, 2026-10-05: the real source
-#: named, corporate events measured as a holder's move).
-FINISHED_VERSION = "v2"
+#: named, corporate events measured as a holder's move; v3: a recorded day
+#: saved before the source was kept says "unknown" rather than Polygon).
+FINISHED_VERSION = "v3"
 
 
 def _finished_key(day: str, top: int, mp: float, mt: float, ml: float, mv: float) -> str:

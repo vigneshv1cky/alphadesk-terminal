@@ -1641,11 +1641,21 @@ def get_session_day(owner: str, day: str) -> dict[str, dict] | None:
         return None
 
 
+#: Rows saved before this instant name the FIRST vendor in line, not the one
+#: that answered (Polygon, while Alpaca served most of them), so their vendor
+#: is not read as a fact (2026-10-06 00:15 UTC).
+SESSION_VENDOR_TRUSTED_FROM = 1791245700
+
+
 def session_day_vendor(owner: str, day: str) -> str | None:
-    """Which vendor a recorded session's bars came from."""
+    """Which vendor a recorded session's bars came from, or None when the row
+    is missing or older than the vendor was recorded correctly."""
     with _connect() as conn:
-        row = conn.execute("SELECT vendor FROM session_days WHERE owner=? AND day=?", (owner, day)).fetchone()
-    return row["vendor"] if row else None
+        row = conn.execute("SELECT vendor, saved_at FROM session_days WHERE owner=? AND day=?",
+                           (owner, day)).fetchone()
+    if not row or int(row["saved_at"] or 0) < SESSION_VENDOR_TRUSTED_FROM:
+        return None
+    return row["vendor"]
 
 
 def recorded_session_days(owner: str) -> set[str]:

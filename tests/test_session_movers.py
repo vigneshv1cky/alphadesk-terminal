@@ -561,3 +561,11 @@ def test_a_past_list_names_the_vendor_that_served_it(store):
     movers._day_vendor.clear()
     movers._market_day(_Served(), "2020-01-02")             # read back from the record
     assert movers._day_vendor[("reader-1", "2020-01-02")] == "alpaca"
+
+
+def test_a_day_recorded_before_the_vendor_was_kept_says_unknown(store):
+    store.save_session_day("reader-1", "2020-01-03", "polygon", {"AAPL": {"close": 1.0, "volume": 1}})
+    with store._lock, store._connect() as conn:
+        conn.execute("UPDATE session_days SET saved_at=? WHERE day=?", (store.SESSION_VENDOR_TRUSTED_FROM - 60, "2020-01-03"))
+    assert store.session_day_vendor("reader-1", "2020-01-03") is None
+    assert movers._recorded_vendor("reader-1", "2020-01-03") == "unknown"
