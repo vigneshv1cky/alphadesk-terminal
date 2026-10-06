@@ -863,7 +863,7 @@ def session_movers(category: str, day: str, top: int = 20,
             continue
         rows.append(_row(sym, close, (close - was) / was * 100.0, vol))
 
-    rows, unverified = _verify_extremes(router, rows, prev_day, day)
+    rows, unverified = _verify_extremes(router, rows, prev_day, day, closes=today)
     events = sum(1 for r in rows if r.get("corporate_action"))
     maybe = sum(1 for r in rows if r.get("possible_corporate_event"))
     # NO "ALL" TAB HERE, deliberately. On the live list that tab is the
@@ -1004,11 +1004,12 @@ _EVENT_NAMES = {"spin_offs": "spin-off", "name_changes": "name change", "stock_m
                 "rights_distributions": "rights distribution"}
 
 
-def _named_event(r: dict, events: list[dict], prev_day: str, day: str) -> dict:
+def _named_event(r: dict, events: list[dict], prev_day: str, day: str, closes: dict) -> dict:
     """OPTION 1 (2026-10-06): the vendor's corporate-actions feed lists an
     action for this symbol dated after the previous session and on or before
-    the day. The row is marked with what it was; its numbers stay unless an
-    earlier step already measured a holder's move."""
+    the day. The row is marked with what it was. For a spin-off whose new
+    company traded that day, the ranked change becomes the holder's move
+    (_spin_off_move); otherwise the numbers stay as the chart has them."""
     for e in events:
         if r["symbol"] in e.get("symbols", []) and any(prev_day < d <= day for d in e.get("dates", [])):
             if e.get("type") == "cash_dividends":
@@ -1016,8 +1017,37 @@ def _named_event(r: dict, events: list[dict], prev_day: str, day: str) -> dict:
             out = {**r, "corporate_action": True,
                    "corporate_action_type": _EVENT_NAMES.get(e.get("type"), str(e.get("type", "")).replace("_", " "))}
             out.setdefault("price_change_pct", r.get("change_pct"))
+            if e.get("type") == "spin_offs":
+                log.info("spin-off entry for %s: %s", r["symbol"], e.get("detail"))
+                held = _spin_off_move(r, e.get("detail") or {}, closes)
+                if held:
+                    out.update(held)
             return out
     return r
+
+
+def _spin_off_move(r: dict, d: dict, closes: dict) -> Optional[dict]:
+    """A holder's move through a spin-off: the parent's close plus the new
+    company's close times the shares of it handed out per parent share,
+    against the parent's previous close (2026-10-06). The field names are
+    Alpaca's (source/new symbol and rate). None when the entry lacks them,
+    names a different parent, or the new company has no close that day."""
+    try:
+        parent = str(d.get("source_symbol") or "").upper()
+        new = str(d.get("new_symbol") or "").upper()
+        ratio = float(d.get("new_rate")) / float(d.get("source_rate"))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+    if parent != r["symbol"] or not new or new == parent or not (ratio > 0):
+        return None
+    new_close = (closes.get(new) or {}).get("close")
+    close, chg = r.get("price"), r.get("change_pct")
+    if not new_close or not close or chg is None or chg <= -100:
+        return None
+    was = close / (1 + chg / 100.0)
+    held = ((close + ratio * float(new_close)) / was - 1) * 100.0
+    return {"change_pct": round(held, 2), "spin_off": {"new_symbol": new, "shares_per_share": round(ratio, 6),
+                                                       "new_close": float(new_close)}}
 
 
 #: The pattern that marks a likely corporate event no source names: volume this
@@ -1050,7 +1080,8 @@ def _possible_event(r: dict, bars: list[dict], day: str) -> dict:
     return {**r, "possible_corporate_event": True, "volume_multiple": round(vol / avg, 1)}
 
 
-def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple[list[dict], int]:
+def _verify_extremes(router, rows: list[dict], prev_day: str, day: str,
+                     closes: Optional[dict] = None) -> tuple[list[dict], int]:
     """Check the biggest moves against a SECOND source, and correct them.
 
     MEASURED, not assumed (2026-09-26): asked for 2026-09-25, this list put
@@ -1109,7 +1140,7 @@ def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple
         if abs(truth - (r["change_pct"] or 0)) > 5.0:
             r = {**r, "price": now["close"], "change_pct": round(truth, 2)}
         r = _corporate_event(r, adjusted.get(r["symbol"]) or [], prev_day, day)
-        r = _named_event(r, events, prev_day, day)
+        r = _named_event(r, events, prev_day, day, closes or {})
         if not r.get("corporate_action"):
             r = _possible_event(r, bars.get(r["symbol"]) or [], day)
         out.append(r)
@@ -1408,7 +1439,7 @@ FINISHED_MIN_MEASURED = 0.8
 #: worked out again instead of read back (v2, 2026-10-05: the real source
 #: named, corporate events measured as a holder's move; v3: a recorded day
 #: saved before the source was kept says "unknown" rather than Polygon).
-FINISHED_VERSION = "v4"
+FINISHED_VERSION = "v5"
 
 
 def _finished_key(day: str, top: int, mp: float, mt: float, ml: float, mv: float) -> str:

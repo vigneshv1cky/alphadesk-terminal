@@ -431,7 +431,7 @@ function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = tru
               <TD align="right" mono className={`font-semibold ${up ? "text-gain" : "text-loss"}`}
                   title={r.corporate_action
                     ? (r.price_change_pct != null && r.price_change_pct !== r.change_pct
-                      ? `Corporate action that day${r.corporate_action_type ? ` (${r.corporate_action_type})` : ""}: the price moved ${moveText(r.price_change_pct)} on the chart; a holder's move, counting what was handed out, was ${moveText(r.change_pct ?? 0)}`
+                      ? `Corporate action that day${r.corporate_action_type ? ` (${r.corporate_action_type})` : ""}: the price moved ${moveText(r.price_change_pct)} on the chart; a holder's move, counting what was handed out, was ${moveText(r.change_pct ?? 0)}${r.spin_off ? ` — ${r.spin_off.shares_per_share} ${r.spin_off.new_symbol} per share, closing at ${r.spin_off.new_close}` : ""}`
                       : `Corporate action that day${r.corporate_action_type ? `: ${r.corporate_action_type}` : ""}. The move is the price chart's and may not be what a holder made`)
                     : r.possible_corporate_event
                     ? `Possibly a corporate event, not trading: volume ${r.volume_multiple ?? "10+"}× its twenty-session average and the new price held the next session. No source names one, and a real crash can look the same`

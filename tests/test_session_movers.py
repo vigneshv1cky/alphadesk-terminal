@@ -621,3 +621,27 @@ def test_a_crash_that_keeps_falling_or_ordinary_volume_is_not_marked():
     quiet = movers._verify_extremes(_Router(_corteva_bars(spike=8_000_000)), rows, "2026-09-30", "2026-10-01")[0]
     assert not falling[0].get("possible_corporate_event")
     assert not quiet[0].get("possible_corporate_event")
+
+
+def test_a_spin_off_is_ranked_by_the_parent_plus_what_holders_received():
+    # Parent 77.65 to 12.57; each share received 1 NEWCO closing at 66.00:
+    # a holder went from 77.65 to 78.57, +1.18%.
+    rows = [movers._row("CTVA", 12.57, -83.81, 88_375_542)]
+    events = [{"type": "spin_offs", "symbols": ["CTVA", "NEWCO"], "dates": ["2026-10-01"],
+               "detail": {"source_symbol": "CTVA", "new_symbol": "NEWCO", "source_rate": 1, "new_rate": 1,
+                          "ex_date": "2026-10-01"}}]
+    closes = {"CTVA": {"close": 12.57}, "NEWCO": {"close": 66.0}}
+    out, _ = movers._verify_extremes(_Feed(_corteva_bars(), events), rows, "2026-09-30", "2026-10-01", closes=closes)
+    row = out[0]
+    assert row["change_pct"] == pytest.approx(1.18, abs=0.05)
+    assert row["price_change_pct"] == pytest.approx(-83.81, abs=0.05)
+    assert row["spin_off"] == {"new_symbol": "NEWCO", "shares_per_share": 1.0, "new_close": 66.0}
+
+
+def test_a_spin_off_without_a_priced_new_company_keeps_the_chart_move():
+    rows = [movers._row("CTVA", 12.57, -83.81, 88_375_542)]
+    events = [{"type": "spin_offs", "symbols": ["CTVA", "NEWCO"], "dates": ["2026-10-01"],
+               "detail": {"source_symbol": "CTVA", "new_symbol": "NEWCO", "source_rate": 1, "new_rate": 1}}]
+    out, _ = movers._verify_extremes(_Feed(_corteva_bars(), events), rows, "2026-09-30", "2026-10-01", closes={})
+    assert out[0]["change_pct"] == pytest.approx(-83.81, abs=0.05) and out[0]["corporate_action"] is True
+    assert "spin_off" not in out[0]

@@ -1164,6 +1164,9 @@ export interface CategoryMoverRow {
   corporate_action?: boolean
   /** What the vendor's corporate-actions feed called it ("spin-off", "name change"…). */
   corporate_action_type?: string | null
+  /** A spin-off measured as a holder's move: the new company and how many of
+   * its shares each parent share received. */
+  spin_off?: { new_symbol: string; shares_per_share: number; new_close: number } | null
   /** No source names an event, but the day looks like one: volume this many
    * times its twenty-session average and the new price held the next session. */
   possible_corporate_event?: boolean
