@@ -645,3 +645,32 @@ def test_a_spin_off_without_a_priced_new_company_keeps_the_chart_move():
     out, _ = movers._verify_extremes(_Feed(_corteva_bars(), events), rows, "2026-09-30", "2026-10-01", closes={})
     assert out[0]["change_pct"] == pytest.approx(-83.81, abs=0.05) and out[0]["corporate_action"] is True
     assert "spin_off" not in out[0]
+
+
+def test_volatility_after_a_spin_off_measures_the_business_that_remained():
+    import datetime as dt
+    base = dt.date(2026, 9, 1)
+    ctva = [_Bar((base + dt.timedelta(days=i)).isoformat(), 80.0 + (0.5 if i % 2 else -0.5), 4_000_000) for i in range(29)]
+    ctva += [_Bar("2026-09-30", 77.65), _Bar("2026-10-01", 12.57), _Bar("2026-10-02", 12.50)]
+    events = [{"type": "spin_offs", "symbols": ["CTVA", "VYLR"], "dates": ["2026-10-01"],
+               "detail": {"source_symbol": "CTVA", "new_symbol": "VYLR", "source_rate": 1, "new_rate": 1,
+                          "ex_date": "2026-10-01"}}]
+
+    class _R(_Feed):
+        def get(self, method, *args, **kwargs):
+            if method == "daily_history" and args[0] == ["VYLR"]:
+                return {"VYLR": [_Bar("2026-10-01", 68.26)]}
+            return super().get(method, *args, **kwargs)
+
+    raw = movers.stats_from_bars([b["close"] for b in ctva], [b["volume"] for b in ctva])["volatility"]
+    fixed_bars = movers.adjust_for_spin_offs(_R({"CTVA": ctva}, events), {"CTVA": ctva})["CTVA"]
+    fixed = movers.stats_from_bars([b["close"] for b in fixed_bars], [b["volume"] for b in fixed_bars])["volatility"]
+    assert raw > 300 and fixed < 30
+    # Closes from the day itself on are untouched; the ones before are scaled.
+    assert fixed_bars[-2]["close"] == 12.57
+    assert fixed_bars[-3]["close"] == pytest.approx(77.65 * 12.57 / (12.57 + 68.26), rel=1e-6)
+
+
+def test_a_crash_with_no_spin_off_listed_is_left_alone():
+    bars = {"WYY": [_Bar("2026-09-24", 4.05), _Bar("2026-09-25", 2.0)]}
+    assert movers.adjust_for_spin_offs(_Feed(bars, []), bars) is bars

@@ -298,7 +298,7 @@ def _enrich_stats(router, tabs: list[dict], category: str, venue: bool = False) 
     syms = sorted({r["symbol"] for t in tabs for r in t["rows"] if r.get("volatility") is None})
     if not syms:
         return
-    bars = router.get("daily_history", syms, STATS_DAYS + 1) or {}
+    bars = adjust_for_spin_offs(router, router.get("daily_history", syms, STATS_DAYS + 1) or {})
     for t in tabs:
         for r in t["rows"]:
             b = bars.get(r["symbol"])
@@ -341,6 +341,7 @@ def _enrich_session_stats(router, tabs: list[dict], day: str) -> None:
         # along, and a vendor refusing them must not take the movers with it.
         log.debug("session movers: no daily history for the statistics columns (%s)", exc)
         return
+    bars = adjust_for_spin_offs(router, bars)
     ny = ZoneInfo("America/New_York")
     for t in tabs:
         for r in t["rows"]:
@@ -983,6 +984,67 @@ def _corporate_event(r: dict, adjusted: list[dict], prev_day: str, day: str) -> 
     return {**r, "price_change_pct": r["change_pct"], "change_pct": round(held, 2), "corporate_action": True}
 
 
+def adjust_for_spin_offs(router, bars: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    """Daily bars with every close BEFORE a spin-off scaled to the business
+    that remained, so volatility and liquidity measure what a holder of
+    either share lived through (2026-10-06, the owner's call). Corteva's
+    77.65 to 12.57 on 2026-10-01 was the VYLR business leaving, one share per
+    share, not an 84% swing, and it read as 644% volatility for twenty
+    sessions on the live tile and the past ones alike.
+
+    Cheap by construction: only a symbol with a day that moved 50 percent or
+    more is looked up, in one corporate-actions request for all of them, and
+    the new companies' closes in one history request. A symbol with no
+    spin-off listed keeps its bars untouched — a real crash stays a crash."""
+    jumps: dict[str, list[str]] = {}
+    for sym, rows in bars.items():
+        seq = sorted((b for b in rows if b.get("ts") and b.get("close")), key=lambda b: b["ts"])
+        for a, b in zip(seq, seq[1:]):
+            if abs(b["close"] / a["close"] - 1) * 100.0 >= _SPLIT_CHECK_PCT:
+                jumps.setdefault(sym, []).append(b["ts"].date().isoformat())
+    if not jumps:
+        return bars
+    first = min(d for ds in jumps.values() for d in ds)
+    last = max(d for ds in jumps.values() for d in ds)
+    try:
+        events = router.get("corporate_action_events", sorted(jumps),
+                            (date.fromisoformat(first) - timedelta(days=1)).isoformat(), last) or []
+    except Exception as exc:
+        log.info("spin-off adjustment: corporate-actions feed unavailable (%s)", exc)
+        return bars
+    spins = []
+    for e in events:
+        d = e.get("detail") or {}
+        parent, new = str(d.get("source_symbol") or "").upper(), str(d.get("new_symbol") or "").upper()
+        ex = str(d.get("ex_date") or "")[:10]
+        try:
+            ratio = float(d.get("new_rate")) / float(d.get("source_rate"))
+        except (TypeError, ValueError, ZeroDivisionError):
+            continue
+        if e.get("type") == "spin_offs" and parent in jumps and ex in jumps[parent] and new and ratio > 0:
+            spins.append((parent, new, ex, ratio))
+    if not spins:
+        return bars
+    try:
+        newbars = router.get("daily_history", sorted({s[1] for s in spins}), STATS_DAYS + SESSION_STATS_SLACK + 40) or {}
+    except Exception as exc:
+        log.info("spin-off adjustment: no history for the new companies (%s)", exc)
+        return bars
+    out = dict(bars)
+    for parent, new, ex, ratio in spins:
+        p_close = next((b["close"] for b in bars[parent] if b.get("ts") and b["ts"].date().isoformat() == ex), None)
+        n_close = next((b["close"] for b in newbars.get(new) or [] if b.get("ts") and b["ts"].date().isoformat() == ex), None)
+        if not p_close or not n_close:
+            continue
+        factor = p_close / (p_close + ratio * n_close)
+        out[parent] = [({**b, "close": b["close"] * factor, "open": (b.get("open") or 0) * factor,
+                         "high": (b.get("high") or 0) * factor, "low": (b.get("low") or 0) * factor}
+                        if b.get("ts") and b["ts"].date().isoformat() < ex else b) for b in bars[parent]]
+        log.info("spin-off adjustment: %s before %s scaled by %.4f (%s %.4f per share at %.2f)",
+                 parent, ex, factor, new, ratio, n_close)
+    return out
+
+
 def _feed_events(router, syms: list[str], prev_day: str, day: str) -> list[dict]:
     """The corporate actions a vendor's feed lists for these symbols around
     the day, or [] when none carries the feed or it fails."""
@@ -1439,7 +1501,7 @@ FINISHED_MIN_MEASURED = 0.8
 #: worked out again instead of read back (v2, 2026-10-05: the real source
 #: named, corporate events measured as a holder's move; v3: a recorded day
 #: saved before the source was kept says "unknown" rather than Polygon).
-FINISHED_VERSION = "v5"
+FINISHED_VERSION = "v6"
 
 
 def _finished_key(day: str, top: int, mp: float, mt: float, ml: float, mv: float) -> str:
