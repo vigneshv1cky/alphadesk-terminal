@@ -2043,13 +2043,30 @@ def save_forecasts(owner: str, vendor: str, captured_on: str, rows: list[dict]) 
              1 if r.get("confirmed") else 0) for r in rows]
     if not vals:
         return 0
+    # A HUNDRED ROWS A STATEMENT, NOT ONE (2026-10-06). One round trip per row
+    # took 132 s for one calendar build on Cloud SQL just after a restart. A
+    # vendor lists a symbol once per day, so a chunk never names the same row
+    # twice (which an upsert in one statement would refuse); duplicates are
+    # dropped first in case one does.
+    seen: dict[tuple, tuple] = {}
+    for v in vals:
+        seen[(v[0], v[1], v[2], v[3])] = v
+    vals = list(seen.values())
     with _lock, _connect() as conn:
-        conn.executemany(
-            "INSERT INTO earnings_forecasts (owner, vendor, symbol, captured_on, report_date, session, confirmed)"
-            " VALUES (?,?,?,?,?,?,?)"
-            " ON CONFLICT (owner, vendor, symbol, captured_on) DO UPDATE SET"
-            " report_date=excluded.report_date, session=excluded.session, confirmed=excluded.confirmed", vals)
+        for i in range(0, len(vals), FORECAST_CHUNK):
+            part = vals[i:i + FORECAST_CHUNK]
+            conn.execute(
+                "INSERT INTO earnings_forecasts (owner, vendor, symbol, captured_on, report_date, session, confirmed)"
+                " VALUES " + ",".join(["(?,?,?,?,?,?,?)"] * len(part)) +
+                " ON CONFLICT (owner, vendor, symbol, captured_on) DO UPDATE SET"
+                " report_date=excluded.report_date, session=excluded.session, confirmed=excluded.confirmed",
+                tuple(x for row in part for x in row))
     return len(vals)
+
+
+#: Rows per forecast-log statement: 7 values each, under SQLite's oldest
+#: 999-variable limit.
+FORECAST_CHUNK = 100
 
 
 def forecasts_for(owner: str, report_from: str, report_to: str) -> list[dict]:

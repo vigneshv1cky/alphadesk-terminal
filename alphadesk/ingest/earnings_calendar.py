@@ -447,23 +447,48 @@ def _capture_forecasts(router, per_vendor: list[tuple[str, list[dict]]], combine
     it. A failure never costs the calendar."""
     if not router.uid:
         return
+    from alphadesk.config import now_et
+    now = now_et()
+    today = now.date().isoformat()
+    # PICKED HERE, WRITTEN ON A BACKGROUND THREAD (2026-10-06). The write is a
+    # side record for later comparison and nothing the caller waits for, yet it
+    # sat in the request: one calendar build spent 132 of its 142 s here and
+    # the agent's candidates call timed out. The rows are copied out now, while
+    # the calendar is still theirs to change.
+    work = []
+    for name, rows in [*per_vendor, ("calendar", combined)]:
+        key = (router.uid, name, today, now.hour, span)
+        if _captured.get(key):
+            continue
+        _captured[key] = True
+        picked = [dict(r) for r in forecast_rows(rows, today)]
+        if picked:
+            work.append((name, picked))
+    if len(_captured) > 5000:
+        _captured.clear()
+    if work:
+        _forecast_writer().submit(_write_forecasts, router.uid, today, work)
+
+
+def _write_forecasts(uid: str, today: str, work: list[tuple[str, list[dict]]]) -> None:
     try:
-        from alphadesk.config import now_et
         from alphadesk.ledger import store
-        now = now_et()
-        today = now.date().isoformat()
-        for name, rows in [*per_vendor, ("calendar", combined)]:
-            key = (router.uid, name, today, now.hour, span)
-            if _captured.get(key):
-                continue
-            picked = forecast_rows(rows, today)
-            if picked:
-                store.save_forecasts(router.uid, name, today, picked)
-            _captured[key] = True
-        if len(_captured) > 5000:
-            _captured.clear()
+        for name, picked in work:
+            store.save_forecasts(uid, name, today, picked)
     except Exception as exc:
         log.warning("earnings forecast capture failed: %s", exc)
+
+
+_writer = None
+
+
+def _forecast_writer():
+    """One thread, so captures queue rather than pile onto the database."""
+    global _writer
+    if _writer is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="forecast-log")
+    return _writer
 
 
 def capture_daily(uid: str) -> dict[str, int]:

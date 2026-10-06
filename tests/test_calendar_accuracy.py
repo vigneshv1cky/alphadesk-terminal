@@ -77,6 +77,9 @@ def test_building_the_calendar_records_each_vendor_and_the_merged_view(store, ve
     monkeypatch.setattr(edgar_releases, "releases_by_symbol", lambda a, b: {})
     monkeypatch.setattr(config, "now_et", lambda: datetime(2026, 9, 14, 9, 0, tzinfo=config.ET))
     uc.rows_between("2026-09-13", "2026-09-19", stats=False)
+    # The forecast log is written on its own thread now (2026-10-06): one
+    # worker, so a job queued behind the capture finishes after it.
+    uc._forecast_writer().submit(lambda: None).result(timeout=5)
     got = {r["vendor"]: (r["report_date"], r["session"], r["confirmed"]) for r in store.forecasts_for("u-test", "2026-09-01", "2026-09-30")}
     assert got == {"fmp": ("2026-09-17", "DAY", 0), "finnhub": ("2026-09-17", "AMC", 1), "calendar": ("2026-09-17", "AMC", 1)}
     assert store.forecast_capture_days("u-test") == {"calendar": ["2026-09-14"], "finnhub": ["2026-09-14"], "fmp": ["2026-09-14"]}
@@ -119,3 +122,12 @@ def test_capture_daily_records_each_vendor_under_the_reader(store, vendors, monk
     assert got == {"fmp": "DAY", "finnhub": "AMC", "calendar": "AMC"}
     vendors()                                            # no calendar vendor: nothing, no error
     assert uc.capture_daily("u-test") == {}
+
+
+def test_the_forecast_log_writes_many_rows_in_few_statements(store):
+    rows = [{"symbol": f"S{i:04d}", "report_date": "2026-09-17", "session": "AMC", "confirmed": True} for i in range(250)]
+    assert store.save_forecasts("u-test", "fmp", "2026-09-14", rows) == 250
+    rows[0]["session"] = "BMO"
+    store.save_forecasts("u-test", "fmp", "2026-09-14", rows)          # same day again: replaced, not duplicated
+    got = store.forecasts_for("u-test", "2026-09-01", "2026-09-30")
+    assert len(got) == 250 and {r["session"] for r in got if r["symbol"] == "S0000"} == {"BMO"}
