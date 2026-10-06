@@ -617,3 +617,18 @@ def test_quote_does_not_promise_fields_no_vendor_returns(tools):
     assert "DEPENDS ON THAT VENDOR" in d
     # The specific overclaim must not come back.
     assert "beta, EPS and analyst targets" not in d.replace("NOT HERE AT ALL, whoever answers: beta, EPS and analyst price targets", "")
+
+
+def test_a_report_already_released_today_says_reported_and_appears_once(monkeypatch):
+    import alphadesk.mcp_server as m
+    from alphadesk.ingest import earnings_calendar as ec
+    today = [{"symbol": "ABBV", "report_date": "2026-10-05", "eps_actual": None,
+              "released_at": "2026-10-05T16:07:45-04:00", "released_on": "2026-10-05"},
+             {"symbol": "NKE", "report_date": "2026-10-06", "eps_actual": None, "released_at": None, "released_on": None}]
+    monkeypatch.setattr(ec, "upcoming", lambda days=7: [dict(r) for r in today])
+    monkeypatch.setattr(ec, "recently_reported", lambda days=3: [dict(today[0])])
+    call = m.earnings_calendar.fn if hasattr(m.earnings_calendar, "fn") else m.earnings_calendar
+    ahead = {r["symbol"]: r["status"] for r in call(days_ahead=2)}
+    assert ahead == {"ABBV": "reported", "NKE": "upcoming"}
+    both = call(days_ahead=2, days_back=1)
+    assert [r["symbol"] for r in both].count("ABBV") == 1 and len(both) == 2

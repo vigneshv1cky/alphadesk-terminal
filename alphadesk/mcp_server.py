@@ -709,13 +709,22 @@ def earnings_calendar(days_ahead: int = 7, days_back: int = 0) -> list[dict]:
     """Companies reporting within the next `days_ahead` days (default 7) and,
     with `days_back` (1-30), those that reported in the last `days_back` days,
     from the connected user's calendar vendors. Each row says `status`:
-    "upcoming", or "reported" with EPS actual against estimate where the
-    calendar has filled it in. The MCP server carries no user and no vendor
-    key (2026-09-13), so without one this answers an empty list."""
+    "reported" once the results are out — an EPS actual, or a results release
+    filed with the SEC (`released_at` gives its time), which can be earlier the
+    same day — and "upcoming" otherwise. Each company and report date appears
+    once. The MCP server carries no user and no vendor key (2026-09-13), so
+    without one this answers an empty list."""
     from alphadesk.ingest import earnings_calendar
-    rows = [{**r, "status": "upcoming"} for r in earnings_calendar.upcoming(days=max(1, min(days_ahead, 60)))]
+    # THE LABEL FOLLOWS THE ROW, NOT THE LIST IT CAME FROM (2026-10-06). Every
+    # row from today on was "upcoming", so the evening after AbbVie, Apollo and
+    # Athene filed their results all eighteen of the day's releases read as not
+    # yet out; and with `days_back` today's rows came back twice.
+    rows = [{**r, "status": "reported" if earnings_calendar.has_reported(r) else "upcoming"}
+            for r in earnings_calendar.upcoming(days=max(1, min(days_ahead, 60)))]
     if days_back:
-        rows = [{**r, "status": "reported"} for r in earnings_calendar.recently_reported(days=max(1, min(int(days_back), 30)))] + rows
+        back = [{**r, "status": "reported"} for r in earnings_calendar.recently_reported(days=max(1, min(int(days_back), 30)))]
+        seen = {(r["symbol"], str(r.get("report_date"))[:10]) for r in back}
+        rows = back + [r for r in rows if (r["symbol"], str(r.get("report_date"))[:10]) not in seen]
     return rows
 
 

@@ -1142,7 +1142,14 @@ def recently_reported(days: int = 3) -> list[dict]:
         rows = shared_rows_between((today - timedelta(days=days)).isoformat(), today.isoformat(), stats=False)
     except NeedsKey:
         return []
-    return [r for r in rows if r.get("eps_actual") is not None or r.get("released_at")]
+    return [r for r in rows if has_reported(r)]
+
+
+def has_reported(row: dict) -> bool:
+    """Whether this report has HAPPENED: an actual EPS, or a results release
+    filed with a time or a day. What the agent's status label reads
+    (2026-10-06: AbbVie's release filed at 4:07pm read "upcoming" that evening)."""
+    return row.get("eps_actual") is not None or bool(row.get("released_at") or row.get("released_on"))
 
 
 FIND_BACK_DAYS = 120
