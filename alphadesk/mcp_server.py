@@ -1271,22 +1271,30 @@ def candidates(session: str = "", sessions_ahead: int = 1, filing_hours: int = 0
     # Calendar rows from the session before the first target (a report after
     # that close moves it) through the last target.
     span_from = cal.previous_session(first)
+    from alphadesk.stagetimer import Stages
+    st_ = Stages("candidates", logging.getLogger("alphadesk.mcp"))
     rows_between = lambda: earnings_calendar.rows_between(span_from.isoformat(), targets[-1].isoformat(), stats=False)  # noqa: E731
     earnings = attempt("earnings", lambda: rows_between(), [])
+    st_.mark("earnings calendar")
     feed = attempt("filings", lambda: edgar_feed.recent(groups=["events", "stakes", "offerings"], limit=200), {})
+    st_.mark("filings feed")
     filings = [f for f in (feed.get("filings") or []) if str(f.get("filed_at") or "")[:10] >= since.date().isoformat()]
     for k, why in (feed.get("unavailable") or {}).items():
         unavailable[f"filings:{k}"] = str(why)
     last_session_day = cal.latest_session(now)
     halts = [{**h, "today": str(h.get("halted_at") or "")[:10] >= last_session_day.isoformat()}
              for h in attempt("halts", lambda: get_prices().ask("trading_halts", limit=100, surface="trading_halts") or [], [])]
+    st_.mark("halts")
     movers_rows: list[dict] = []
     for tab in (attempt("movers", lambda: mv.category_movers("stocks", top=50), {}) or {}).get("tabs") or []:
         if tab.get("id") in ("gainers", "losers"):
             movers_rows += tab.get("rows") or []
+    st_.mark("movers")
     uid = request_user()
     board = (store.get_board(uid) or {}).get("symbols", []) if uid else []
     rows = cand.rank(earnings, filings, halts, movers_rows, board, targets)
+    st_.mark("ranking")
+    st_.done(f"sessions {targets[0].isoformat()}..{targets[-1].isoformat()}")
     return {"as_of": now.isoformat(timespec="minutes"), "sessions": [d.isoformat() for d in targets],
             "filings_since": since.isoformat(timespec="minutes"),
             "count": len(rows), "candidates": rows[:max(1, min(int(limit), 100))],

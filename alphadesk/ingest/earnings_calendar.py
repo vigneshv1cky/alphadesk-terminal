@@ -862,14 +862,18 @@ def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | No
     from alphadesk.ingest import edgar, edgar_releases
     from alphadesk.ingest.movers import stats_from_bars
     from alphadesk.providers import get_prices
+    from alphadesk.stagetimer import Stages
+    st_ = Stages("earnings calendar build", log)
     router = get_prices()
     # The vendors are asked for a wider span than the window: a report a
     # vendor dates two weeks early still lands here once its 8-K is joined.
     fetch_lo = (date.fromisoformat(start) - timedelta(days=LATER_FILING_DAYS)).isoformat()
     fetch_hi = (date.fromisoformat(end) + timedelta(days=EARLIER_FILING_DAYS)).isoformat()
     per_vendor = _vendor_rows(router, fetch_lo, fetch_hi, required=False)
+    st_.mark("vendor calendars")
     rows = combine(per_vendor)
     _capture_forecasts(router, per_vendor, rows, (fetch_lo, fetch_hi))
+    st_.mark("forecast log")
     listed = edgar._ticker_cik_map()
     if listed:
         rows = [r for r in rows if r["symbol"] in listed]
@@ -896,17 +900,20 @@ def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | No
         anns += ea.for_symbols(router, sorted({r["symbol"] for r in open_rows}), router.uid,
                                pending=pending, block_limit=ea.BLOCK_LIMIT)
     ea.apply_announcements(rows, anns)
+    st_.mark("announcements")
     lo = (date.fromisoformat(fetch_lo) - timedelta(days=EARLIER_FILING_DAYS)).isoformat()
     hi = (date.fromisoformat(fetch_hi) + timedelta(days=LATER_FILING_DAYS)).isoformat()
     releases = edgar_releases.releases_by_symbol(lo, hi)
     join_releases(rows, releases, today=_today_et())
     rows = merge_same_release(rows)
+    st_.mark("SEC releases")
     # A report moved onto its filing day may now sit outside the window.
     rows = [r for r in rows if start <= r["report_date"][:10] <= end]
     # Settled on the window's rows only: the foreign-filer check is an EDGAR
     # request per company, and the fetch span is five weeks wide.
     evidence = actual_evidence(rows, _today_et())
     settle_actuals(rows, lambda sym: evidence.get(sym, False))
+    st_.mark("actuals check")
     if listed:
         for r in edgar_only_rows(rows, releases, start, end, listed):
             if not quarter_release(r["symbol"], r["report_date"]):
@@ -925,6 +932,7 @@ def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | No
         if r["released_at"] or r["released_on"]:
             r["confirmed"] = True
     _mark_listings(rows, listed)
+    st_.mark("filing-only rows")
     try:
         from alphadesk.ingest.corporate_calendars import split_rows
         got, _vendors = split_rows(router, (date.fromisoformat(start) - timedelta(days=SPLIT_ADJUST_DAYS)).isoformat(), end)
@@ -936,6 +944,7 @@ def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | No
         log.debug("split calendar unavailable for estimates: %s", exc)
         splits = []
     adjust_for_splits(rows, splits)
+    st_.mark("splits")
 
     def past_report_dates(sym: str) -> list[str]:
         """The company's past report dates with an actual, newest first, from
@@ -944,6 +953,7 @@ def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | No
         return sorted({r["date"][:10] for r in got.get("reports", []) if r.get("eps_actual") is not None}, reverse=True)
     habits = release_habits_for(router, rows, past_report_dates, pending)
     predict_sessions(rows, habit=lambda s: habits.get(s.upper(), (None, 0)))
+    st_.mark("release habits")
     if stats and rows:
         # Company size orders each day, largest first (2026-09-14, the owner's
         # call): the reports a reader weighs first are the biggest companies'.
@@ -981,6 +991,8 @@ def rows_between(start: str, end: str, *, stats: bool = True, pending: dict | No
     rows.sort(key=lambda r: (r["report_date"], evidence_rank(r),
                              r.get("market_cap") is None, -(r.get("market_cap") or 0),
                              -(r.get("liquidity") or 0), r["symbol"]))
+    st_.mark("statistics and order")
+    st_.done(f"{start} to {end}, {len(rows)} rows")
     return rows
 
 
