@@ -1379,14 +1379,32 @@ def _crypto_session(router, day: str, top: int, min_price, min_turnover, min_liq
     floors = _floors_asked("crypto", min_price, min_turnover, min_liquidity, min_volatility, venue=True)
     finished = crypto_day_finished(day)
     fkey = _finished_key(day, top, *floors[:4])
+    # The memory step the stock and ETF days have (2026-10-06): a finished
+    # day's list is held here once read, so a second open does not go back to
+    # the store (measured 107 ms each open without it, ~60 ms for stocks with
+    # it). A finished day never changes, so the copy cannot go stale.
+    mkey = f"cryptosession|{router.owner}|{fkey}"
     if finished:
+        with _lock:
+            hit = _cache.get(mkey)
+        if hit and time.time() - hit[0] < SESSION_TTL_S:
+            return hit[1]
         saved = _finished_get(router, "crypto", fkey)
         if saved:
+            _remember(mkey, saved)
             return saved
     out = _build_crypto_session(router, day, top, floors)
     if finished:
         _finished_put(router, "crypto", fkey, out)
+        _remember(mkey, out)
     return out
+
+
+def _remember(key: str, value: dict) -> None:
+    with _lock:
+        if len(_cache) > 2048:
+            _cache.clear()
+        _cache[key] = (time.time(), value)
 
 
 def _build_crypto_session(router, day: str, top: int, floors: tuple) -> dict:

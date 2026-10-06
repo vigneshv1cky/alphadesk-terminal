@@ -674,3 +674,22 @@ def test_volatility_after_a_spin_off_measures_the_business_that_remained():
 def test_a_crash_with_no_spin_off_listed_is_left_alone():
     bars = {"WYY": [_Bar("2026-09-24", 4.05), _Bar("2026-09-25", 2.0)]}
     assert movers.adjust_for_spin_offs(_Feed(bars, []), bars) is bars
+
+
+def test_a_finished_coin_list_is_held_in_memory_after_the_first_read(store, monkeypatch):
+    kept = {"category": "crypto", "session": "2020-01-25", "tabs": [{"id": "all", "rows": [{"symbol": "BTC-USD", "volatility": 40.0}]}]}
+    reads: list[str] = []
+    real = movers._finished_get
+
+    def counting(router, cat, fkey):
+        reads.append(fkey)
+        return real(router, cat, fkey)
+
+    owner = type("R", (), {"owner": "reader-1"})()
+    floors = movers._floors_asked("crypto", None, None, None, None, venue=True)
+    movers._finished_put(owner, "crypto", movers._finished_key("2020-01-25", 50, *floors[:4]), kept)
+    monkeypatch.setattr(movers, "_finished_get", counting)
+    movers._cache.clear()
+    first = movers._crypto_session(owner, "2020-01-25", 50, None, None, None, None)
+    again = movers._crypto_session(owner, "2020-01-25", 50, None, None, None, None)
+    assert first == again == kept and len(reads) == 1
