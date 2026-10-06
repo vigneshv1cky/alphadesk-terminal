@@ -802,6 +802,14 @@ def session_movers(category: str, day: str, top: int = 20,
         hit = _cache.get(key)
     if hit and time.time() - hit[0] < SESSION_TTL_S:
         return hit[1]
+    finished = session_finished(day)
+    fkey = _finished_key(day, top, mp, mt, ml, mv)
+    if finished:
+        saved = _finished_get(router, cat, fkey)
+        if saved:
+            with _lock:
+                _cache[key] = (time.time(), saved)
+            return saved
 
     # WHETHER ANYONE CARRIES THIS IS A DIFFERENT QUESTION FROM WHETHER THE
     # MARKET OPENED. A provider returning nothing means "I do not carry this
@@ -903,6 +911,8 @@ def session_movers(category: str, day: str, top: int = 20,
               "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
                          "default_min_price": d_price, "default_min_turnover": d_turn},
               "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": tabs}
+    if finished:
+        _finished_put(router, cat, fkey, result)
     with _lock:
         if len(_cache) > 2048:
             _cache.clear()
@@ -1145,9 +1155,23 @@ def _crypto_day(router, day: str) -> tuple[dict, str]:
 
 def _crypto_session(router, day: str, top: int, min_price, min_turnover, min_liquidity, min_volatility) -> dict:
     """One past day's coin movers: that day's close against the day before,
-    on Alpaca's dollar pairs, stablecoins out of Active, Gainers and Losers."""
-    from alphadesk.providers.alpaca import crypto_tabs
+    on Alpaca's dollar pairs, stablecoins out of Active, Gainers and Losers.
+    A finished day's finished list is kept and read back whole."""
     floors = _floors_asked("crypto", min_price, min_turnover, min_liquidity, min_volatility, venue=True)
+    finished = crypto_day_finished(day)
+    fkey = _finished_key(day, top, *floors[:4])
+    if finished:
+        saved = _finished_get(router, "crypto", fkey)
+        if saved:
+            return saved
+    out = _build_crypto_session(router, day, top, floors)
+    if finished:
+        _finished_put(router, "crypto", fkey, out)
+    return out
+
+
+def _build_crypto_session(router, day: str, top: int, floors: tuple) -> dict:
+    from alphadesk.providers.alpaca import crypto_tabs
     prev_day = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
     try:
         bars, vendor = _crypto_day(router, day)
@@ -1239,3 +1263,67 @@ def past_days(router, category: str, count: int, before: Optional[str] = None) -
         return [d for d in store.recorded_movers_days(router.owner, "options") if before is None or d < before][:count]
     days = trading_sessions(router, count + 5)
     return [d for d in days if before is None or d < before][:count]
+
+
+# ── finished lists (2026-10-05) ──────────────────────────────────────────
+# A finished day's list as the tile shows it — floors applied, big moves
+# checked, volatility, liquidity and names filled — kept per set of floors, so
+# opening a recorded day again (after a restart too) asks no vendor anything.
+# The raw bars stay recorded beside it, so a new floor or a fix to the
+# calculation can still be worked out from them.
+
+#: Below this share of rows with a volatility figure, a list is taken to have
+#: met a vendor failure in its statistics and is not kept: it is worked out
+#: again on the next open rather than frozen with dashes.
+FINISHED_MIN_MEASURED = 0.8
+
+
+def _finished_key(day: str, top: int, mp: float, mt: float, ml: float, mv: float) -> str:
+    return f"{day}|{top}|{mp:g}|{mt:g}|{ml:g}|{mv:g}"
+
+
+def _finished_get(router, cat: str, fkey: str) -> Optional[dict]:
+    return _recorded_movers(router.owner, f"list:{cat}", fkey) or None
+
+
+def finished_list_complete(result: dict) -> bool:
+    """Whether a past day's list is worth keeping: not a refusal, not a closed
+    day, and its statistics columns mostly filled."""
+    if not isinstance(result, dict) or result.get("unavailable") or result.get("closed") or result.get("not_recorded"):
+        return False
+    rows = [r for t in result.get("tabs") or [] for r in t.get("rows") or []]
+    if not rows:
+        return False
+    measured = sum(1 for r in rows if r.get("volatility") is not None)
+    return measured >= FINISHED_MIN_MEASURED * len(rows)
+
+
+def _finished_put(router, cat: str, fkey: str, result: dict) -> None:
+    if router.owner and finished_list_complete(result):
+        _save_movers(router, f"list:{cat}", fkey, result.get("source") or "unknown", result)
+
+
+def prebuild_finished_lists(router, days: int = 5, top: int = 50) -> int:
+    """Work out the default-floor lists of the last `days` finished days for
+    stocks, ETFs and crypto, so the first open of one is already kept. Runs
+    on the recorder's thread; a list already kept costs one read. Returns
+    how many were built."""
+    if not router.owner:
+        return 0
+    built = 0
+    for cat in ("stocks", "etfs", "crypto"):
+        for day in past_days(router, cat, days):
+            if cat == "crypto":
+                done = crypto_day_finished(day)
+                floors = _floors_asked(cat, None, None, None, None, venue=True)
+            else:
+                done = session_finished(day)
+                floors = _floors_asked(cat, None, None, None, None)
+            if not done or _finished_get(router, cat, _finished_key(day, top, *floors[:4])):
+                continue
+            try:
+                session_movers(cat, day, top=top)
+                built += 1
+            except Exception as exc:              # the reader's open works it out instead
+                log.info("%s list for %s not built: %s", cat, day, exc)
+    return built

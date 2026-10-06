@@ -129,7 +129,7 @@ row keyed to it.
 | The earnings forecast log | the reader | 120 days |
 | Release-session habits, press-release checks | the reader | 3 days / 24 hours |
 | Recorded session closes: every listed symbol's open, high, low, close and volume for each finished session, compressed, one row per session | the reader | kept: a finished session never changes |
-| Recorded movers days: each session's option movers list after the close, and each finished UTC day of coin bars | the reader | kept |
+| Recorded movers days: each session's option movers list after the close, each finished UTC day of coin bars, and each finished day's finished stock, ETF and coin list per set of filters | the reader | kept |
 | An owner's recent read requests, for prewarming (never the answers) | the owner | 24 hours unused |
 | SEC filing metadata, filing text, annual-report sections, 8-K/6-K results releases | public | kept |
 

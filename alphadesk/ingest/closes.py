@@ -36,6 +36,9 @@ def run_once() -> int:
             # coin days are computed from bars and kept like the stock closes.
             saved += int(movers.record_options_close(router))
             saved += movers.record_crypto_days(router, BACKFILL_SESSIONS)
+            # The finished lists of the days the stepper offers, so opening
+            # one asks no vendor anything.
+            saved += movers.prebuild_finished_lists(router)
         except Exception as exc:
             log.warning("recording closes for a reader failed: %s", exc)
         finally:

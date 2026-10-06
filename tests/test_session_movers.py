@@ -451,3 +451,59 @@ def test_a_coin_day_measures_volatility_and_liquidity_on_the_days_ending_it(stor
     calm = movers.stats_from_bars([b["close"] for b in hist[:25]], [b["volume"] for b in hist[:25]], periods=365)
     assert row["volatility"] == calm["volatility"] and row["volatility"] is not None
     assert row["liquidity"] == calm["liquidity"]
+
+
+# FINISHED LISTS (2026-10-05) -------------------------------------------------
+
+def test_a_finished_coin_list_is_kept_and_read_back_without_any_vendor(store):
+    import datetime as dt
+    end = dt.datetime(2020, 1, 25, tzinfo=dt.timezone.utc)
+    hist = [{"ts": end - dt.timedelta(days=24 - i), "close": 100.0 + (i % 2), "volume": 2.0} for i in range(25)]
+    calls: list[str] = []
+
+    class _R:
+        owner = "reader-1"
+        answered_by = "alpaca"
+
+        def ask(self, method, d):
+            calls.append(method)
+            return {"BTC-USD": {"close": 101.0, "prev_close": 100.0, "volume": 2.0}}
+
+        def get(self, method, syms, days):
+            calls.append(method)
+            return {"BTC-USD": hist}
+
+    movers._cache.clear()
+    first = movers._crypto_session(_R(), "2020-01-25", 50, None, None, None, None)
+    n = len(calls)
+    movers._cache.clear()
+    again = movers._crypto_session(_R(), "2020-01-25", 50, None, None, None, None)
+    assert again == first and len(calls) == n            # nothing asked the second time
+
+
+def test_a_list_whose_statistics_failed_is_not_kept():
+    rows = [{"symbol": s, "volatility": None} for s in ("A", "B", "C", "D", "E")]
+    assert not movers.finished_list_complete({"tabs": [{"rows": rows}]})
+    rows[0]["volatility"] = rows[1]["volatility"] = rows[2]["volatility"] = rows[3]["volatility"] = 30.0
+    assert movers.finished_list_complete({"tabs": [{"rows": rows}]})
+    assert not movers.finished_list_complete({"tabs": [{"rows": rows}], "unavailable": True})
+
+
+def test_a_kept_stock_list_answers_before_any_vendor_is_touched(store, monkeypatch):
+    import alphadesk.providers as providers
+
+    class _Untouchable:
+        owner = "reader-1"
+        connected = ["alpaca"]
+
+        def __getattr__(self, name):
+            raise AssertionError(f"a vendor was asked: {name}")
+
+    kept = {"category": "stocks", "session": "2020-01-02", "source": "alpaca",
+            "tabs": [{"id": "gainers", "label": "Gainers", "rows": [{"symbol": "AAPL", "volatility": 20.0}]}]}
+    owner_only = type("R", (), {"owner": "reader-1"})()
+    d_price, d_turn = movers.DEFAULT_FLOORS["stocks"]
+    movers._finished_put(owner_only, "stocks", movers._finished_key("2020-01-02", 50, d_price, d_turn, 0.0, 0.0), kept)
+    monkeypatch.setattr(providers, "get_prices", lambda: _Untouchable())
+    movers._cache.clear()
+    assert movers.session_movers("stocks", "2020-01-02", top=50) == kept
