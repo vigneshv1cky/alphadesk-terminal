@@ -1478,37 +1478,71 @@ def entry_facts(symbol: str, risk_dollars: float = 0.0, stop_pct: float = 0.0) -
     from alphadesk.app import dashboard
     from alphadesk.config import now_et
     from alphadesk.desk import movestate, sessions as cal, tradecontext as tc
-    from alphadesk.ingest import analysts, edgar, edgar_feed, earnings_record, keystats
+    from alphadesk.ingest import edgar, edgar_feed, earnings_record, keystats
     from alphadesk.providers import get_prices
     sym = _symbol(symbol)
     unavailable: dict[str, str] = {}
-
-    def attempt(name, fn, default=None):
-        try:
-            return fn()
-        except Exception as exc:
-            unavailable[name] = str(exc)[:140]
-            return default
-
     now = now_et()
-    quote = attempt("quote", lambda: _http_errors(dashboard.api_quotes, symbols=sym, fill="range,cap").get("quotes", {}).get(sym)) or {}
+    # THE TEN SOURCES AT ONCE (2026-10-06). They were read one after another,
+    # so a call cost the sum of ten waits — 5 to 11 s in the agent usage log.
+    # None depends on another; each still fails on its own into `unavailable`.
+    # Short interest is asked for alone: the full analyst view it was read
+    # from asked four sections and a quote to answer one of them.
+    import time as _t
+    sources = {
+        "quote": (lambda: _http_errors(dashboard.api_quotes, symbols=sym, fill="range,cap").get("quotes", {}).get(sym), None),
+        "daily_bars": (lambda: _http_errors(dashboard.api_chart, sym, range="3M", interval="1d").get("bars") or [], []),
+        "intraday_bars": (lambda: get_prices().chart_series(sym, days=2) or {}, {}),
+        "broker_asset": (lambda: get_prices().get("asset_info", sym), None),
+        "halts": (lambda: get_prices().ask("trading_halts", limit=100, surface="trading_halts") or [], []),
+        "key_stats": (lambda: keystats.key_stats(sym), None),
+        "short_interest": (lambda: get_prices().ask("short_interest", sym), None),
+        "shares_outstanding": (lambda: edgar.shares_outstanding(sym), None),
+        "report_dates": (lambda: earnings_record.history(sym), None),
+        "filings": (lambda: edgar_feed.recent(groups=["events", "stakes", "offerings"], limit=200, symbol=sym), {}),
+    }
+
+    def read(item):
+        name, (fn, default) = item
+        t = _t.perf_counter()
+        try:
+            return name, fn(), None, _t.perf_counter() - t
+        except Exception as exc:
+            return name, default, str(exc)[:140], _t.perf_counter() - t
+
+    t0 = _t.perf_counter()
+    got: dict = {}
+    took: dict[str, float] = {}
+    for res in _parallel(read, list(sources.items()), workers=6):
+        if isinstance(res, Exception):
+            continue
+        name, value, err, secs = res
+        got[name], took[name] = value, secs
+        if err:
+            unavailable[name] = err
+    total = _t.perf_counter() - t0
+    if total >= 2.0:
+        logging.getLogger("alphadesk.mcp").info(
+            "entry_facts %s took %.2fs: %s", sym, total,
+            ", ".join(f"{k} {v:.2f}s" for k, v in sorted(took.items(), key=lambda kv: -kv[1])))
+    quote = got.get("quote") or {}
     last = quote.get("price")
-    daily = attempt("daily_bars", lambda: _http_errors(dashboard.api_chart, sym, range="3M", interval="1d").get("bars") or [], [])
+    daily = got.get("daily_bars") or []
     done = [b for b in daily if str(b["t"])[:10] < now.date().isoformat()] if cal.latest_session(now) == now.date() else daily
-    series = attempt("intraday_bars", lambda: get_prices().chart_series(sym, days=2) or {}, {})
+    series = got.get("intraday_bars") or {}
     _day, session_bars = movestate.latest_session(series.get("bars") or [])
     ctx = movestate.daily_context(daily, _day)
     rng_pct = ctx["typical_daily_range_pct"]
-    asset = attempt("broker_asset", lambda: get_prices().get("asset_info", sym))
-    halts = attempt("halts", lambda: get_prices().ask("trading_halts", limit=100, surface="trading_halts") or [], [])
+    asset = got.get("broker_asset")
+    halts = got.get("halts") or []
     halted_today = [h for h in halts if str(h.get("symbol") or "").upper() == sym
                     and str(h.get("halted_at") or "")[:10] >= cal.latest_session(now).isoformat()]
-    stats = attempt("key_stats", lambda: keystats.key_stats(sym)) or {}
-    short = (attempt("short_interest", lambda: analysts.analyst_view(sym)) or {}).get("short_interest") or {}
-    shares = attempt("shares_outstanding", lambda: edgar.shares_outstanding(sym))
-    reports = (attempt("report_dates", lambda: earnings_record.history(sym)) or {}).get("reports") or []
+    stats = got.get("key_stats") or {}
+    short = got.get("short_interest") or {}
+    shares = got.get("shares_outstanding")
+    reports = (got.get("report_dates") or {}).get("reports") or []
     nxt = next((r for r in sorted(reports, key=lambda r: str(r.get("date"))) if r.get("upcoming")), None)
-    feed = attempt("filings", lambda: edgar_feed.recent(groups=["events", "stakes", "offerings"], limit=200, symbol=sym), {}) or {}
+    feed = got.get("filings") or {}
     week = (now - timedelta(days=7)).date().isoformat()
     recent = [f for f in feed.get("filings") or [] if str(f.get("filed_at") or "")[:10] >= week]
     risks = []
