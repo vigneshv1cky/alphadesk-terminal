@@ -202,7 +202,7 @@ SURFACES: dict[str, Surface] = {
 UNIONED_SURFACES = frozenset({"earnings_calendar", "split_calendar"})
 
 METHOD_SURFACE: dict[str, str] = {
-    "chart_series": "chart", "chart_intervals": "chart", "daily_history": "chart",
+    "chart_series": "chart", "chart_intervals": "chart", "daily_history": "chart", "adjusted_daily_history": "chart",
     "quote": "quote", "quotes": "quote", "context": "quote", "asset_info": "quote", "asset_listing": "quote",
     "movers": "stock_movers", "market_day": "market_day",
     "market_tape": "index_board", "index_board": "index_board",

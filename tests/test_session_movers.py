@@ -507,3 +507,57 @@ def test_a_kept_stock_list_answers_before_any_vendor_is_touched(store, monkeypat
     monkeypatch.setattr(providers, "get_prices", lambda: _Untouchable())
     movers._cache.clear()
     assert movers.session_movers("stocks", "2020-01-02", top=50) == kept
+
+
+# CORPORATE EVENTS AND THE REAL SOURCE (2026-10-05) ---------------------------
+
+class _WithAdjusted(_Router):
+    def __init__(self, split_bars, adjusted_bars):
+        super().__init__(split_bars)
+        self._adjusted = adjusted_bars
+
+    def get(self, method, *args, **kwargs):
+        if method == "adjusted_daily_history":
+            return {s: self._adjusted.get(s, []) for s in args[0]}
+        return super().get(method, *args, **kwargs)
+
+
+def test_a_spin_off_stays_on_the_list_ranked_by_what_a_holder_made():
+    # Corteva, 2026-10-01: the chart fell 77.62 to 12.57 (-83.8%) as the
+    # spun-off company went to holders; adjusted for it, the parent moved -1%.
+    rows = [movers._row("CTVA", 12.57, -83.81, 88_375_542)]
+    router = _WithAdjusted({"CTVA": [_Bar("2026-09-30", 77.62), _Bar("2026-10-01", 12.57)]},
+                           {"CTVA": [_Bar("2026-09-30", 12.70), _Bar("2026-10-01", 12.57)]})
+    out, dropped = movers._verify_extremes(router, rows, "2026-09-30", "2026-10-01")
+    assert dropped == 0 and len(out) == 1
+    row = out[0]
+    assert row["corporate_action"] is True
+    assert row["change_pct"] == pytest.approx(-1.02, abs=0.05)
+    assert row["price_change_pct"] == pytest.approx(-83.81, abs=0.05)
+
+
+def test_a_real_crash_is_not_called_a_corporate_event():
+    rows = [movers._row("WYY", 2.0, -50.6, 1_000_000)]
+    bars = {"WYY": [_Bar("2026-09-24", 4.05), _Bar("2026-09-25", 2.0)]}
+    out, _ = movers._verify_extremes(_WithAdjusted(bars, bars), rows, "2026-09-24", "2026-09-25")
+    assert not out[0].get("corporate_action") and out[0]["change_pct"] == pytest.approx(-50.6, abs=0.1)
+
+
+def test_a_past_list_names_the_vendor_that_served_it(store):
+    class _Served:
+        owner = "reader-1"
+        connected = ["alpaca", "polygon"]
+        answered_by = "alpaca"
+
+        def ask(self, method, *a, **k):
+            return {"AAPL": {"close": 1.0, "volume": 1}}
+
+    movers._cache.clear()
+    movers._day_vendor.clear()
+    movers._market_day(_Served(), "2020-01-02")
+    assert movers._day_vendor[("reader-1", "2020-01-02")] == "alpaca"
+    assert store.session_day_vendor("reader-1", "2020-01-02") == "alpaca"
+    movers._cache.clear()
+    movers._day_vendor.clear()
+    movers._market_day(_Served(), "2020-01-02")             # read back from the record
+    assert movers._day_vendor[("reader-1", "2020-01-02")] == "alpaca"

@@ -331,7 +331,10 @@ def _enrich_session_stats(router, tabs: list[dict], day: str) -> None:
     if not syms:
         return
     try:
-        bars = router.get("daily_history", syms, STATS_DAYS + 1 + SESSION_STATS_SLACK) or {}
+        # Fully adjusted first, so a spin-off inside the twenty sessions is not
+        # read as a crash (Corteva's volatility read 644%); split-only otherwise.
+        bars = (_adjusted_history(router, syms, STATS_DAYS + 1 + SESSION_STATS_SLACK)
+                or router.get("daily_history", syms, STATS_DAYS + 1 + SESSION_STATS_SLACK) or {})
     except Exception as exc:
         # A FIGURE WE CANNOT COMPUTE IS A DASH, NEVER A FAILED LIST. The
         # reader asked for the day's movers; the two statistics columns ride
@@ -647,6 +650,7 @@ def _market_day(router, day: str) -> dict:
     if finished and router.owner:
         saved = _recorded(router.owner, day)
         if saved:
+            _day_vendor[(router.owner, day)] = _recorded_vendor(router.owner, day)
             with _lock:
                 _cache[key] = (time.time(), saved)
             return saved
@@ -657,6 +661,7 @@ def _market_day(router, day: str) -> dict:
             raise VendorRefused("; ".join(exc.failed.values())) from exc
         raise
     got = got if isinstance(got, dict) else {}
+    _day_vendor[(router.owner, day)] = getattr(router, "answered_by", None) or "unknown"
     if got and finished and router.owner:
         _record(router, day, got)
     with _lock:
@@ -668,6 +673,20 @@ def session_finished(day: str) -> bool:
     """True once `day` is before today's date in New York: its bars, extended
     hours included, can no longer change. Today's session is never recorded."""
     return day < datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
+
+#: Which vendor's bars a session's market came from, by (reader, day), so the
+#: list names its real source (2026-10-05: every past list said Polygon, the
+#: label written in by hand, while Alpaca served most of them).
+_day_vendor: dict[tuple, str] = {}
+
+
+def _recorded_vendor(owner: str, day: str) -> str:
+    try:
+        from alphadesk.ledger import store
+        return store.session_day_vendor(owner, day) or "unknown"
+    except Exception:
+        return "unknown"
 
 
 def _recorded(owner: str, day: str) -> Optional[dict]:
@@ -684,11 +703,7 @@ def _record(router, day: str, bars: dict) -> None:
     saved (an empty answer is a closed day or a thin read, not a close)."""
     try:
         from alphadesk.ledger import store
-        vendor = "unknown"
-        try:
-            vendor = str(getattr(router.vendor_for("market_day", "market_day"), "name", "") or vendor)
-        except Exception:
-            pass
+        vendor = getattr(router, "answered_by", None) or "unknown"
         store.save_session_day(router.owner, day, vendor, bars)
     except Exception as exc:                      # an unsaved close is asked again next time
         log.warning("recording the close of %s failed: %s", day, exc)
@@ -849,6 +864,7 @@ def session_movers(category: str, day: str, top: int = 20,
         rows.append(_row(sym, close, (close - was) / was * 100.0, vol))
 
     rows, unverified = _verify_extremes(router, rows, prev_day, day)
+    events = sum(1 for r in rows if r.get("corporate_action"))
     # NO "ALL" TAB HERE, deliberately. On the live list that tab is the
     # VENDOR'S curated set of what is moving; here the input is every symbol
     # that traded — twelve thousand of them — so "All" would be an arbitrary
@@ -902,12 +918,14 @@ def session_movers(category: str, day: str, top: int = 20,
     result = {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
               "session": day, "previous_session": prev_day, "historical": True,
               "extended": False, "session_label": None,
-              "official": True, "source": "polygon",
+              "official": True, "source": _day_vendor.get((router.owner, day), "unknown"),
               "filling": False,
               "note": (f"{day} close against {prev_day}. Volatility and liquidity are the "
                        f"twenty sessions ending {day}, not today's."
                        + (f" {unverified} large move{'s' if unverified != 1 else ''} left out: "
-                          f"no second source to check it against." if unverified else "")),
+                          f"no second source to check it against." if unverified else "")
+                       + (f" {events} move{'s' if events != 1 else ''} measured through a corporate action "
+                          f"(spin-off or dividend): ranked by what a holder made." if events else "")),
               "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
                          "default_min_price": d_price, "default_min_turnover": d_turn},
               "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": tabs}
@@ -924,11 +942,43 @@ def _closed(cat: str, day: str) -> dict:
     """A day the market did not open, said plainly."""
     return {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
             "session": day, "previous_session": None, "historical": True, "closed": True,
-            "extended": False, "session_label": None, "official": True, "source": "polygon",
+            "extended": False, "session_label": None, "official": True, "source": "unknown",
             "filling": False, "note": f"the market did not open on {day}",
             "floors": {"min_price": 0.0, "min_turnover": 0.0, "min_liquidity": 0.0, "min_volatility": 0.0,
                        "default_min_price": 0.0, "default_min_turnover": 0.0},
             "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": []}
+
+
+#: How far a holder's move (all corporate actions adjusted) may sit from the
+#: chart's move (splits only) before the day is called a corporate event.
+CORPORATE_GAP_PCT = 5.0
+
+
+def _adjusted_history(router, syms: list[str], want: int) -> dict:
+    """Daily bars adjusted for every corporate action, or {} when no vendor
+    the reader has carries them."""
+    try:
+        return router.get("adjusted_daily_history", syms, want) or {}
+    except Exception as exc:
+        log.debug("session movers: no fully adjusted history (%s)", exc)
+        return {}
+
+
+def _corporate_event(r: dict, adjusted: list[dict], prev_day: str, day: str) -> dict:
+    """A STOCK STILL TRADES THROUGH A SPIN-OFF (2026-10-05), so the row stays.
+    Its ranked change becomes what a holder made — the price drop of a
+    spin-off is value handed out, not lost — and the chart's own move is kept
+    beside it as `price_change_pct`, with `corporate_action` set so the tile
+    says why the two differ. Unchanged when the fully adjusted bars are
+    missing or agree with the chart."""
+    series = {b["ts"].date().isoformat(): b for b in adjusted if b.get("ts")}
+    was, now = series.get(prev_day), series.get(day)
+    if not was or not now or not was.get("close") or r.get("change_pct") is None:
+        return r
+    held = (now["close"] - was["close"]) / was["close"] * 100.0
+    if abs(held - r["change_pct"]) <= CORPORATE_GAP_PCT:
+        return r
+    return {**r, "price_change_pct": r["change_pct"], "change_pct": round(held, 2), "corporate_action": True}
 
 
 def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple[list[dict], int]:
@@ -972,6 +1022,7 @@ def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple
         return rows, 0
     if not bars:
         return rows, 0
+    adjusted = _adjusted_history(router, syms, want)
     dropped = 0
     out: list[dict] = []
     for r in rows:
@@ -986,6 +1037,7 @@ def _verify_extremes(router, rows: list[dict], prev_day: str, day: str) -> tuple
         truth = (now["close"] - was["close"]) / was["close"] * 100.0
         if abs(truth - (r["change_pct"] or 0)) > 5.0:
             r = {**r, "price": now["close"], "change_pct": round(truth, 2)}
+        r = _corporate_event(r, adjusted.get(r["symbol"]) or [], prev_day, day)
         out.append(r)
     return out, dropped
 
@@ -996,7 +1048,7 @@ def _unavailable(cat: str, day: str, why: str) -> dict:
     return {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
             "session": day, "previous_session": None, "historical": True,
             "unavailable": True,
-            "extended": False, "session_label": None, "official": True, "source": "polygon",
+            "extended": False, "session_label": None, "official": True, "source": "unknown",
             "filling": False,
             # Said in words. "HTTP 429 Too Many Requests" is true and tells a
             # reader nothing about what to do, and the answer here is simply
@@ -1278,8 +1330,14 @@ def past_days(router, category: str, count: int, before: Optional[str] = None) -
 FINISHED_MIN_MEASURED = 0.8
 
 
+#: Bumped when the calculation changes, so lists kept under an older one are
+#: worked out again instead of read back (v2, 2026-10-05: the real source
+#: named, corporate events measured as a holder's move).
+FINISHED_VERSION = "v2"
+
+
 def _finished_key(day: str, top: int, mp: float, mt: float, ml: float, mv: float) -> str:
-    return f"{day}|{top}|{mp:g}|{mt:g}|{ml:g}|{mv:g}"
+    return f"{FINISHED_VERSION}|{day}|{top}|{mp:g}|{mt:g}|{ml:g}|{mv:g}"
 
 
 def _finished_get(router, cat: str, fkey: str) -> Optional[dict]:

@@ -725,7 +725,7 @@ class AlpacaPrices:
                  "close": float(b.close), "volume": float(getattr(b, "volume", 0) or 0)} for b in seq]
 
     def stock_bars(self, symbols: list[str] | str, spec: dict, start: datetime, end: datetime | None = None,
-                   feed: str = "sip") -> tuple[dict[str, list[dict]], int]:
+                   feed: str = "sip", adjustment: str = "split") -> tuple[dict[str, list[dict]], int]:
         """Bars for one or many symbols → ({symbol: bars}, delay_minutes).
         SIP first; a free key's refusal of recent SIP retries 15 minutes back."""
         from alpaca.data.enums import DataFeed
@@ -750,7 +750,7 @@ class AlpacaPrices:
             from concurrent.futures import ThreadPoolExecutor
             parts = [syms[i:i + BARS_BATCH] for i in range(0, len(syms), BARS_BATCH)]
             with ThreadPoolExecutor(max_workers=min(BARS_WORKERS, len(parts))) as pool:
-                done = list(pool.map(lambda part: self.stock_bars(part, spec, start, end, feed), parts))
+                done = list(pool.map(lambda part: self.stock_bars(part, spec, start, end, feed, adjustment), parts))
             return {k: v for got, _ in done for k, v in got.items()}, max(d for _, d in done)
 
         # Split-adjusted at EVERY interval (2026-09-15). Intraday bars were
@@ -762,7 +762,7 @@ class AlpacaPrices:
         def fetch(e):
             return client.get_stock_bars(StockBarsRequest(
                 symbol_or_symbols=syms, timeframe=self._timeframe(spec), start=start, end=e, feed=feed_enum,
-                adjustment="split"))
+                adjustment=adjustment))
         recent = feed == "sip" and delay == 0 and (end is None or end > cutoff)
         try:
             resp = _sip_call(lambda: fetch(want_end)) if recent else fetch(want_end)
@@ -975,7 +975,16 @@ class AlpacaPrices:
             return []
         return [{"t": b["ts"].isoformat(), "c": b["close"]} for b in got.get(sym, []) if b["ts"] > last]
 
-    def daily_history(self, symbols: list[str], sessions: int = 21) -> dict[str, list[dict]]:
+    def adjusted_daily_history(self, symbols: list[str], sessions: int = 21) -> dict[str, list[dict]]:
+        """daily_history adjusted for EVERY corporate action — splits, cash
+        dividends and spin-offs — so a close-to-close change is what a holder
+        actually made (2026-10-05). A spin-off drops the parent's price by the
+        value handed out, and split-only bars show that as a loss: Corteva read
+        -83.8% on 2026-10-01. The past-session movers check big moves and
+        measure their statistics on these."""
+        return self.daily_history(symbols, sessions, adjustment="all")
+
+    def daily_history(self, symbols: list[str], sessions: int = 21, adjustment: str = "split") -> dict[str, list[dict]]:
         """The last `sessions` daily bars for many symbols in one request per
         200 — what the calendars' volatility and liquidity columns are computed
         from. Keyed by the symbols as given.
@@ -1003,7 +1012,7 @@ class AlpacaPrices:
                 if not chunk:
                     return {}
                 try:
-                    got, _ = self.stock_bars(chunk, self._INTERVALS["1d"], start)
+                    got, _ = self.stock_bars(chunk, self._INTERVALS["1d"], start, adjustment=adjustment)
                     return got
                 except ProviderError as exc:
                     bad = _invalid_symbol(exc)

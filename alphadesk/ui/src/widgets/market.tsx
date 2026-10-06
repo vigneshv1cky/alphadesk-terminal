@@ -429,12 +429,15 @@ function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = tru
                 {r.price != null ? <Flash value={r.price}>{bonds ? `${num(r.price, 2)}%` : num(r.price, decimals)}</Flash> : "—"}
               </TD>
               <TD align="right" mono className={`font-semibold ${up ? "text-gain" : "text-loss"}`}
-                  title={!session ? undefined
+                  title={r.corporate_action
+                    ? `Corporate action that day (a spin-off or dividend): the price moved ${moveText(r.price_change_pct ?? 0)} on the chart; a holder's move, counting what was handed out, was ${moveText(r.change_pct ?? 0)}`
+                    : !session ? undefined
                     : r.extended ? `${session}, since the last close${r.extended_at ? ` · ${new Date(r.extended_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}${r.regular_pct != null ? ` · the closed session itself: ${moveText(r.regular_pct)}` : ""}`
                     : "No trade since the closing bell — this is the closed session's own move"}>
                 {r.change_pct == null ? "—" : bonds
                   ? `${up ? "+" : ""}${r.change_pct.toFixed(1)}`
                   : moveText(r.change_pct)}
+                {r.corporate_action && <span className="ml-0.5 text-muted-foreground">*</span>}
               </TD>
               {rank && (
                 <TD align="right" mono>

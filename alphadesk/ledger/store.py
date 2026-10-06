@@ -1641,6 +1641,13 @@ def get_session_day(owner: str, day: str) -> dict[str, dict] | None:
         return None
 
 
+def session_day_vendor(owner: str, day: str) -> str | None:
+    """Which vendor a recorded session's bars came from."""
+    with _connect() as conn:
+        row = conn.execute("SELECT vendor FROM session_days WHERE owner=? AND day=?", (owner, day)).fetchone()
+    return row["vendor"] if row else None
+
+
 def recorded_session_days(owner: str) -> set[str]:
     with _connect() as conn:
         return {r["day"] for r in conn.execute("SELECT day FROM session_days WHERE owner=?", (owner,)).fetchall()}

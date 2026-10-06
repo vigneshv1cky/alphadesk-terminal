@@ -163,7 +163,7 @@ def test_daily_history_translates_share_classes_and_drops_what_alpaca_does_not_l
     a = AlpacaPrices(api_key="k", api_secret="s")
     asked = []
 
-    def fake_bars(symbols, spec, start, end=None, feed="sip"):
+    def fake_bars(symbols, spec, start, end=None, feed="sip", adjustment="split"):
         asked.append(list(symbols))
         if "ACP.PA" in symbols:
             raise ProviderError('alpaca bars failed: {"message":"invalid symbol: ACP.PA"}')

@@ -1158,6 +1158,10 @@ export interface CategoryMoverRow {
   name: string | null
   price: number | null
   change_pct: number | null
+  /** A past session's row measured through a corporate action (spin-off, dividend):
+   * change_pct is what a holder made, this is the price chart's own move. */
+  price_change_pct?: number | null
+  corporate_action?: boolean
   volume: number
   /** Annualised realised volatility over the last twenty sessions, percent. */
   volatility: number | null
