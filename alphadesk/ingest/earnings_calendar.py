@@ -25,6 +25,7 @@ vendor memo, and the EDGAR half is shared public data.
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -1086,6 +1087,42 @@ def week(start: Optional[str] = None) -> dict:
     return built
 
 
+#: A built span for the agent's tools, kept briefly per reader (2026-10-06).
+#: The Earnings page's week has kept one for a minute since 2026-09-16; the
+#: agent's tools built the span afresh on every call, and two calls arriving
+#: together each built it — two 6.6 s builds side by side, measured live.
+SHARED_KEEP_S = 60
+_shared: dict[tuple, tuple[float, list[dict]]] = {}
+_shared_locks: dict[tuple, threading.Lock] = {}
+_shared_guard = threading.Lock()
+
+
+def shared_rows_between(start: str, end: str, stats: bool = False) -> list[dict]:
+    """rows_between for the agent's tools: one build per reader and span a
+    minute, shared by callers who ask at the same moment. Each caller gets its
+    own copies of the rows to change."""
+    import time as _time
+    from alphadesk.identity import request_user
+    key = (request_user() or "anon", start, end, stats)
+    with _shared_guard:
+        hit = _shared.get(key)
+        if hit and _time.time() - hit[0] < SHARED_KEEP_S:
+            return [dict(r) for r in hit[1]]
+        lock = _shared_locks.setdefault(key, threading.Lock())
+    with lock:
+        with _shared_guard:
+            hit = _shared.get(key)
+            if hit and _time.time() - hit[0] < SHARED_KEEP_S:
+                return [dict(r) for r in hit[1]]
+        rows = rows_between(start, end, stats=stats)
+        with _shared_guard:
+            if len(_shared) > 200:
+                _shared.clear()
+                _shared_locks.clear()
+            _shared[key] = (_time.time(), rows)
+        return [dict(r) for r in rows]
+
+
 def upcoming(days: int = 7) -> list[dict]:
     """Reports from today through `days` ahead, for the screener and agent
     tools. Empty (never raises) when the user has no calendar vendor — the
@@ -1093,7 +1130,7 @@ def upcoming(days: int = 7) -> list[dict]:
     from alphadesk.config import now_et
     today = now_et().date()
     try:
-        return rows_between(today.isoformat(), (today + timedelta(days=days)).isoformat(), stats=False)
+        return shared_rows_between(today.isoformat(), (today + timedelta(days=days)).isoformat(), stats=False)
     except NeedsKey:
         return []
 
@@ -1102,7 +1139,7 @@ def recently_reported(days: int = 3) -> list[dict]:
     from alphadesk.config import now_et
     today = now_et().date()
     try:
-        rows = rows_between((today - timedelta(days=days)).isoformat(), today.isoformat(), stats=False)
+        rows = shared_rows_between((today - timedelta(days=days)).isoformat(), today.isoformat(), stats=False)
     except NeedsKey:
         return []
     return [r for r in rows if r.get("eps_actual") is not None or r.get("released_at")]

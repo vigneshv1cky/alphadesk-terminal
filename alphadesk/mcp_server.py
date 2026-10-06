@@ -1273,7 +1273,7 @@ def candidates(session: str = "", sessions_ahead: int = 1, filing_hours: int = 0
     span_from = cal.previous_session(first)
     from alphadesk.stagetimer import Stages
     st_ = Stages("candidates", logging.getLogger("alphadesk.mcp"))
-    rows_between = lambda: earnings_calendar.rows_between(span_from.isoformat(), targets[-1].isoformat(), stats=False)  # noqa: E731
+    rows_between = lambda: earnings_calendar.shared_rows_between(span_from.isoformat(), targets[-1].isoformat(), stats=False)  # noqa: E731
     earnings = attempt("earnings", lambda: rows_between(), [])
     st_.mark("earnings calendar")
     feed = attempt("filings", lambda: edgar_feed.recent(groups=["events", "stakes", "offerings"], limit=200), {})

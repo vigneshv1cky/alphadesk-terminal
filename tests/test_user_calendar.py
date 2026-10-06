@@ -809,3 +809,27 @@ def test_the_range_is_dropped_rather_than_guessed_when_a_bar_lacks_it():
     assert ec.move_extremes(100.0, {"close": 110.0}, None, False) == (None, None)
     assert ec.move_extremes(None, {"high": 1.0, "low": 1.0}, None, False) == (None, None)
     assert ec.move_extremes(0.0, {"high": 1.0, "low": 1.0}, None, False) == (None, None)
+
+
+def test_the_agents_calendar_is_built_once_for_callers_asking_together(monkeypatch):
+    import threading
+    import time
+    builds: list[tuple] = []
+
+    def slow_build(start, end, stats=True, pending=None):
+        builds.append((start, end))
+        time.sleep(0.2)
+        return [{"symbol": "AAPL", "report_date": start}]
+
+    monkeypatch.setattr(uc, "rows_between", slow_build)
+    uc._shared.clear()
+    got: list = []
+    threads = [threading.Thread(target=lambda: got.append(uc.shared_rows_between("2026-10-05", "2026-10-06"))) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(builds) == 1 and len(got) == 3
+    got[0][0]["symbol"] = "CHANGED"                      # one caller's copy is its own
+    assert uc.shared_rows_between("2026-10-05", "2026-10-06")[0]["symbol"] == "AAPL" and len(builds) == 1
+    uc._shared.clear()
