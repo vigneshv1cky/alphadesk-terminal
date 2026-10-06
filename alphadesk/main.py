@@ -433,6 +433,8 @@ def main() -> None:
         print("never called:", ", ".join(r["never_called"]) or "none")
         print("struggling (30%+ empty, partial or failed):", ", ".join(r["worst"]) or "none")
         print("slow (p95 over 3s):", ", ".join(r["slowest"]) or "none")
+        for c in r.get("slowest_calls", [])[:10]:
+            print(f"slowest call {c['ms']:>7} ms  {c['at'][:19]}  {c['tool']}  {c['args'][:80]}")
         for c in r["repeated_chains"]:
             print(f"repeated chain x{c['times']}: {c['chain']}")
         for m in r["feedback"]["missing"]:

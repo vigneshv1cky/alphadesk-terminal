@@ -175,6 +175,10 @@ def assign_tasks(rows: list[dict]) -> list[dict]:
     return out
 
 
+#: How many single calls the report lists as the slowest.
+SLOWEST_CALLS = 20
+
+
 def summarize(rows: list[dict], known_tools: list[str] | None = None, feedback: list[dict] | None = None) -> dict:
     """The report over `rows` (oldest first)."""
     rows = assign_tasks(rows)
@@ -222,6 +226,13 @@ def summarize(rows: list[dict], known_tools: list[str] | None = None, feedback: 
         "worst": [t["tool"] for t in sorted(tools, key=lambda t: -(t["error_pct"] + t["empty_pct"] + t["incomplete_pct"]))
                   if t["calls"] >= 3 and (t["error_pct"] + t["empty_pct"] + t["incomplete_pct"]) >= 30][:8],
         "slowest": [t["tool"] for t in sorted(tools, key=lambda t: -(t["p95_ms"] or 0)) if (t["p95_ms"] or 0) >= 3000][:8],
+        # The single slowest calls, each with when, what was asked and how long
+        # the tool itself ran (2026-10-06): the per-tool percentiles cannot say
+        # which request was slow, and a slow response measured from outside
+        # can only be matched to a tool run by its time.
+        "slowest_calls": [{"at": c["at"], "tool": c["tool"], "args": (c.get("args") or "")[:300], "ms": c["ms"],
+                           "outcome": c["outcome"], "bytes": c.get("bytes")}
+                          for c in sorted((c for c in rows if c.get("ms") is not None), key=lambda c: -c["ms"])[:SLOWEST_CALLS]],
         "repeated_chains": [{"chain": k, "times": v} for k, v in repeated],
         "intents": sorted({r["intent"] for r in rows if r.get("intent")})[:20],
         "feedback": {

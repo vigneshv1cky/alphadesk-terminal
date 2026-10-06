@@ -561,7 +561,8 @@ the same address with `/feedback` in place of `/mcp`, using the same token:
 That is the only write on the agent door, and it writes to the usage log
 and nothing else. Read the report with `python -m alphadesk.main agent-usage
 --days 30`, or `/api/agent/usage?days=30` while signed in: which tools are never
-called, which come back empty or fail, which are slow, which chains of calls
+called, which come back empty or fail, which are slow (and the twenty slowest single
+calls, each with its time, tool, arguments and duration), which chains of calls
 repeat (a tool that should exist), and what agents said they were missing. The
 log never holds a token, a key, or the agent's reasoning or final answer.
 

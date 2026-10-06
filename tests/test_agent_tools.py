@@ -363,6 +363,8 @@ def test_the_report_groups_calls_into_tasks_and_finds_what_to_fix():
     assert rep["never_called"] == ["peers"]
     assert rep["worst"] == ["analyst_view"]
     assert rep["slowest"] == ["price_chart"]
+    assert rep["slowest_calls"][0]["tool"] == "price_chart" and rep["slowest_calls"][0]["ms"] == 9000
+    assert rep["slowest_calls"][0]["at"].startswith("2026-10-03T12:08:20") and len(rep["slowest_calls"]) == 10
     assert rep["repeated_chains"] == [{"chain": "news_search → news_story → list_filings", "times": 2}]
     tool = {t["tool"]: t for t in rep["tools"]}
     assert tool["analyst_view"]["error_kinds"] == {"no_coverage": 3}
