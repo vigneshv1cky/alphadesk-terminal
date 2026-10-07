@@ -1159,10 +1159,13 @@ def what_moved(symbol: str, days: int = 90, min_move_pct: float = 10.0) -> dict:
     from alphadesk.identity import request_user
     from alphadesk.ingest.news import news_owner
     from alphadesk.ledger import store
+    from alphadesk.stagetimer import Stages
     sym = _symbol(symbol)
+    st_ = Stages(f"what_moved {sym}", log)
     days = max(5, min(int(days), 365))
     key = "1M" if days <= 31 else "3M" if days <= 93 else "6M" if days <= 186 else "1Y"
     series = _http_errors(dashboard.api_chart, sym, range=key, interval="1d")
+    st_.mark("daily bars")
     bars = [b for b in (series.get("bars") or []) if b.get("c") is not None]
     if not bars:
         raise ValueError(f"no daily bars for {sym}")
@@ -1171,8 +1174,11 @@ def what_moved(symbol: str, days: int = 90, min_move_pct: float = 10.0) -> dict:
     uid = request_user()
     articles, notes = [], []
     if uid and store.get_user_keys(uid, "news"):
-        for a in store.articles_for_symbol(news_owner(uid), sym, None, 500, body=False):
+        stored = store.articles_for_symbol(news_owner(uid), sym, None, 500, body=False)
+        st_.mark("stored stories")
+        for a in stored:
             articles.append({**a, "kind": newskind.of_article(a)})
+        st_.mark("story kinds")
     else:
         notes.append("no news feed is connected, so no stories are matched")
     try:
@@ -1180,7 +1186,10 @@ def what_moved(symbol: str, days: int = 90, min_move_pct: float = 10.0) -> dict:
     except Exception as exc:
         filed = []
         notes.append(f"filings could not be listed: {exc}")
+    st_.mark("SEC filings")
     out = moves.join_moves(bars, articles, filed, float(min_move_pct), since=since)
+    st_.mark("matching")
+    st_.done(f"{days} days, {len(articles)} stories, {len(filed)} filings")
     return {"symbol": sym, "from": since, "price_vendor": series.get("vendor") or series.get("source"),
             **out, "notes": notes}
 
