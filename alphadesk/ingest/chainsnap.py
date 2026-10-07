@@ -73,9 +73,15 @@ def record_chains_close(router, now: Optional[datetime] = None) -> int:
                 chains[exp] = got
         if not chains:
             continue
+        # The stock's price at the save, so a past day's chain can be cut
+        # around the money the way a live one is.
+        try:
+            spot = (router.quote(sym) or {}).get("price")
+        except Exception:
+            spot = None
         try:
             store.save_option_chain_day(router.owner, sym, day.isoformat(), getattr(vendor, "name", "unknown"),
-                                        {"symbol": sym, "day": day.isoformat(), "chains": chains,
+                                        {"symbol": sym, "day": day.isoformat(), "spot": spot, "chains": chains,
                                          "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
             saved += 1
         except Exception as exc:

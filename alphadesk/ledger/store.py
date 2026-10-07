@@ -1850,6 +1850,14 @@ def recorded_option_chain_symbols(owner: str, day: str) -> list[str]:
             "SELECT symbol FROM option_chain_days WHERE owner=? AND day=?", (owner, day)).fetchall()]
 
 
+def recorded_option_chain_days(owner: str, symbol: str, limit: int = 30) -> list[str]:
+    """The days one symbol's chains were saved, newest first."""
+    with _connect() as conn:
+        return [r["day"] for r in conn.execute(
+            "SELECT day FROM option_chain_days WHERE owner=? AND symbol=? ORDER BY day DESC LIMIT ?",
+            (owner, symbol.upper(), int(limit))).fetchall()]
+
+
 def save_options_flow(owner: str, symbol: str, session: str, payload: Any) -> None:
     """One underlying's capture for one session, replacing the last copy."""
     import base64

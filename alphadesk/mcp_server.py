@@ -90,7 +90,10 @@ mcp = FastMCP(
         "* A PAST session's movers: movers(session=...) for stocks, ETFs, "
         "crypto and options; take the date from market_sessions(category=...) "
         "— a weekend or a holiday is not a session, and options exist only "
-        "for the days AlphaDesk recorded.\n\n"
+        "for the days AlphaDesk recorded.\n"
+        "* A PAST day's option chain: option_chain(on=...) reads the chain saved "
+        "at that day's close (board stocks only, from 2026-10-07); without "
+        "an expiry it lists the expiries saved that day.\n\n"
         "ALPHADESK RUNS NO MODEL. Every tool returns records — prices, filings, "
         "statements, holdings, news, calendars — and you do the reading and the "
         "reasoning. Quote what the records say and name where each figure came "
@@ -1823,14 +1826,24 @@ def option_expirations(symbol: str) -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
-def option_chain(symbol: str, expiry: str, strikes: int = 10) -> dict:
+def option_chain(symbol: str, expiry: str = "", strikes: int = 10, on: str = "") -> dict:
     """One expiry's option chain for one underlying, around the money:
     `strikes` strikes each side of the spot price (max 25), calls and puts
     with bid, ask, last, volume, open interest and implied volatility where
-    the reader's plan carries it. Get `expiry` from option_expirations."""
-    from alphadesk.app import dashboard
+    the reader's plan carries it. Get `expiry` from option_expirations.
+
+    `on` (YYYY-MM-DD) reads a PAST trading day's chain as it stood at that
+    day's close instead of the live one. Only days AlphaDesk saved exist:
+    the stocks on the reader's board, the six nearest expiries within 60
+    days, saved after 4:15pm New York from 2026-10-07 on. With `on` and no
+    `expiry`, it lists the expiries saved that day. A day with nothing saved
+    answers `saved: false` with the days that were."""
     sym = _symbol(symbol)
     exp = _date(expiry, "expiry")
+    day = _date(on, "on")
+    if day:
+        return _saved_option_chain(sym, exp, day, strikes)
+    from alphadesk.app import dashboard
     if not exp:
         raise ValueError("an expiry is required — see option_expirations")
     got = _http_errors(dashboard.api_option_chain, sym, expiry=exp) or {}
@@ -1839,6 +1852,31 @@ def option_chain(symbol: str, expiry: str, strikes: int = 10) -> dict:
         quote = _http_errors(dashboard.api_quotes, symbols=sym, fill="")
         spot = ((quote.get("quotes") or {}).get(sym) or {}).get("price")
     return {"symbol": sym, "expiry": exp, "spot": spot, "vendor": got.get("vendor"),
+            "calls": near_the_money(got.get("calls") or [], spot, strikes),
+            "puts": near_the_money(got.get("puts") or [], spot, strikes)}
+
+
+def _saved_option_chain(sym: str, exp: str | None, day: str, strikes: int) -> dict:
+    """A chain saved at a past day's close (ingest/chainsnap.py). Asks no vendor."""
+    from alphadesk.ledger import store
+    from alphadesk.providers import get_prices
+    owner = get_prices().owner
+    kept = store.get_option_chain_day(owner, sym, day) if owner else None
+    if not kept:
+        return {"symbol": sym, "on": day, "saved": False,
+                "saved_days": store.recorded_option_chain_days(owner, sym) if owner else [],
+                "note": "no chain was saved for this symbol on that day: only the board's stocks are "
+                        "saved, once a trading day after the close, from 2026-10-07"}
+    chains = kept.get("chains") or {}
+    if not exp:
+        return {"symbol": sym, "on": day, "saved": True, "expiries": sorted(chains),
+                "spot": kept.get("spot"), "saved_at": kept.get("saved_at")}
+    got = chains.get(exp)
+    if not got:
+        raise ValueError(f"no {exp} chain was saved for {sym} on {day}; saved expiries: {', '.join(sorted(chains))}")
+    spot = kept.get("spot")
+    return {"symbol": sym, "expiry": exp, "on": day, "saved": True, "as_of": "that day's close",
+            "saved_at": kept.get("saved_at"), "spot": spot, "vendor": got.get("vendor"),
             "calls": near_the_money(got.get("calls") or [], spot, strikes),
             "puts": near_the_money(got.get("puts") or [], spot, strikes)}
 

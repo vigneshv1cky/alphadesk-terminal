@@ -154,7 +154,7 @@ def test_alpha_vantage_requests_are_paced_one_a_second_per_key(monkeypatch):
 
 
 def test_the_boards_option_chains_are_kept_once_after_the_close(store):
-    from datetime import date, datetime, timezone
+    from datetime import date, datetime
     from zoneinfo import ZoneInfo
     from alphadesk.ingest import chainsnap
     store.save_board("u-chain", ["NVDA", "BTC-USD", "AAPL"], "NVDA")
@@ -183,3 +183,23 @@ def test_the_boards_option_chains_are_kept_once_after_the_close(store):
     kept = store.get_option_chain_day("u-chain", "NVDA", "2026-10-07")
     assert set(kept["chains"]) == {"2026-10-09", "2026-10-16"} and kept["chains"]["2026-10-09"]["calls"][0]["bid"] == 1.0
     assert chainsnap.nearest_expiries(["2026-10-01", "2026-10-09"], date(2026, 10, 7)) == ["2026-10-09"]
+
+
+def test_a_saved_option_chain_is_read_back_for_a_past_day(store, monkeypatch):
+    import pytest
+    from alphadesk import mcp_server
+    import alphadesk.providers as providers
+    monkeypatch.setattr(providers, "get_prices", lambda: type("R", (), {"owner": "u-past"})())
+    calls = [{"strike": float(s), "bid": 1.0, "ask": 1.2} for s in range(80, 130, 5)]
+    store.save_option_chain_day("u-past", "NVDA", "2026-10-07", "alpaca",
+                                {"symbol": "NVDA", "day": "2026-10-07", "spot": 101.0, "saved_at": "2026-10-07T20:30:00+00:00",
+                                 "chains": {"2026-10-09": {"calls": calls, "puts": [], "vendor": "alpaca"}}})
+    listed = mcp_server.option_chain("NVDA", on="2026-10-07")
+    assert listed["saved"] and listed["expiries"] == ["2026-10-09"] and listed["spot"] == 101.0
+    got = mcp_server.option_chain("NVDA", expiry="2026-10-09", strikes=2, on="2026-10-07")
+    assert [r["strike"] for r in got["calls"]] == [95.0, 100.0, 105.0, 110.0]   # cut around the saved price
+    assert got["as_of"] == "that day's close"
+    missing = mcp_server.option_chain("NVDA", on="2026-10-06")
+    assert missing["saved"] is False and missing["saved_days"] == ["2026-10-07"]
+    with pytest.raises(ValueError, match="saved expiries: 2026-10-09"):
+        mcp_server.option_chain("NVDA", expiry="2026-10-16", on="2026-10-07")
