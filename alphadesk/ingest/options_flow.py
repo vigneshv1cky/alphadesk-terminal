@@ -17,8 +17,10 @@ touched. Two or more exchanges, or an intermarket-sweep condition, is a
 SWEEP. The OPRA condition code names the rest (multi-leg, auction, cross,
 floor, tied to a stock trade, extended hours); cancelled prints are dropped.
 
-State is per reader and per underlying, in memory, and resets each session:
-a reader's orders and the sides seen on their key are theirs.
+State is per reader and per underlying, and resets each session: a reader's
+orders and the sides seen on their key are theirs. It is SAVED as the session
+goes (2026-10-06) and restored after a restart, because the side an order hit
+can never be read again later.
 """
 
 from __future__ import annotations
@@ -172,10 +174,77 @@ def _state(owner: str, sym: str, now: datetime) -> dict:
             if len(_states) >= MAX_STATES:
                 _states.pop(min(_states, key=lambda k: _states[k]["touched"]))
             start = _session_start(now)
-            state = _states[key] = {"since": start, "session": start, "live_since": now, "orders": {}, "recent": {},
-                                    "share": {}, "minutes": {}, "active": None, "active_at": 0.0, "touched": time.time()}
+            state = _restore(owner, sym, start) or {
+                "since": start, "session": start, "live_since": now, "orders": {}, "recent": {},
+                "share": {}, "minutes": {}, "active": None, "active_at": 0.0}
+            state["touched"] = time.time()
+            state.setdefault("saved_at", 0.0)
+            _states[key] = state
         state["touched"] = time.time()
     return state
+
+
+#: How often one underlying's capture is written while a session runs.
+SAVE_EVERY_S = 30.0
+_saver = None
+
+
+def _snapshot(state: dict) -> dict:
+    """What a restart cannot read again: the orders with their sides, the
+    ask/bid tallies, the stock's minutes and how far the capture had read."""
+    return {"session": state["session"].isoformat(), "since": state["since"].isoformat(),
+            "live_since": state["live_since"].isoformat(),
+            "orders": [[k[0], k[1], o] for k, o in state["orders"].items()],
+            # The prints of the last seconds already counted, so a restored
+            # capture re-reading that second skips them as a live one does.
+            "recent": [[list(tid), at.isoformat()] for tid, at in state["recent"].items()],
+            "share": state["share"], "minutes": state["minutes"]}
+
+
+def _restore(owner: str, sym: str, session: datetime) -> dict | None:
+    """A saved capture of this session, or None. It resumes exactly where it
+    had read, with the prints of that last second it had already counted, so
+    nothing is counted twice and nothing in that second is missed; the active
+    contracts are read again."""
+    try:
+        from alphadesk.ledger import store
+        got = store.get_options_flow(owner, sym, session.isoformat())
+    except Exception as exc:
+        log.debug("options flow for %s not restored: %s", sym, exc)
+        return None
+    if not got:
+        return None
+    try:
+        return {"since": datetime.fromisoformat(got["since"]), "session": datetime.fromisoformat(got["session"]),
+                "live_since": datetime.fromisoformat(got["live_since"]),
+                "orders": {(c, ms): o for c, ms, o in got.get("orders") or []},
+                "recent": {tuple(tid): datetime.fromisoformat(at) for tid, at in got.get("recent") or []},
+                "share": got.get("share") or {}, "minutes": got.get("minutes") or {},
+                "active": None, "active_at": 0.0, "saved_at": time.time()}
+    except (KeyError, TypeError, ValueError) as exc:
+        log.debug("options flow for %s unreadable: %s", sym, exc)
+        return None
+
+
+def _save_soon(owner: str, sym: str, state: dict, force: bool = False) -> None:
+    """Write this capture on the saver thread, at most every SAVE_EVERY_S."""
+    global _saver
+    if not owner or (not force and time.time() - state.get("saved_at", 0.0) < SAVE_EVERY_S):
+        return
+    state["saved_at"] = time.time()
+    with _lock:
+        snap = _snapshot(state)
+    if _saver is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _saver = ThreadPoolExecutor(max_workers=1, thread_name_prefix="options-flow-save")
+
+    def write() -> None:
+        try:
+            from alphadesk.ledger import store
+            store.save_options_flow(owner, sym, snap["session"], snap)
+        except Exception as exc:
+            log.warning("options flow for %s not saved: %s", sym, exc)
+    _saver.submit(write)
 
 
 def capture(vendor, owner: str, symbol: str, now: datetime | None = None) -> dict:
@@ -262,6 +331,7 @@ def capture(vendor, owner: str, symbol: str, now: datetime | None = None) -> dic
     if len(state["orders"]) > KEEP_ORDERS:
         for key in sorted(state["orders"], key=lambda k: state["orders"][k]["t"])[:len(state["orders"]) - KEEP_ORDERS]:
             del state["orders"][key]
+    _save_soon(owner, sym, state)
     return state
 
 

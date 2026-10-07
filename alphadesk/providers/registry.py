@@ -188,6 +188,29 @@ _DAILY_OR_LONGER = {"1d", "1wk", "1mo"}
 _KEEP_STALE_S = 14 * 86400.0
 
 
+def _kept_encode(obj: Any) -> Any:
+    """A date or time in a kept answer, written so it comes back as itself
+    (2026-10-06). Daily bars carry their stamp as a datetime, which plain JSON
+    refuses: every daily history answer failed to be kept, silently, though
+    the method was listed as kept — past bars never change."""
+    from datetime import date, datetime
+    if isinstance(obj, datetime):
+        return {"__kept_dt__": obj.isoformat()}
+    if isinstance(obj, date):
+        return {"__kept_date__": obj.isoformat()}
+    raise TypeError(f"{type(obj).__name__} is not kept")
+
+
+def _kept_decode(obj: dict) -> Any:
+    from datetime import date, datetime
+    if len(obj) == 1:
+        if "__kept_dt__" in obj:
+            return datetime.fromisoformat(obj["__kept_dt__"])
+        if "__kept_date__" in obj:
+            return date.fromisoformat(obj["__kept_date__"])
+    return obj
+
+
 def _keep_fresh_s(method: str, kwargs: dict) -> float | None:
     """How long a kept copy of this call counts as current, or None when it is
     not kept. A chart is kept only when it is history: a page before an instant
@@ -249,7 +272,7 @@ class _CachedPrices:
             if got is None:
                 return None
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(got[1])).total_seconds()
-            return json.loads(got[0]), age
+            return json.loads(got[0], object_hook=_kept_decode), age
         except Exception as exc:                          # a kept copy is a convenience, never an error
             log.debug("kept answer for %s unreadable: %s", attr, exc)
             return None
@@ -261,8 +284,8 @@ class _CachedPrices:
             import json
 
             from alphadesk.ledger import store
-            payload = json.dumps(val)
-            if json.loads(payload) != val:                # tuples, sets, objects: not kept, rather than altered
+            payload = json.dumps(val, default=_kept_encode)
+            if json.loads(payload, object_hook=_kept_decode) != val:   # tuples, sets, objects: not kept, rather than altered
                 return
             store.vendor_cache_put(self._owner, self._vendor, attr, _arg_key(attr, args, kwargs), payload)
         except Exception as exc:

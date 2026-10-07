@@ -8,7 +8,20 @@ reader would be misled by if they broke.
 
 from types import SimpleNamespace
 
+import pytest
+
 from alphadesk.ingest import options
+
+
+@pytest.fixture(autouse=True)
+def _fresh_ledger(store):
+    """The options flow capture is saved as it goes (2026-10-06): each test gets
+    its own ledger, so one test's saved session is never restored in the next."""
+    from alphadesk.ingest import options_flow as of
+    of._states.clear()
+    yield
+    if of._saver is not None:
+        of._saver.submit(lambda: None).result(timeout=5)
 
 
 def contract(sym, strike, side, oi=0):
@@ -205,3 +218,36 @@ def test_several_symbols_carry_the_stock_price_and_the_live_ask_share():
     assert nvda["stock"] == 212.4 and nvda["side"] == "ask" and nvda["ask_share"] == round(200 / 300, 3) and nvda["share_contracts"] == 300
     assert by[("AAPL", "2026-09-14T15:30:17Z")]["stock"] == 332.1
     assert ("NVDA", "2026-09-14T15:30:16Z") in by                                    # $19K: over the $10K floor
+
+
+def test_a_restart_keeps_the_sessions_orders_and_the_sides_they_hit(store):
+    """The side an order hit is only knowable within seconds of its quote, so a
+    restart used to lose the session's flow for good (2026-10-06 audit)."""
+    from datetime import datetime, timezone
+    from alphadesk.ingest import options_flow as of
+
+    class _V:
+        def __init__(self):
+            self.tape = []
+        def option_active_contracts(self, symbol, top=40):
+            return {"feed": "opra", "contracts": [{"symbol": "NVDA260918C00210000", "volume": 900, "open_interest": 1000}]}
+        def option_trades(self, symbols, start):
+            return [t for t in self.tape if t["t"] >= start[:19]]
+        def option_latest_quotes(self, symbols):
+            return {s: {"bid": 1.9, "ask": 2.0} for s in symbols}
+        def stock_minute_closes(self, symbol, start):
+            return {"2026-09-14T15:30": 212.4}
+
+    v = _V()
+    of.flow(v, "r", ["NVDA"], now=datetime(2026, 9, 14, 15, 30, 10, tzinfo=timezone.utc))
+    v.tape = [{"symbol": "NVDA260918C00210000", "t": "2026-09-14T15:30:15Z", "price": 2.0, "size": 200, "exchange": "C", "condition": "I"}]
+    later = datetime(2026, 9, 14, 15, 30, 20, tzinfo=timezone.utc)
+    state = of.capture(v, "r", "NVDA", now=later)
+    of._save_soon("r", "NVDA", state, force=True)
+    of._saver.submit(lambda: None).result(timeout=5)
+
+    of._states.clear()                                                   # a restart: memory is empty
+    out = of.flow(v, "r", ["NVDA"], min_premium=10_000, now=datetime(2026, 9, 14, 15, 31, 0, tzinfo=timezone.utc))
+    rows = [r for r in out["trades"] if r["t"] == "2026-09-14T15:30:15Z"]
+    assert len(rows) == 1                                                # restored once, not re-read twice
+    assert rows[0]["side"] == "ask" and rows[0]["size"] == 200 and rows[0]["stock"] == 212.4

@@ -125,3 +125,23 @@ def test_an_account_delete_takes_the_kept_answers_with_it(store):
     store.create_user("gone", "g@example.com", "x")
     wrap(Vendor(), "gone").fundamentals("AAPL")
     assert store.delete_account("gone")["vendor_cache"] == 1
+
+
+def test_daily_bars_with_datetime_stamps_are_kept_and_come_back_as_datetimes(store):
+    """Real bars carry their stamp as a datetime, which plain JSON refused, so
+    daily history was listed as kept and never saved (2026-10-06 audit)."""
+    stamp = datetime(2026, 10, 1, 4, 0, tzinfo=timezone.utc)
+
+    class Bars(Vendor):
+        def daily_history(self, symbols, sessions=21):
+            self.calls.append("daily_history")
+            return {s: [{"ts": stamp, "close": 12.57, "volume": 88.0}] for s in symbols}
+
+    v = Bars()
+    wrap(v).daily_history(["CTVA"], 21)
+    with store._connect() as conn:
+        assert conn.execute("SELECT COUNT(*) AS n FROM vendor_cache WHERE method='daily_history'").fetchone()["n"] == 1
+    again = wrap(v).daily_history(["CTVA"], 21)                     # a new process: read back from the store
+    assert v.calls == ["daily_history"]
+    bar = again["CTVA"][0]
+    assert bar["ts"] == stamp and isinstance(bar["ts"], datetime) and bar["ts"].date().isoformat() == "2026-10-01"

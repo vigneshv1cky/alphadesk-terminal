@@ -511,6 +511,20 @@ CREATE TABLE IF NOT EXISTS movers_days (
     PRIMARY KEY (owner, category, day)
 );
 
+-- Options flow captured during a session (2026-10-06): the orders seen live
+-- with the side they hit, the ask/bid tallies and the stock's minutes, per
+-- reader, underlying and session. The side is only knowable within seconds of
+-- the quote, so a restart used to lose it for good. zlib then base64 JSON,
+-- rewritten as the session goes, kept after it.
+CREATE TABLE IF NOT EXISTS options_flow_sessions (
+    owner      TEXT NOT NULL,
+    symbol     TEXT NOT NULL,
+    session    TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    saved_at   BIGINT NOT NULL,
+    PRIMARY KEY (owner, symbol, session)
+);
+
 -- Access tokens a reader issues so THEIR OWN agent (Claude, Cursor,
 -- opencode, …) can call AlphaDesk's tools as them. Only the SHA-256 of the
 -- token is stored; the token itself is shown once, at creation.
@@ -1681,6 +1695,32 @@ def recorded_session_days(owner: str) -> set[str]:
         return {r["day"] for r in conn.execute("SELECT day FROM session_days WHERE owner=?", (owner,)).fetchall()}
 
 
+def save_options_flow(owner: str, symbol: str, session: str, payload: Any) -> None:
+    """One underlying's capture for one session, replacing the last copy."""
+    import base64
+    import zlib
+    blob = base64.b64encode(zlib.compress(json.dumps(payload, separators=(",", ":")).encode(), 6)).decode()
+    with _lock, _connect() as conn:
+        conn.execute(
+            "INSERT INTO options_flow_sessions (owner, symbol, session, payload, saved_at) VALUES (?,?,?,?,?)"
+            " ON CONFLICT (owner, symbol, session) DO UPDATE SET payload=excluded.payload, saved_at=excluded.saved_at",
+            (owner, symbol, session, blob, int(time.time())))
+
+
+def get_options_flow(owner: str, symbol: str, session: str) -> Any:
+    import base64
+    import zlib
+    with _connect() as conn:
+        row = conn.execute("SELECT payload FROM options_flow_sessions WHERE owner=? AND symbol=? AND session=?",
+                           (owner, symbol, session)).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(zlib.decompress(base64.b64decode(row["payload"])))
+    except (ValueError, zlib.error):
+        return None
+
+
 def save_movers_day(owner: str, category: str, day: str, vendor: str, payload: Any) -> None:
     """Keep one finished day of a movers category. First write wins."""
     import base64
@@ -2584,6 +2624,7 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
                 out["dollar_pools"] = conn.execute("DELETE FROM reader_dollar_pools WHERE owner=?", (owner,)).rowcount or 0
                 out["session_days"] = conn.execute("DELETE FROM session_days WHERE owner=?", (owner,)).rowcount or 0
                 out["movers_days"] = conn.execute("DELETE FROM movers_days WHERE owner=?", (owner,)).rowcount or 0
+                conn.execute("DELETE FROM options_flow_sessions WHERE owner=?", (owner,))
             else:
                 out["forecasts"] = conn.execute("DELETE FROM earnings_forecasts WHERE owner=? AND vendor=?",
                                                 (owner, provider)).rowcount or 0
@@ -2593,6 +2634,8 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
                                                    (owner, provider)).rowcount or 0
                 out["movers_days"] = conn.execute("DELETE FROM movers_days WHERE owner=? AND vendor=?",
                                                   (owner, provider)).rowcount or 0
+                if provider == "alpaca":                   # the options feed the flow is captured from
+                    conn.execute("DELETE FROM options_flow_sessions WHERE owner=?", (owner,))
     return out
 
 
@@ -2605,7 +2648,7 @@ _ACCOUNT_TABLES_BY_USER = ("user_sign_ins", "user_api_keys", "user_views", "user
                            "user_boards", "user_layouts", "agent_access_tokens", "oauth_codes",
                            "oauth_grants", "user_chart_state", "warm_paths", "agent_calls")
 _ACCOUNT_TABLES_BY_OWNER = ("news_articles", "news_tickers", "vendor_cache", "news_vectors", "earnings_announcements", "release_habits",
-                            "press_release_checks", "earnings_forecasts", "reader_dollar_pools", "session_days", "movers_days")
+                            "press_release_checks", "earnings_forecasts", "reader_dollar_pools", "session_days", "movers_days", "options_flow_sessions")
 
 
 def user_layouts(user_id: str) -> dict[str, dict]:
