@@ -531,6 +531,17 @@ CREATE TABLE IF NOT EXISTS insider_form4 (
     saved_at   BIGINT NOT NULL
 );
 
+-- Whether a filing a company made on a day is a quarterly results release
+-- (2026-10-07): the earnings calendar asked EDGAR once per company after every
+-- restart (4.5 s of a cold build) though the answer never changes. Public.
+CREATE TABLE IF NOT EXISTS quarter_release_checks (
+    symbol     TEXT NOT NULL,
+    filed_on   TEXT NOT NULL,
+    is_release INTEGER NOT NULL,
+    saved_at   BIGINT NOT NULL,
+    PRIMARY KEY (symbol, filed_on)
+);
+
 -- Options flow captured during a session (2026-10-06): the orders seen live
 -- with the side they hit, the ask/bid tallies and the stock's minutes, per
 -- reader, underlying and session. The side is only knowable within seconds of
@@ -673,7 +684,8 @@ def kept_counts(owner: str) -> dict:
             r = conn.execute(f"SELECT COUNT(*) AS n, MAX(saved_at) AS newest FROM {table} WHERE owner=?", (owner,)).fetchone()
             out["tables"][table] = {"rows": r["n"], "newest_saved_at": r["newest"]}
         for table, col in (("filings", "ingested_at"), ("filing_text_cache", "extracted_at"),
-                           ("sec_documents", "fetched_at"), ("insider_form4", "saved_at")):
+                           ("sec_documents", "fetched_at"), ("insider_form4", "saved_at"),
+                           ("quarter_release_checks", "saved_at")):
             r = conn.execute(f"SELECT COUNT(*) AS n, MAX({col}) AS newest FROM {table}").fetchone()
             out["tables"][table] = {"rows": r["n"], "newest": r["newest"], "shared": True}
     return out
@@ -1732,6 +1744,20 @@ def session_day_vendor(owner: str, day: str) -> str | None:
 def recorded_session_days(owner: str) -> set[str]:
     with _connect() as conn:
         return {r["day"] for r in conn.execute("SELECT day FROM session_days WHERE owner=?", (owner,)).fetchall()}
+
+
+def quarter_release_get(symbol: str, filed_on: str) -> bool | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT is_release FROM quarter_release_checks WHERE symbol=? AND filed_on=?",
+                           (symbol.upper(), filed_on)).fetchone()
+    return bool(row["is_release"]) if row else None
+
+
+def quarter_release_put(symbol: str, filed_on: str, is_release: bool) -> None:
+    with _lock, _connect() as conn:
+        conn.execute("INSERT INTO quarter_release_checks (symbol, filed_on, is_release, saved_at) VALUES (?,?,?,?)"
+                     " ON CONFLICT (symbol, filed_on) DO NOTHING",
+                     (symbol.upper(), filed_on, 1 if is_release else 0, int(time.time())))
 
 
 def sec_document_get(url: str) -> tuple[bytes, int] | None:

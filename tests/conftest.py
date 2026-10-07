@@ -54,6 +54,7 @@ def _clear_kept_sec():
         with store._lock, store._connect() as conn:
             conn.execute("DELETE FROM sec_documents")
             conn.execute("DELETE FROM insider_form4")
+            conn.execute("DELETE FROM quarter_release_checks")
             conn.execute("DELETE FROM vendor_cache WHERE method LIKE 'list:%'")
     except Exception:
         pass                                          # no ledger yet: nothing kept

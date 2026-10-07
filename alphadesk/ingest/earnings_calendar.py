@@ -367,11 +367,27 @@ def quarter_release(symbol: str, filed_on: str) -> bool:
     key = (symbol, filed_on)
     if key in _periodic_cache:
         return _periodic_cache[key]
+    # KEPT IN THE STORE (2026-10-07): the answer never changes, and this was
+    # one paced EDGAR request per company after every restart — 4.5 s of the
+    # first calendar build after a deploy.
+    from alphadesk.ledger import store
+    try:
+        kept = store.quarter_release_get(symbol, filed_on)
+    except Exception as exc:
+        log.debug("kept quarter-release check unreadable: %s", exc)
+        kept = None
+    if kept is not None:
+        _periodic_cache[key] = kept
+        return kept
     from alphadesk.ingest import edgar
     filings = edgar.recent_filings(symbol, forms=("8-K", "8-K/A", "10-Q", "10-Q/A"), limit=60)
     ok = is_quarter_release(filed_on, filings)
     if filings:
         _periodic_cache[key] = ok
+        try:
+            store.quarter_release_put(symbol, filed_on, ok)
+        except Exception as exc:
+            log.debug("quarter-release check not kept: %s", exc)
     return ok
 
 

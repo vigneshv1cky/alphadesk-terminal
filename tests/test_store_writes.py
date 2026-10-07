@@ -114,3 +114,21 @@ def test_a_slow_list_is_kept_reused_and_served_when_the_vendor_fails(store):
         raise RuntimeError("vendor down")
     assert kept("u1", "alpaca", "asset_listing", 0, down) == [["AAPL", "Apple", "NASDAQ"]]   # stale, but the vendor failed
     assert kept("u1", "fmp", "fund_names", 0, lambda: None) is None   # empty is an answer, never replaced by an old copy
+
+
+def test_a_quarter_release_check_is_asked_of_edgar_once(store, monkeypatch):
+    from alphadesk.ingest import earnings_calendar as ec, edgar
+    asked: list[str] = []
+    filings = [{"form": "8-K", "filing_date": "2026-10-01", "items": "2.02", "accession": "a"}]
+    monkeypatch.setattr(edgar, "recent_filings", lambda sym, forms=None, limit=40: asked.append(sym) or filings)
+    first = ec.quarter_release("ZZZ", "2026-10-01")
+    ec._periodic_cache.clear()                                 # a restart
+    assert ec.quarter_release("ZZZ", "2026-10-01") == first
+    assert asked == ["ZZZ"]
+
+
+def test_an_unreadable_filing_list_is_not_kept(store, monkeypatch):
+    from alphadesk.ingest import earnings_calendar as ec, edgar
+    monkeypatch.setattr(edgar, "recent_filings", lambda sym, forms=None, limit=40: [])
+    ec.quarter_release("YYY", "2026-10-01")
+    assert store.quarter_release_get("YYY", "2026-10-01") is None
