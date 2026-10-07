@@ -85,15 +85,29 @@ def test_quotes_asks_for_one_basket_with_the_extra_fields(monkeypatch):
         mcp_server.quotes([])
 
 
-def test_filing_text_reads_the_whole_document_not_the_qa_cache(monkeypatch):
+def test_filing_text_reads_the_whole_document_and_keeps_it(monkeypatch):
+    """The whole filing, not the 60,000-character cut, and fetched from EDGAR
+    once: the saved whole copy answers every later read (2026-10-06)."""
     from alphadesk.desk import filings
+    from alphadesk.ingest import edgar
     from alphadesk.ledger import store
+    saved = {"0001-26-000001": "Q" * 60_000}                 # an old copy saved under the 60k cap
+    fetched: list[str] = []
     monkeypatch.setattr(store, "get_filing_meta", lambda acc: {"url": "https://www.sec.gov/x.htm"})
-    monkeypatch.setattr(mcp_server, "_full_filing_text", lambda url: "F" * 90_000)
-    monkeypatch.setattr(filings, "get_text", lambda acc, url=None: "Q" * 60_000)
+    monkeypatch.setattr(store, "get_filing_text", lambda acc: saved.get(acc))
+    monkeypatch.setattr(store, "save_filing_text", lambda acc, text: saved.__setitem__(acc, text))
+
+    def fetch(url, max_chars):
+        fetched.append(url)
+        return "F" * 90_000
+    monkeypatch.setattr(edgar, "fetch_filing_with_exhibits", fetch)
     assert mcp_server.filing_text("0001-26-000001")["characters"] == 90_000
-    monkeypatch.setattr(mcp_server, "_full_filing_text", lambda url: None)      # SEC unreachable
-    assert mcp_server.filing_text("0001-26-000001")["characters"] == 60_000
+    assert mcp_server.filing_text("0001-26-000001")["characters"] == 90_000
+    assert len(fetched) == 1                                # the second read is the saved copy
+    assert len(filings.get_text("0001-26-000001")) == 60_000  # question answering takes its first 60k
+    saved["0001-26-000002"] = "Q" * 60_000
+    monkeypatch.setattr(edgar, "fetch_filing_with_exhibits", lambda url, max_chars: None)   # SEC unreachable
+    assert mcp_server.filing_text("0001-26-000002")["characters"] == 60_000
 
 
 # ── the reader's board, and a story's own text ────────────────────────────

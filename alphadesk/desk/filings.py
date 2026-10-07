@@ -30,22 +30,48 @@ _QA_SYSTEM = (
 )
 
 
-def get_text(accession: str, url: str | None = None) -> str | None:
-    """Cached filing text, fetching + extracting on first access. `url` is
-    only needed on a cache miss (the caller usually already has it from
-    recent_filings/get_filing_meta)."""
+#: How much of a filing, exhibits included, is read and KEPT (2026-10-06). The
+#: agent's reader asks for up to this much; the in-app question answering
+#: takes the first FILING_MAX_CHARS of the same stored text.
+FULL_MAX_CHARS = 400_000
+
+
+def _maybe_cut(text: str) -> bool:
+    """A copy saved under the old 60,000-character cap may stop short of the
+    document's end; one that is clearly shorter or longer than the cap is whole."""
+    return FILING_MAX_CHARS * 0.98 <= len(text) <= FILING_MAX_CHARS
+
+
+def get_full_text(accession: str, url: str | None = None) -> str | None:
+    """A filing's whole text, exhibits included, from the store when it is
+    there and from EDGAR (then stored for good) when it is not.
+
+    THE SAVED COPY IS READ FIRST (2026-10-06, the owner: "I told you to save
+    most data possible"). The agent's reader fetched every filing from EDGAR
+    afresh — a paced queue — and kept it only in memory, so a restart or a busy
+    hour fetched it again; the saved copy was used only when EDGAR failed, and
+    was capped at 60,000 characters. A filing never changes once accepted, so
+    the whole of it is saved the first time it is read."""
     cached = store.get_filing_text(accession)
-    if cached is not None:
+    if cached is not None and not _maybe_cut(cached):
         return cached
     if not url:
         meta = store.get_filing_meta(accession)
         url = meta["url"] if meta else None
     if not url:
-        return None
-    text = edgar.fetch_filing_with_exhibits(url, max_chars=FILING_MAX_CHARS)
+        return cached
+    text = edgar.fetch_filing_with_exhibits(url, max_chars=FULL_MAX_CHARS)
     if text:
         store.save_filing_text(accession, text)
-    return text
+        return text
+    return cached                                  # EDGAR unreachable: what is saved, possibly cut
+
+
+def get_text(accession: str, url: str | None = None) -> str | None:
+    """The first FILING_MAX_CHARS of a filing, for question answering — taken
+    from the same saved whole text."""
+    text = get_full_text(accession, url)
+    return text[:FILING_MAX_CHARS] if text else text
 
 
 def list_filings(symbol: str, refresh: bool = True) -> list[dict]:

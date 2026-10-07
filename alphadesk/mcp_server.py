@@ -1040,26 +1040,13 @@ def financial_statements(symbol: str, period: str = "quarterly") -> dict:
 _FILING_PAGE_CHARS = 20_000
 #: The whole document, up to this many characters (the Q&A cache keeps only
 #: the first 60,000, which cuts a 10-Q short).
-_FILING_READ_MAX_CHARS = 400_000
 
 
 @functools.lru_cache(maxsize=16)
-def _full_filing_text(url: str) -> str | None:
-    """A filing's full text from SEC EDGAR — public data, so one process-wide
-    cache serves every reader."""
-    from alphadesk.ingest import edgar
-    return edgar.fetch_filing_with_exhibits(url, max_chars=_FILING_READ_MAX_CHARS)
-
-
 def _filing_document(accession: str) -> str | None:
+    """A filing's whole text: the saved copy, else EDGAR (then saved for good)."""
     from alphadesk.desk import filings
-    from alphadesk.ledger import store
-    meta = store.get_filing_meta(accession)
-    if meta and meta.get("url"):
-        text = _full_filing_text(meta["url"])
-        if text:
-            return text
-    return filings.get_text(accession)
+    return filings.get_full_text(accession)
 
 
 @mcp.tool(annotations=READ_ONLY)
