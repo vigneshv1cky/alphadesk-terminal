@@ -542,6 +542,19 @@ CREATE TABLE IF NOT EXISTS quarter_release_checks (
     PRIMARY KEY (symbol, filed_on)
 );
 
+-- End-of-day option chains (2026-10-07): the board's stocks, the nearest
+-- expiries, as they stood after the close — a past day's chain can never be
+-- asked of a vendor again. zlib then base64 JSON, kept.
+CREATE TABLE IF NOT EXISTS option_chain_days (
+    owner      TEXT NOT NULL,
+    symbol     TEXT NOT NULL,
+    day        TEXT NOT NULL,
+    vendor     TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    saved_at   BIGINT NOT NULL,
+    PRIMARY KEY (owner, symbol, day)
+);
+
 -- Options flow captured during a session (2026-10-06): the orders seen live
 -- with the side they hit, the ask/bid tallies and the stock's minutes, per
 -- reader, underlying and session. The side is only knowable within seconds of
@@ -680,7 +693,7 @@ def kept_counts(owner: str) -> dict:
         for r in conn.execute("SELECT vendor, method, COUNT(*) AS n, MAX(fetched_at) AS newest FROM vendor_cache"
                               " WHERE owner=? GROUP BY vendor, method ORDER BY method, vendor", (owner,)).fetchall():
             out["vendor_answers"][f"{r['method']} ({r['vendor']})"] = {"rows": r["n"], "newest": r["newest"]}
-        for table in ("session_days", "movers_days", "options_flow_sessions"):
+        for table in ("session_days", "movers_days", "options_flow_sessions", "option_chain_days"):
             r = conn.execute(f"SELECT COUNT(*) AS n, MAX(saved_at) AS newest FROM {table} WHERE owner=?", (owner,)).fetchone()
             out["tables"][table] = {"rows": r["n"], "newest_saved_at": r["newest"]}
         for table, col in (("filings", "ingested_at"), ("filing_text_cache", "extracted_at"),
@@ -1807,6 +1820,36 @@ def insider_form4_put(accession: str, symbol: str, rows: list[dict]) -> None:
                      (accession, symbol.upper(), json.dumps(rows, separators=(",", ":")), int(time.time())))
 
 
+def save_option_chain_day(owner: str, symbol: str, day: str, vendor: str, payload: Any) -> None:
+    import base64
+    import zlib
+    blob = base64.b64encode(zlib.compress(json.dumps(payload, separators=(",", ":"), default=str).encode(), 6)).decode()
+    with _lock, _connect() as conn:
+        conn.execute("INSERT INTO option_chain_days (owner, symbol, day, vendor, payload, saved_at) VALUES (?,?,?,?,?,?)"
+                     " ON CONFLICT (owner, symbol, day) DO NOTHING",
+                     (owner, symbol.upper(), day, vendor, blob, int(time.time())))
+
+
+def get_option_chain_day(owner: str, symbol: str, day: str) -> Any:
+    import base64
+    import zlib
+    with _connect() as conn:
+        row = conn.execute("SELECT payload FROM option_chain_days WHERE owner=? AND symbol=? AND day=?",
+                           (owner, symbol.upper(), day)).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(zlib.decompress(base64.b64decode(row["payload"])))
+    except (ValueError, zlib.error):
+        return None
+
+
+def recorded_option_chain_symbols(owner: str, day: str) -> list[str]:
+    with _connect() as conn:
+        return [r["symbol"] for r in conn.execute(
+            "SELECT symbol FROM option_chain_days WHERE owner=? AND day=?", (owner, day)).fetchall()]
+
+
 def save_options_flow(owner: str, symbol: str, session: str, payload: Any) -> None:
     """One underlying's capture for one session, replacing the last copy."""
     import base64
@@ -2737,6 +2780,7 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
                 out["session_days"] = conn.execute("DELETE FROM session_days WHERE owner=?", (owner,)).rowcount or 0
                 out["movers_days"] = conn.execute("DELETE FROM movers_days WHERE owner=?", (owner,)).rowcount or 0
                 conn.execute("DELETE FROM options_flow_sessions WHERE owner=?", (owner,))
+                conn.execute("DELETE FROM option_chain_days WHERE owner=?", (owner,))
             else:
                 out["forecasts"] = conn.execute("DELETE FROM earnings_forecasts WHERE owner=? AND vendor=?",
                                                 (owner, provider)).rowcount or 0
@@ -2748,6 +2792,7 @@ def purge_vendor_data(owner: str, seam: str, provider: str | None = None) -> dic
                                                   (owner, provider)).rowcount or 0
                 if provider == "alpaca":                   # the options feed the flow is captured from
                     conn.execute("DELETE FROM options_flow_sessions WHERE owner=?", (owner,))
+                conn.execute("DELETE FROM option_chain_days WHERE owner=? AND vendor=?", (owner, provider))
     return out
 
 
@@ -2760,7 +2805,8 @@ _ACCOUNT_TABLES_BY_USER = ("user_sign_ins", "user_api_keys", "user_views", "user
                            "user_boards", "user_layouts", "agent_access_tokens", "oauth_codes",
                            "oauth_grants", "user_chart_state", "warm_paths", "agent_calls")
 _ACCOUNT_TABLES_BY_OWNER = ("news_articles", "news_tickers", "vendor_cache", "news_vectors", "earnings_announcements", "release_habits",
-                            "press_release_checks", "earnings_forecasts", "reader_dollar_pools", "session_days", "movers_days", "options_flow_sessions")
+                            "press_release_checks", "earnings_forecasts", "reader_dollar_pools", "session_days", "movers_days", "options_flow_sessions",
+                            "option_chain_days")
 
 
 def user_layouts(user_id: str) -> dict[str, dict]:

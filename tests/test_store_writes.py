@@ -151,3 +151,35 @@ def test_alpha_vantage_requests_are_paced_one_a_second_per_key(monkeypatch):
     with pytest.raises(ProviderError):                         # past the longest wait: refused, the next vendor answers
         avpace.wait_turn("k1")
     avpace._next_slot.clear()
+
+
+def test_the_boards_option_chains_are_kept_once_after_the_close(store):
+    from datetime import date, datetime, timezone
+    from zoneinfo import ZoneInfo
+    from alphadesk.ingest import chainsnap
+    store.save_board("u-chain", ["NVDA", "BTC-USD", "AAPL"], "NVDA")
+    asked: list[tuple] = []
+
+    class _V:
+        name = "alpaca"
+        def option_expirations(self, sym):
+            return ["2026-10-09", "2026-10-16", "2027-06-18"]           # the last is past 60 days
+        def option_chain(self, sym, exp):
+            asked.append((sym, exp))
+            return {"symbol": sym, "expiry": exp, "calls": [{"strike": 100, "bid": 1.0, "ask": 1.1}], "puts": []}
+
+    class _R:
+        owner = "u-chain"
+        def vendor_for(self, s, m):
+            return _V()
+
+    ny = ZoneInfo("America/New_York")
+    before = datetime(2026, 10, 7, 15, 59, tzinfo=ny)
+    after = datetime(2026, 10, 7, 16, 30, tzinfo=ny)
+    assert chainsnap.record_chains_close(_R(), before) == 0             # the session is not over
+    assert chainsnap.record_chains_close(_R(), after) == 2              # NVDA and AAPL; the coin has no chain
+    assert chainsnap.record_chains_close(_R(), after) == 0              # once a day
+    assert sorted(asked) == [("AAPL", "2026-10-09"), ("AAPL", "2026-10-16"), ("NVDA", "2026-10-09"), ("NVDA", "2026-10-16")]
+    kept = store.get_option_chain_day("u-chain", "NVDA", "2026-10-07")
+    assert set(kept["chains"]) == {"2026-10-09", "2026-10-16"} and kept["chains"]["2026-10-09"]["calls"][0]["bid"] == 1.0
+    assert chainsnap.nearest_expiries(["2026-10-01", "2026-10-09"], date(2026, 10, 7)) == ["2026-10-09"]

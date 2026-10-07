@@ -35,6 +35,10 @@ def run_once() -> int:
             # The option list exists only as recorded, once each session closes;
             # coin days are computed from bars and kept like the stock closes.
             saved += int(movers.record_options_close(router))
+            # Each board stock's option chains as they stood at the close: a
+            # past day's chain cannot be asked of any vendor again.
+            from alphadesk.ingest import chainsnap
+            saved += chainsnap.record_chains_close(router)
             saved += movers.record_crypto_days(router, BACKFILL_SESSIONS)
             # The finished lists of the days the stepper offers, so opening
             # one asks no vendor anything.

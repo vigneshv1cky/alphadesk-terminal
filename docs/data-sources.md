@@ -130,6 +130,7 @@ row keyed to it.
 | Release-session habits, press-release checks | the reader | 3 days / 24 hours |
 | Recorded session closes: every listed symbol's open, high, low, close and volume for each finished session, compressed, one row per session | the reader | kept: a finished session never changes |
 | Recorded movers days: each session's option movers list after the close, each finished UTC day of coin bars, and each finished day's finished stock, ETF and coin list per set of filters | the reader | kept |
+| End-of-day option chains for the board's stocks (nearest six expiries within 60 days, every contract's quote, volume, open interest and implied volatility), saved after each close | the reader | kept |
 | Options flow captured during a session (orders with the side they hit, ask/bid tallies, the stock's minutes), saved as the session goes and restored after a restart | the reader | kept |
 | Daily price history answers (plain, fully adjusted, coins) in the kept vendor answers, dates preserved | the reader | as the other kept vendor answers |
 | An owner's recent read requests, for prewarming (never the answers) | the owner | 24 hours unused |
