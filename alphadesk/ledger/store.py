@@ -1251,12 +1251,30 @@ def save_filings(rows: list[dict]) -> None:
              r.get("url"), _now()) for r in (rows or [])]
     if not data:
         return
+    # ONLY THE NEW ONES ARE WRITTEN (2026-10-06, the owner: "wouldn't it be
+    # better if we stored them and just queried them?"). Every filing listing
+    # re-saved the company's whole recent list — up to 40 rows, one round trip
+    # each, under the store's single write lock — though a filing never
+    # changes once accepted and nearly all were stored already. One read finds
+    # which are missing; a normal call writes nothing.
+    accs = list({d[0] for d in data})
+    with _connect() as conn:
+        have: set[str] = set()
+        for i in range(0, len(accs), 500):
+            part = accs[i:i + 500]
+            have |= {r["accession"] for r in conn.execute(
+                f"SELECT accession FROM filings WHERE accession IN ({','.join('?' * len(part))})", part).fetchall()}
+    new = list({d[0]: d for d in data if d[0] not in have}.values())
+    if not new:
+        return
     with _lock, _connect() as conn:
-        conn.executemany(
-            "INSERT INTO filings"
-            " (accession, symbol, cik, form, filing_date, report_date, primary_doc, url, ingested_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?)"
-            " ON CONFLICT (accession) DO NOTHING", data)
+        for i in range(0, len(new), 100):
+            part = new[i:i + 100]
+            conn.execute(
+                "INSERT INTO filings"
+                " (accession, symbol, cik, form, filing_date, report_date, primary_doc, url, ingested_at)"
+                " VALUES " + ",".join(["(?,?,?,?,?,?,?,?,?)"] * len(part)) +
+                " ON CONFLICT (accession) DO NOTHING", tuple(x for row in part for x in row))
 
 
 def get_filings(symbol: str, forms: list[str] | None = None, limit: int = 20) -> list[dict]:

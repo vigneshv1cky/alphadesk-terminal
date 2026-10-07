@@ -1639,10 +1639,14 @@ def related_assets(symbol: str) -> dict:
             unavailable[name] = str(exc)[:140]
             return default
 
+    from alphadesk.stagetimer import Stages
+    st_ = Stages(f"related_assets {sym}", log)
     sources, read = [], []
     rows = attempt("filings", lambda: filings_desk.list_filings(sym), [])
+    st_.mark("filing list")
     for row in [r for r in rows if r.get("readable") and r.get("form") in ("6-K", "8-K", "10-K", "10-Q", "20-F")][:3]:
         text = attempt(f"filing:{row['accession']}", lambda a=row["accession"]: _filing_document(a))
+        st_.mark(f"read {row['form']}")
         if text:
             sources.append({"source": row["accession"], "text": text})
             read.append({"accession": row["accession"], "form": row["form"], "filed": row.get("filing_date")})
@@ -1653,8 +1657,11 @@ def related_assets(symbol: str) -> dict:
         read.append({"stories": sum(1 for s in sources if s["source"].startswith("story:"))})
     else:
         unavailable["news"] = "no news feed is connected"
+    st_.mark("stories")
     names = [n for n in ((attempt("name", lambda: (company_profile(sym) or {}).get("name"))),) if n]
+    st_.mark("company name")
     found = related.extract_related(sources, sym, names)
+    st_.mark(f"scan {sum(len(s['text']) for s in sources) // 1000}k chars")
     for c in found["crypto"]:
         pair = f"{c['asset']}-USD"
         c["price_symbol"] = pair
@@ -1664,10 +1671,16 @@ def related_assets(symbol: str) -> dict:
         except Exception:
             c["priceable"] = False
             c["priced_by"] = None
+    st_.mark("coin prices")
+    vendor_peers = attempt("peers", lambda: peers(sym))
+    st_.mark("peers")
+    funds = attempt("funds", lambda: related_funds(sym))
+    st_.mark("funds")
+    held_in = attempt("baskets", lambda: baskets(symbol=sym))
+    st_.mark("baskets")
+    st_.done()
     return {"symbol": sym, "from_own_words": {**found, "read": read},
-            "vendor_peers": attempt("peers", lambda: peers(sym)),
-            "funds": attempt("funds", lambda: related_funds(sym)),
-            "baskets": attempt("baskets", lambda: baskets(symbol=sym)),
+            "vendor_peers": vendor_peers, "funds": funds, "baskets": held_in,
             "unavailable": unavailable}
 
 
