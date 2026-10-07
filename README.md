@@ -459,7 +459,8 @@ each marked with the reason it is there. The 5-minute news poll also asks the
 feed for stories tagged with the main coins by name, because crypto is a small
 share of the newest stories across everything. A feed writes a coin as `BTCUSD`;
 those tags are shown as `BTC-USD`, the way the board writes them, for the coins
-the account trades and the large ones in the fixed list.
+the account trades and the large ones in the fixed list — on the page and in the
+agent's news tools alike.
 
 ---
 

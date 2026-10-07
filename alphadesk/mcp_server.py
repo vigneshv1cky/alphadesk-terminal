@@ -597,7 +597,7 @@ def symbol_news(symbol: str, limit: int = 10, before: str = "") -> dict:
                          # the story, this answers which pipe it came down.
                          "feeds": a.get("feeds") or [],
                          "published_at": a.get("published_at"),
-                         "summary": summary, "tickers": a["tickers"],
+                         "summary": summary, "tickers": _canon_tickers(a["tickers"]),
                          # The reader's feed already has the story's text: read
                          # it with news_story rather than fetching the page.
                          "full_text": bool(a.get("has_body") or a.get("body"))})
@@ -682,7 +682,7 @@ def news_search(query: str, limit: int = 10, before: str = "") -> dict:
                          "source": a.get("source") or "", "feeds": a.get("feeds") or [],
                          "kind": newskind.of_article(a),
                          "published_at": a.get("published_at"),
-                         "summary": summary, "tickers": a["tickers"],
+                         "summary": summary, "tickers": _canon_tickers(a["tickers"]),
                          "full_text": bool(a.get("has_body") or a.get("body")),
                          "match": a.get("why") or "words"})
     return {
@@ -734,6 +734,15 @@ def earnings_calendar(days_ahead: int = 7, days_back: int = 0) -> list[dict]:
 #
 # The same functions the pages use, on the same reader keys, sized small
 # enough for a connector to take whole.
+
+
+def _canon_tickers(tags) -> list[str]:
+    """A story's tickers as every other tool writes them: a feed's coin tag
+    (BTCUSD) becomes BTC-USD where the coin is one the app lists; stocks are
+    left alone (2026-10-07: the agent's news tools still gave the feed's
+    spelling, so a story could not be matched to a price or a movers row)."""
+    from alphadesk.cryptonews import canonical_tags
+    return canonical_tags(tags or [])
 
 
 def _symbol(raw: str) -> str:
@@ -913,7 +922,7 @@ def news_story(article_id: str, page: int = 1) -> dict:
         "article_id": story.get("article_id"), "title": story.get("title"),
         "url": story.get("url"), "source": story.get("source"),
         "feeds": story.get("feeds") or [], "kind": newskind.of_article(story),
-        "published_at": story.get("published_at"), "tickers": story.get("tickers") or [],
+        "published_at": story.get("published_at"), "tickers": _canon_tickers(story.get("tickers")),
         "summary": (story.get("summary") or "")[:600],
         "page": n, "pages": pages, "characters": len(text),
         "text": text[start:start + _STORY_PAGE_CHARS],
@@ -1442,6 +1451,9 @@ def news_scan(hours: int = 18, kinds: str = "", min_stories: int = 1, limit: int
     rows = store.recent_articles(since, limit=6000, owner=news_owner(uid), body=False)
     for r in rows:
         r["kind"] = newskind.of_article(r)
+        # Coins grouped and priced under the app's spelling (BTC-USD), not the
+        # feed's (BTCUSD), which no other tool takes (2026-10-07).
+        r["tickers"] = _canon_tickers(r.get("tickers"))
     wanted = {k.strip().lower() for k in (kinds or "").split(",") if k.strip()} or None
     grouped = focus.scan_news(rows, wanted, int(min_stories))
     page = grouped[:max(1, min(int(limit), 50))]

@@ -223,3 +223,18 @@ def test_the_price_tools_are_the_ones_that_carry_it():
     for n in names:                                       # the wrapper keeps each tool's own inputs
         assert tools[n].inputSchema.get("properties"), n
     assert "data_venue" in mcp_server.mcp.instructions
+
+
+def test_the_agents_news_tools_write_coins_the_apps_way(monkeypatch, store):
+    """symbol_news, news_search and news_story gave the feed's BTCUSD, which no
+    other tool takes; news_scan grouped and priced coins under it (2026-10-07)."""
+    from alphadesk import config, mcp_server
+    monkeypatch.setattr(config, "_names", config._with_coins({"AAPL": {"name": "Apple", "exchange": "Nasdaq", "class": "us_equity"}}), raising=False)
+    monkeypatch.setattr(config, "_load_names", lambda: None, raising=False)
+    assert mcp_server._canon_tickers(["BTCUSD", "AAPL", "BTC-USD", "ZZZUSD"]) == ["BTC-USD", "AAPL", "ZZZUSD"]
+    assert mcp_server._canon_tickers(None) == []
+    import inspect
+    for tool in ("symbol_news", "news_search", "news_story", "news_scan"):
+        fn = getattr(mcp_server, tool)
+        src = inspect.getsource(getattr(fn, "fn", fn))
+        assert "_canon_tickers(" in src, tool
