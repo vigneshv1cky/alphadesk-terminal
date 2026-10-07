@@ -145,3 +145,12 @@ def test_daily_bars_with_datetime_stamps_are_kept_and_come_back_as_datetimes(sto
     assert v.calls == ["daily_history"]
     bar = again["CTVA"][0]
     assert bar["ts"] == stamp and isinstance(bar["ts"], datetime) and bar["ts"].date().isoformat() == "2026-10-01"
+
+
+def test_the_kept_counts_page_says_what_is_saved_and_nothing_else(store):
+    v = Vendor()
+    wrap(v).fundamentals("AAPL")
+    got = store.kept_counts("u1")
+    assert got["vendor_answers"]["fundamentals (alpaca)"]["rows"] == 1
+    assert "payload" not in str(got) and set(got["tables"]) >= {"session_days", "movers_days", "options_flow_sessions",
+                                                                 "filings", "filing_text_cache"}

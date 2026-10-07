@@ -1749,6 +1749,14 @@ def api_crypto(top: int = 20):
     return get_prices().ask("crypto_movers", top=max(1, min(top, 50)))
 
 
+@app.get("/api/storage/kept")
+def api_storage_kept(request: Request):
+    """What is really being saved for the signed-in reader: counts and newest
+    times per kind of kept answer and per kept table. Read-only, counts only."""
+    from alphadesk.ledger import store as st
+    return st.kept_counts(_key_user(request))
+
+
 @app.get("/api/crypto/check")
 def api_crypto_check():
     """For every crypto pair the connected Alpaca account trades: is it found

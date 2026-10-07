@@ -640,6 +640,24 @@ def vendor_cache_get(owner: str, vendor: str, method: str, argkey: str) -> tuple
     return (row["payload"], row["fetched_at"]) if row else None
 
 
+def kept_counts(owner: str) -> dict:
+    """Counts only, never contents (2026-10-07): how many answers of each kind
+    this reader has kept, with the newest save time, and how many rows the
+    other kept tables hold for them — to check what is really being saved."""
+    out: dict = {"vendor_answers": {}, "tables": {}}
+    with _connect() as conn:
+        for r in conn.execute("SELECT vendor, method, COUNT(*) AS n, MAX(fetched_at) AS newest FROM vendor_cache"
+                              " WHERE owner=? GROUP BY vendor, method ORDER BY method, vendor", (owner,)).fetchall():
+            out["vendor_answers"][f"{r['method']} ({r['vendor']})"] = {"rows": r["n"], "newest": r["newest"]}
+        for table in ("session_days", "movers_days", "options_flow_sessions"):
+            r = conn.execute(f"SELECT COUNT(*) AS n, MAX(saved_at) AS newest FROM {table} WHERE owner=?", (owner,)).fetchone()
+            out["tables"][table] = {"rows": r["n"], "newest_saved_at": r["newest"]}
+        for table, col in (("filings", "ingested_at"), ("filing_text_cache", "extracted_at")):
+            r = conn.execute(f"SELECT COUNT(*) AS n, MAX({col}) AS newest FROM {table}").fetchone()
+            out["tables"][table] = {"rows": r["n"], "newest": r["newest"], "shared": True}
+    return out
+
+
 def vendor_cache_put(owner: str, vendor: str, method: str, argkey: str, payload: str) -> None:
     with _lock, _connect() as conn:
         conn.execute(
