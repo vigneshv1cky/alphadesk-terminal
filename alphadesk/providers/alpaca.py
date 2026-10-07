@@ -1160,11 +1160,24 @@ class AlpacaPrices:
                 base = session["close"] if (late and session) else prev
                 name, exch = named.get(sym, (None, None))
                 dp = 4 if price < 1 else 2
+                # NO DAILY BAR IN TEN DAYS (2026-10-07, CSWI): a retired ticker
+                # or a long halt. The snapshot still holds the last trade ever
+                # struck and the close before it, which read as a live price
+                # and a day's move. Say so: the price is that trade, dated, and
+                # there is no change, because there is no current session.
+                stale = session is None
+                if stale:
+                    base, as_of = None, trade_ts
                 out[sym] = {
                     "symbol": sym, "name": name or sym,
                     "exchange": exch, "exchange_name": exch,
-                    "quote_source": ("Alpaca · real-time consolidated" if feed == "sip" else "Alpaca · IEX last trade")
+                    "quote_source": (f"Alpaca · last trade {as_of.astimezone(ET).date().isoformat()}, none since"
+                                     if as_of else "Alpaca · no trade in 10 days") if stale else
+                                    ("Alpaca · real-time consolidated" if feed == "sip" else "Alpaca · IEX last trade")
                                     if (in_session or late) else "Alpaca · consolidated close",
+                    # True when nothing traded in the last ten days: the price
+                    # is the last trade there was, not a market.
+                    "stale": stale,
                     "feed": feed, "realtime": feed == "sip",
                     # The last session's close is struck at 16:00 in New York.
                     "as_of": as_of.astimezone(ET).isoformat() if as_of else (

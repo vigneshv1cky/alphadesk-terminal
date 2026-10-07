@@ -548,3 +548,31 @@ def test_the_session_a_price_belongs_to_has_a_name():
     assert at(2026, 9, 19, 11) == "Weekend"            # Saturday
     assert at(2026, 9, 20, 18) == "Weekend"            # Sunday, before the open
     assert at(2026, 9, 20, 21) == "Overnight"          # Sunday evening: trading
+
+
+def test_a_ticker_with_no_trading_in_ten_days_is_marked_stale(monkeypatch):
+    from datetime import datetime, timezone
+    from alphadesk.config import ET
+    a = AlpacaPrices(api_key="k", api_secret="s")
+    old = datetime(2026, 9, 2, 19, 59, tzinfo=timezone.utc)
+    now = datetime.now(ET)
+    snaps = {
+        "CSWI": SimpleNamespace(latest_trade=SimpleNamespace(price=305.10, timestamp=old),
+                                latest_quote=SimpleNamespace(bid_price=123.04, ask_price=492.16, bid_size=2, ask_size=2),
+                                previous_daily_bar=SimpleNamespace(close=304.67)),
+        "CSW": SimpleNamespace(latest_trade=SimpleNamespace(price=284.34, timestamp=now),
+                               latest_quote=SimpleNamespace(bid_price=284.3, ask_price=284.4, bid_size=4, ask_size=4),
+                               previous_daily_bar=SimpleNamespace(close=296.89)),
+    }
+    bars = {"CSW": [{"ts": now.replace(hour=9, minute=30), "open": 290.85, "high": 293.7, "low": 283.8,
+                     "close": 284.34, "volume": 31713}]}
+    monkeypatch.setattr(a, "stock_feed", lambda: "sip")
+    monkeypatch.setattr(a, "_snapshots", lambda syms, feed: (snaps, "sip"))
+    monkeypatch.setattr(a, "stock_bars", lambda syms, tf, start: (bars, None))
+    monkeypatch.setattr(a, "names", lambda syms: {})
+    got = a.quotes(["CSWI", "CSW"])
+    dead, live = got["CSWI"], got["CSW"]
+    assert dead["stale"] is True and dead["price"] == 305.10
+    assert dead["change"] is None and dead["change_pct"] is None              # two old closes are not today's move
+    assert dead["as_of"].startswith("2026-09-02") and "none since" in dead["quote_source"]
+    assert live["stale"] is False and live["quote_source"] == "Alpaca · real-time consolidated"

@@ -244,6 +244,11 @@ def quote(symbol: str) -> dict:
     targets and the consensus. For several symbols at once use `quotes`, which
     fills the 52-week range and market cap from other sources whatever the
     quote vendor is, but carries no book.
+
+    `stale: true` means NOTHING TRADED IN THE LAST TEN DAYS — a retired ticker
+    (the company may trade under a new one: check find_symbol) or a long halt.
+    The price is the last trade there was, `as_of` its date, and there is no
+    change. It is not a market to act on.
     """
     from alphadesk.providers import get_prices
     q = get_prices().quote(symbol)
@@ -794,7 +799,9 @@ def _http_errors(fn, *args, **kwargs):
 def quotes(symbols: list[str] | str) -> dict:
     """Quotes for up to 50 symbols in one call: price, change, day range,
     volume, 52-week high and low, and market cap where the reader's vendors
-    carry them. A symbol with no quote comes back null rather than missing."""
+    carry them. A symbol with no quote comes back null rather than missing.
+    `stale: true` on a quote means nothing traded in ten days: the price is
+    the last trade there was (see quote), not a market."""
     from alphadesk.app import dashboard
     wanted = _symbols(symbols)
     if not wanted:
