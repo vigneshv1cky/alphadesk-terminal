@@ -244,3 +244,24 @@ def test_a_share_class_is_looked_up_in_the_secs_spelling(monkeypatch):
     assert edgar.sec_ticker("BTC/USD") == "BTC/USD" and edgar.sec_ticker("AAPL") == "AAPL"
     monkeypatch.setattr(edgar, "_ticker_cik_cache", {"BRK-B": "0001067983"})
     assert edgar.cik_for("BRK.B") == "0001067983"
+
+
+def test_the_profiles_parts_are_read_at_once(monkeypatch):
+    import time
+    from alphadesk.ingest import company, edgar
+
+    def slow(value):
+        def f(*a, **k):
+            time.sleep(0.3)
+            return value
+        return f
+    monkeypatch.setattr(edgar, "cik_for", lambda s: "0000001")
+    monkeypatch.setattr(company, "_edgar_facts", slow({"cik": "0000001", "legal_name": "ACME CORP"}))
+    monkeypatch.setattr(company, "_vendor_profile", slow((None, [])))
+    monkeypatch.setattr(company, "_tenk", slow({"accession": "x"}))
+    monkeypatch.setattr(company, "_financials", slow({"items": {}}))
+    monkeypatch.setattr(edgar, "shares_outstanding", slow({"shares": 5}))
+    t = time.perf_counter()
+    p = company.profile("ACME")
+    assert time.perf_counter() - t < 0.9                     # five 0.3 s parts, one after another, would be 1.5 s
+    assert p["tenk"] == {"accession": "x"} and p["shares_outstanding"] == {"shares": 5} and p["name"] == "ACME CORP"

@@ -426,14 +426,62 @@ def _financials(sym: str, facts: dict | None) -> dict | None:
     return got
 
 
+def _parts(sym: str) -> dict:
+    """The profile's five sources, read at once (2026-10-07: one after another
+    they were 9.4 s on a first visit). None needs another's answer: the CIK is
+    a local lookup, so the annual report, the figures and the share count are
+    asked alongside the SEC record rather than after it. The reader's identity
+    travels into each thread; each part's time is logged when the whole takes
+    two seconds or more. A part that fails comes back as None, as before."""
+    import contextvars
+    import time as _time
+    from concurrent.futures import ThreadPoolExecutor
+    cik = edgar.cik_for(sym)
+    jobs = {"edgar": lambda: _edgar_facts(sym), "vendor": lambda: _vendor_profile(sym)}
+    if cik:
+        jobs["tenk"] = lambda: _tenk(sym)
+        jobs["financials"] = lambda: _financials(sym, {"cik": cik})
+        jobs["shares"] = lambda: edgar.shares_outstanding(sym)
+    took: dict[str, float] = {}
+
+    def run(item):
+        ctx, name, fn = item
+        t = _time.perf_counter()
+        try:
+            return name, ctx.run(fn)
+        except Exception as exc:
+            log.warning("company %s: %s failed: %s", sym, name, exc)
+            return name, (None, []) if name == "vendor" else None
+        finally:
+            took[name] = _time.perf_counter() - t
+
+    t0 = _time.perf_counter()
+    work = [(contextvars.copy_context(), n, f) for n, f in jobs.items()]
+    with ThreadPoolExecutor(max_workers=len(work)) as pool:
+        got = dict(pool.map(run, work))
+    facts = got.get("edgar")
+    if facts and not cik:
+        # The SEC record came back though the local ticker list did not have
+        # the symbol: the dependent parts follow it, as they always did.
+        got["tenk"] = _tenk(sym)
+        got["financials"] = _financials(sym, facts)
+        got["shares"] = edgar.shares_outstanding(sym)
+    total = _time.perf_counter() - t0
+    if total >= 2.0:
+        log.info("company profile %s took %.2fs: %s", sym, total,
+                 ", ".join(f"{k} {v:.2f}s" for k, v in took.items()))
+    return got
+
+
 def profile(symbol: str) -> dict | None:
     """{symbol, name, edgar, profile, officers, tenk, financials, coin,
     reference, sources} — None only when no source knows the symbol."""
     sym = symbol.upper()
     # Not cached here: the vendor half is the user's (the per-user vendor
     # memo holds it) and the EDGAR half caches itself.
-    facts = _edgar_facts(sym)
-    prof, officers = _vendor_profile(sym)
+    parts = _parts(sym)
+    facts = parts.get("edgar")
+    prof, officers = parts.get("vendor") or (None, [])
     out: dict | None
     if not facts and not prof and sym not in REFERENCE:
         out = None
@@ -446,15 +494,15 @@ def profile(symbol: str) -> dict | None:
             "edgar": facts,
             "profile": prof,
             "officers": officers,
-            "tenk": _tenk(sym) if facts else None,
+            "tenk": parts.get("tenk") if facts else None,
             "reference": REFERENCE.get(sym),
             "sources": _sources(sym, name, facts, prof),
             # The outside sources that are FETCHED, not only cited: the
             # SEC's structured facts for a registrant.
-            "financials": _financials(sym, facts),
+            "financials": parts.get("financials") if facts else None,
             # The share count, with its basis: a foreign filer's structured
             # record can stop years back, so it may be derived from a holder's
             # notice (ingest/edgar.shares_outstanding).
-            "shares_outstanding": edgar.shares_outstanding(sym) if facts else None,
+            "shares_outstanding": parts.get("shares") if facts else None,
         }
     return out
