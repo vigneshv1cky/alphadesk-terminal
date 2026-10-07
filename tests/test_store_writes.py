@@ -85,3 +85,17 @@ def test_each_form_4_is_fetched_once(store, monkeypatch):
     insider._insider_cache.clear()                             # a restart
     again = insider.get_insider_trades("ZZZ")
     assert first == again and len(fetched) == 2                # two filings, each fetched once in all
+
+
+def test_the_share_count_and_succession_readers_read_the_saved_filing(store, monkeypatch):
+    """Both downloaded their filings afresh every call (2026-10-07 audit); they
+    now read the saved whole copy, cut to the same opening they read before."""
+    from alphadesk.ingest import edgar
+    fetched: list[str] = []
+    monkeypatch.setattr(edgar, "fetch_filing_with_exhibits",
+                        lambda url, max_chars=60_000: fetched.append(url) or ("A" * 50_000 + "B" * 50_000))
+    url = "https://www.sec.gov/Archives/edgar/data/1/000000000126000001/x.htm"
+    first = edgar.saved_filing_text("0000000001-26-000001", url, 30_000)
+    again = edgar.saved_filing_text("0000000001-26-000001", url, 40_000)
+    assert first == "A" * 30_000 and again == "A" * 40_000
+    assert fetched == [url]                                    # downloaded once, then the saved copy

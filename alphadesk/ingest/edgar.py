@@ -371,6 +371,17 @@ def exhibit_documents(url: str) -> list[str]:
     return [f"{base}/{n}" for n in sorted(picked)[:_MAX_EXHIBITS]]
 
 
+def saved_filing_text(accession: str, url: str, chars: int) -> str | None:
+    """The opening `chars` of a filing's text from its SAVED whole copy,
+    fetched and saved first when there is none (2026-10-07). The holder-notice
+    share count and the succession check downloaded their filings afresh every
+    time; the saved copy starts with the same main document, so the opening
+    they read is the same."""
+    from alphadesk.desk import filings
+    text = filings.get_full_text(accession, url)
+    return text[:chars] if text else None
+
+
 def fetch_filing_with_exhibits(url: str, max_chars: int = 60_000) -> str | None:
     """The filing's own text followed by its press-release exhibits, each under
     a marker line, so a reader gets what the company announced and not only
@@ -651,7 +662,7 @@ def _shares_outstanding(sym: str) -> dict | None:
         log.debug("no structured share count for %s: %s", sym, exc)
     derived = None
     for f in filings_for_cik(cik10, sym, _HOLDER_FORMS, limit=3):
-        text = fetch_filing_text(f["url"], max_chars=30_000)
+        text = saved_filing_text(f["accession"], f["url"], 30_000)
         count = derive_shares(text or "")
         if count:
             derived = {"shares": count, "as_of": f["filing_date"],
@@ -731,7 +742,7 @@ def predecessor_of(symbol: str) -> dict | None:
     rows = recent_filings(sym, forms=_SUCCESSION_FORMS, limit=1)
     found = None
     if rows:
-        text = fetch_filing_text(rows[0]["url"], max_chars=40_000)
+        text = saved_filing_text(rows[0]["accession"], rows[0]["url"], 40_000)
         if text is None:
             return None
         name = predecessor_name(text)
