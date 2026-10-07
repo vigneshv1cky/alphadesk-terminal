@@ -47,6 +47,7 @@ def test_a_companys_figures_file_is_kept_and_read_after_a_restart(store, monkeyp
     monkeypatch.setattr(edgar, "_get", lambda url, timeout=15.0: asked.append(url) or json.dumps({"facts": {"x": 1}}).encode())
     url = edgar._FACTS_URL.format(cik10="0000000001")
     assert edgar.get_json(url, "facts")["facts"] == {"x": 1}
+    edgar._sec_writer.submit(lambda: None).result(timeout=5)   # the kept copy is written on its own thread
     edgar._json_cache.clear()                                  # a restart: memory is empty
     assert edgar.get_json(url, "facts")["facts"] == {"x": 1}
     assert len(asked) == 1                                     # the second read is the kept copy
@@ -99,3 +100,17 @@ def test_the_share_count_and_succession_readers_read_the_saved_filing(store, mon
     again = edgar.saved_filing_text("0000000001-26-000001", url, 40_000)
     assert first == "A" * 30_000 and again == "A" * 40_000
     assert fetched == [url]                                    # downloaded once, then the saved copy
+
+
+def test_a_slow_list_is_kept_reused_and_served_when_the_vendor_fails(store):
+    from alphadesk.ledger.keptlists import kept
+    calls: list[int] = []
+    assert kept("u1", "alpaca", "asset_listing", 3600, lambda: calls.append(1) or [["AAPL", "Apple", "NASDAQ"]]) \
+        == [["AAPL", "Apple", "NASDAQ"]]
+    assert kept("u1", "alpaca", "asset_listing", 3600, lambda: calls.append(1) or [["X", None, None]]) \
+        == [["AAPL", "Apple", "NASDAQ"]] and len(calls) == 1         # fresh: the kept copy, no fetch
+
+    def down():
+        raise RuntimeError("vendor down")
+    assert kept("u1", "alpaca", "asset_listing", 0, down) == [["AAPL", "Apple", "NASDAQ"]]   # stale, but the vendor failed
+    assert kept("u1", "fmp", "fund_names", 0, lambda: None) is None   # empty is an answer, never replaced by an old copy

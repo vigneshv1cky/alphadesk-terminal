@@ -615,9 +615,16 @@ class AlpacaPrices:
         with self._names_lock:
             if time.time() - self._names_at >= NAMES_KEEP_S:
                 try:
-                    rows = self._trading(lambda c: c.get("/assets", {"status": "active", "asset_class": "us_equity"}))
-                    self._names = {str(r.get("symbol", "")).upper(): (r.get("name"), r.get("exchange"))
-                                   for r in rows or [] if isinstance(r, dict) and r.get("symbol")}
+                    # KEPT IN THE STORE (2026-10-07): ~14,000 rows asked again
+                    # after every restart; a fresh process now reads the copy.
+                    from alphadesk.ledger.keptlists import kept
+
+                    def fetch() -> list:
+                        rows = self._trading(lambda c: c.get("/assets", {"status": "active", "asset_class": "us_equity"}))
+                        return [[str(r.get("symbol", "")).upper(), r.get("name"), r.get("exchange")]
+                                for r in rows or [] if isinstance(r, dict) and r.get("symbol")]
+                    rows = kept(getattr(self, "reader_id", None), "alpaca", "asset_listing", NAMES_KEEP_S, fetch) or []
+                    self._names = {sym: (name, exch) for sym, name, exch in rows}
                     self._names_at = time.time()
                 except Exception as exc:
                     log.debug("alpaca asset listing: %s", exc)
@@ -1472,11 +1479,7 @@ class AlpacaPrices:
         hit = self._assets.get("__crypto__")
         if hit and time.time() - hit[0] < 86400:
             return hit[1]
-        from alpaca.trading.enums import AssetClass
-        from alpaca.trading.requests import GetAssetsRequest
-        assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
-        coins = frozenset(str(a.symbol).split("/")[0] for a in assets
-                          if str(a.symbol).endswith("/USD") and getattr(a, "tradable", True))
+        coins = frozenset(p.split("/")[0] for p in (self.crypto_pairs() or []) if p.endswith("/USD"))
         self._assets["__crypto__"] = (time.time(), coins)
         return coins or None
 
@@ -1487,10 +1490,16 @@ class AlpacaPrices:
         hit = self._assets.get("__crypto_pairs__")
         if hit and time.time() - hit[0] < 86400:
             return hit[1]
-        from alpaca.trading.enums import AssetClass
-        from alpaca.trading.requests import GetAssetsRequest
-        assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
-        pairs = sorted(str(a.symbol) for a in assets if getattr(a, "tradable", True))
+        from alphadesk.ledger.keptlists import kept
+
+        def fetch() -> list:
+            from alpaca.trading.enums import AssetClass
+            from alpaca.trading.requests import GetAssetsRequest
+            assets = self._trading(lambda c: c.get_all_assets(GetAssetsRequest(asset_class=AssetClass.CRYPTO)))
+            return sorted(str(a.symbol) for a in assets if getattr(a, "tradable", True))
+        # Kept in the store (2026-10-07), and the coin list is read from it:
+        # the two used to ask Alpaca for the same asset list separately.
+        pairs = kept(getattr(self, "reader_id", None), "alpaca", "crypto_pairs", 86400, fetch) or []
         self._assets["__crypto_pairs__"] = (time.time(), pairs)
         return pairs or None
 

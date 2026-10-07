@@ -344,7 +344,9 @@ def _with_coins(names: dict) -> dict:
 def _fetch_sec_names() -> dict[str, dict]:
     """ticker -> {name, exchange, class} from the SEC's ticker-exchange file."""
     from alphadesk.ingest import edgar
-    data = json.loads(edgar._get(_SEC_TICKERS_URL, timeout=30.0))
+    # From the store when kept within a day (2026-10-07): the disk copy beside it
+    # is gone on a fresh server instance.
+    data = edgar._kept_or_fetched(_SEC_TICKERS_URL, "tickers", 30.0)
     fields = data.get("fields") or []
     idx = {f: i for i, f in enumerate(fields)}
     out: dict[str, dict] = {}

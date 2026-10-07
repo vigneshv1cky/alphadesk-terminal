@@ -1118,11 +1118,18 @@ class FmpPrices:
         import time
         if self._etfs and time.time() - self._etfs[0] < 86400:
             return self._etfs[1]
-        rows = self._get("etf-list")
-        if not isinstance(rows, list):
+        from alphadesk.ledger.keptlists import kept
+
+        def fetch() -> dict | None:
+            rows = self._get("etf-list")
+            if not isinstance(rows, list):
+                return None
+            return {str(r["symbol"]).upper(): str(r.get("name") or "")
+                    for r in rows if isinstance(r, dict) and r.get("symbol")}
+        # Kept in the store (2026-10-07): 11,000 funds asked again after every restart.
+        got = kept(getattr(self, "reader_id", None), "fmp", "fund_names", 86400, fetch)
+        if got is None:
             return None
-        got = {str(r["symbol"]).upper(): str(r.get("name") or "")
-               for r in rows if isinstance(r, dict) and r.get("symbol")}
         self._etfs = (time.time(), got)
         return got
 

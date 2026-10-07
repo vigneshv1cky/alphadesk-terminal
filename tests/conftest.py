@@ -47,10 +47,14 @@ def _clear_kept_sec():
     test that swaps in its own EDGAR answer must not be served the last test's
     kept copy, just as the memory cache is cleared between tests."""
     try:
+        from alphadesk.ingest import edgar
+        if edgar._sec_writer is not None:              # a write queued by the last test lands first
+            edgar._sec_writer.submit(lambda: None).result(timeout=5)
         from alphadesk.ledger import store
         with store._lock, store._connect() as conn:
             conn.execute("DELETE FROM sec_documents")
             conn.execute("DELETE FROM insider_form4")
+            conn.execute("DELETE FROM vendor_cache WHERE method LIKE 'list:%'")
     except Exception:
         pass                                          # no ledger yet: nothing kept
 

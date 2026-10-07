@@ -166,7 +166,10 @@ def _kept_daily(router, name: str, fetch):
     if hit and time.time() - hit[0] < (DAILY_KEEP_S if hit[1] is not None else 600):
         return hit[1]
     try:
-        got = fetch()
+        # Kept in the store too (2026-10-07): sector weights, the S&P 500's
+        # members and the sector companies were asked again after every restart.
+        from alphadesk.ledger.keptlists import kept
+        got = kept(router.owner, ",".join(router.connected) or "none", f"sectors:{name}", DAILY_KEEP_S, fetch)
     except Exception:
         got = None
     with _lock:

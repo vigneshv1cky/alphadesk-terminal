@@ -158,9 +158,9 @@ def _ticker_cik_map() -> dict[str, str]:
         return _ticker_cik_cache
     if time.monotonic() < _ticker_cik_retry_at:
         return {}
-    import json
     try:
-        data = json.loads(_get(_TICKER_MAP_URL))
+        # Kept in the store a day (2026-10-07): ~1 MB asked again after every restart.
+        data = _kept_or_fetched(_TICKER_MAP_URL, "tickers", 15.0)
         _ticker_cik_cache = {
             v["ticker"].upper(): f"{int(v['cik_str']):010d}" for v in data.values()
         }
@@ -183,7 +183,7 @@ _JSON_TTL_S = {"submissions": 600.0, "facts": 900.0}
 #: than this, and used however old when EDGAR cannot be reached. A company's
 #: figures file changes only when it files a report, and was downloaded again
 #: after every restart — megabytes through the one paced SEC slot.
-_JSON_KEEP_FRESH_S = {"facts": 12 * 3600.0}
+_JSON_KEEP_FRESH_S = {"facts": 12 * 3600.0, "submissions": 600.0, "tickers": 86400.0}
 _JSON_MAX = {"submissions": 128, "facts": 4}          # facts parse to tens of megabytes each
 _json_cache: "dict[str, tuple[float, str, object]]" = {}
 _json_guard = threading.Lock()
@@ -236,12 +236,29 @@ def _kept_or_fetched(url: str, kind: str, timeout: float):
             return json.loads(kept[0])
         raise
     data = json.loads(raw)
-    try:
-        from alphadesk.ledger import store
-        store.sec_document_put(url, kind, raw)
-    except Exception as exc:
-        log.warning("SEC %s not kept: %s", kind, exc)
+    _keep_later(url, kind, raw)
     return data
+
+
+_sec_writer = None
+
+
+def _keep_later(url: str, kind: str, raw: bytes) -> None:
+    """Write a kept SEC document on one background thread: a filing index is
+    refreshed every few minutes for each company asked about, and the caller
+    must not wait on the store for it."""
+    global _sec_writer
+    if _sec_writer is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _sec_writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sec-keep")
+
+    def write() -> None:
+        try:
+            from alphadesk.ledger import store
+            store.sec_document_put(url, kind, raw)
+        except Exception as exc:
+            log.warning("SEC %s not kept: %s", kind, exc)
+    _sec_writer.submit(write)
 
 
 def sec_ticker(symbol: str) -> str:
