@@ -61,6 +61,15 @@ def _clear_kept_sec():
 
 
 @pytest.fixture(autouse=True)
+def _no_alpha_vantage_pacing(monkeypatch):
+    """The one-a-second pacing (providers/avpace.py) would make every test that
+    calls a stand-in Alpha Vantage wait; its own test sets it back."""
+    from alphadesk.providers import avpace
+    monkeypatch.setattr(avpace, "MIN_INTERVAL_S", 0.0)
+    avpace._next_slot.clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_providers():
     """Provider selection is cached for the process; clear it between tests so
     one test's NEWS_PROVIDER can't leak into the next."""

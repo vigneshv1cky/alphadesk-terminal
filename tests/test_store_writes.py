@@ -132,3 +132,22 @@ def test_an_unreadable_filing_list_is_not_kept(store, monkeypatch):
     monkeypatch.setattr(edgar, "recent_filings", lambda sym, forms=None, limit=40: [])
     ec.quarter_release("YYY", "2026-10-01")
     assert store.quarter_release_get("YYY", "2026-10-01") is None
+
+
+def test_alpha_vantage_requests_are_paced_one_a_second_per_key(monkeypatch):
+    import time
+    import pytest
+    from alphadesk.providers import avpace
+    from alphadesk.providers.base import ProviderError
+    monkeypatch.setattr(avpace, "MIN_INTERVAL_S", 0.2)
+    monkeypatch.setattr(avpace, "MAX_WAIT_S", 0.5)
+    avpace._next_slot.clear()
+    t0 = time.monotonic()
+    avpace.wait_turn("k1")
+    avpace.wait_turn("k1")
+    avpace.wait_turn("other")                                  # another key has its own slot
+    assert 0.18 <= time.monotonic() - t0 < 0.4
+    avpace._next_slot["k1"] = time.monotonic() + 2.0           # a backlog of callers already queued on the key
+    with pytest.raises(ProviderError):                         # past the longest wait: refused, the next vendor answers
+        avpace.wait_turn("k1")
+    avpace._next_slot.clear()

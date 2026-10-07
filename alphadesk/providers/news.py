@@ -449,6 +449,8 @@ class AlphaVantageNews:
         url = ("https://www.alphavantage.co/query?function=NEWS_SENTIMENT"
                f"&time_from={since.strftime('%Y%m%dT%H%M')}&sort=LATEST"
                f"&limit={min(_MAX_SCAN, 1000)}&apikey={self.api_key}")
+        from alphadesk.providers.avpace import wait_turn
+        wait_turn(self.api_key)                       # the same key's one-a-second slot as the price data
         try:
             data = _get_json(url)
         except ProviderError as exc:

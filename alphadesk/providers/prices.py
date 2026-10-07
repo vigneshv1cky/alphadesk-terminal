@@ -984,6 +984,8 @@ class AlphaVantagePrices(AlphaVantageCompany):
             raise ProviderError("no Alpha Vantage key")
 
     def _query(self, params: str) -> dict:
+        from alphadesk.providers.avpace import wait_turn
+        wait_turn(self.api_key)                       # one a second per key (the free plan's rule)
         data = _get_json(f"{self._BASE}?{params}&apikey={self.api_key}", {})
         if not isinstance(data, dict):
             raise ProviderError("unexpected payload shape")
