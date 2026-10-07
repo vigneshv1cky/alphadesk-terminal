@@ -520,10 +520,15 @@ rate-limited to 120 requests a minute per token.
 | News | `symbol_news`, `news_search`, `news_story`, `news_scan` |
 | Filings and calls | `list_filings`, `filing_text`, `transcripts`, `transcript_text` |
 | Calendars | `earnings_calendar` (upcoming, and reported with `days_back`), `economic_calendar`, `corporate_calendar` |
-| Options | `option_expirations`, `option_chain`, `options_flow` |
+| Options | `option_expirations`, `option_chain`, `options_flow`; `option_chain(on=…)` reads a past day's chain as it stood at that day's close (the board's stocks, saved after each close from 2026-10-07; without an expiry it lists the expiries saved that day) |
 | What just happened | `catalysts` (filings, halts, government action and social posts on one tape), `filing_feed`, `trading_halts`, `government_actions`, `social_posts` |
-| A past session | `movers(session=…)` for stocks, ETFs, crypto and options, with `market_sessions(category=…)` for the days that exist; read from the recorded closes first |
+| A past session | `movers(session=…)` for stocks, ETFs, crypto and options, with `market_sessions(category=…)` for the days that exist; read from the recorded closes first. A big move explained by a corporate event is marked: a spin-off from Alpaca's corporate-actions feed carries the holder's move (the parent plus the new shares handed out), and a move with no listed event but the pattern of one (volume ten times its average, the next close within 15 percent) is flagged `possible_corporate_event` |
 | Provenance | `data_sources` — whether a figure came from a licensed vendor or a scraped page |
+
+**A quote that is not a market.** A quote whose symbol has no daily bar in the
+last ten days — a retired ticker or a long halt — carries `stale: true`: its
+price is the last trade there was, `as_of` is that trade's date, and there is
+no change. The company may trade under a new ticker; `find_symbol` finds it.
 
 **Which address.** The tools answer only on the names the server is set to answer
 to: the public address in `ALPHADESK_BASE_URL`, plus any names in

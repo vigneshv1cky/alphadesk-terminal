@@ -189,10 +189,10 @@ A new market-data vendor therefore needs an implementation registered under
 | llm | `anthropic` | Messages API; JSON is forced by prefilling the assistant turn |
 | llm | `gemini` | Google's Generative Language API |
 | news | `polygon`, `alpaca`, `finnhub`, `benzinga`, `alphavantage`, `marketaux`, `fmp` | ticker-tagged feeds; a reader keying several has their window merged |
-| prices | `alpaca` | SIP bars (15 minutes behind on the free plan), overnight session, quotes, streams, movers, crypto (every pair the account trades, which also drives search and the crypto movers), option chains, a past session's whole market |
+| prices | `alpaca` | SIP bars (15 minutes behind on the free plan), overnight session, quotes, streams, movers, crypto (every pair the account trades, which also drives search and the crypto movers), option chains, a past session's whole market, the corporate-actions feed (spin-offs, mergers, name changes) used to explain a past session's big moves; a quote with no daily bar in ten days is marked `stale` |
 | prices | `finnhub` | key statistics, analysts, peers, earnings history and calendar, profile; more on paid plans |
 | prices | `polygon` | bars, quotes, dividends and splits, a past session's whole market (plan permitting); currencies and option movers on paid plans |
-| prices | `alphavantage` | overview-based statistics, estimates, earnings calendar |
+| prices | `alphavantage` | overview-based statistics, estimates, earnings calendar; requests are paced one every 1.1 s per key (the free plan refuses faster), and a request that would wait over 4 s goes to the next vendor |
 | prices | `fmp` | statistics, peers, grades, ETF holdings, corporate actions, economic calendar |
 
 ## Testing yours
