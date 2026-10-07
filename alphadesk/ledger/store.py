@@ -511,6 +511,26 @@ CREATE TABLE IF NOT EXISTS movers_days (
     PRIMARY KEY (owner, category, day)
 );
 
+-- SEC documents worth keeping whole (2026-10-07): a company's financial
+-- figures file (companyfacts, megabytes, changes only when it files a report),
+-- the raw bytes zlib then base64, keyed by URL. Public data, shared.
+CREATE TABLE IF NOT EXISTS sec_documents (
+    url        TEXT PRIMARY KEY,
+    kind       TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    fetched_at BIGINT NOT NULL
+);
+
+-- Each insider Form 4's parsed trades by accession (2026-10-07): a filing
+-- never changes, so it is fetched and parsed once. An empty list is a filing
+-- with no ordinary-share rows, kept so it is not fetched again. Public, shared.
+CREATE TABLE IF NOT EXISTS insider_form4 (
+    accession  TEXT PRIMARY KEY,
+    symbol     TEXT NOT NULL,
+    rows       TEXT NOT NULL,
+    saved_at   BIGINT NOT NULL
+);
+
 -- Options flow captured during a session (2026-10-06): the orders seen live
 -- with the side they hit, the ask/bid tallies and the stock's minutes, per
 -- reader, underlying and session. The side is only knowable within seconds of
@@ -652,7 +672,8 @@ def kept_counts(owner: str) -> dict:
         for table in ("session_days", "movers_days", "options_flow_sessions"):
             r = conn.execute(f"SELECT COUNT(*) AS n, MAX(saved_at) AS newest FROM {table} WHERE owner=?", (owner,)).fetchone()
             out["tables"][table] = {"rows": r["n"], "newest_saved_at": r["newest"]}
-        for table, col in (("filings", "ingested_at"), ("filing_text_cache", "extracted_at")):
+        for table, col in (("filings", "ingested_at"), ("filing_text_cache", "extracted_at"),
+                           ("sec_documents", "fetched_at"), ("insider_form4", "saved_at")):
             r = conn.execute(f"SELECT COUNT(*) AS n, MAX({col}) AS newest FROM {table}").fetchone()
             out["tables"][table] = {"rows": r["n"], "newest": r["newest"], "shared": True}
     return out
@@ -1711,6 +1732,53 @@ def session_day_vendor(owner: str, day: str) -> str | None:
 def recorded_session_days(owner: str) -> set[str]:
     with _connect() as conn:
         return {r["day"] for r in conn.execute("SELECT day FROM session_days WHERE owner=?", (owner,)).fetchall()}
+
+
+def sec_document_get(url: str) -> tuple[bytes, int] | None:
+    """(raw bytes, fetched_at) of a kept SEC document, or None."""
+    import base64
+    import zlib
+    with _connect() as conn:
+        row = conn.execute("SELECT payload, fetched_at FROM sec_documents WHERE url=?", (url,)).fetchone()
+    if not row:
+        return None
+    try:
+        return zlib.decompress(base64.b64decode(row["payload"])), int(row["fetched_at"])
+    except (ValueError, zlib.error):
+        return None
+
+
+def sec_document_put(url: str, kind: str, raw: bytes) -> None:
+    import base64
+    import zlib
+    blob = base64.b64encode(zlib.compress(raw, 6)).decode()
+    with _lock, _connect() as conn:
+        conn.execute("INSERT INTO sec_documents (url, kind, payload, fetched_at) VALUES (?,?,?,?)"
+                     " ON CONFLICT (url) DO UPDATE SET payload=excluded.payload, fetched_at=excluded.fetched_at",
+                     (url, kind, blob, int(time.time())))
+
+
+def insider_form4_get(accessions: list[str]) -> dict[str, list[dict]]:
+    """{accession: parsed rows} for the Form 4s already kept."""
+    out: dict[str, list[dict]] = {}
+    accs = list(dict.fromkeys(accessions))
+    with _connect() as conn:
+        for i in range(0, len(accs), 500):
+            part = accs[i:i + 500]
+            for r in conn.execute(f"SELECT accession, rows FROM insider_form4 WHERE accession IN ({','.join('?' * len(part))})",
+                                  part).fetchall():
+                try:
+                    out[r["accession"]] = json.loads(r["rows"])
+                except ValueError:
+                    pass
+    return out
+
+
+def insider_form4_put(accession: str, symbol: str, rows: list[dict]) -> None:
+    with _lock, _connect() as conn:
+        conn.execute("INSERT INTO insider_form4 (accession, symbol, rows, saved_at) VALUES (?,?,?,?)"
+                     " ON CONFLICT (accession) DO NOTHING",
+                     (accession, symbol.upper(), json.dumps(rows, separators=(",", ":")), int(time.time())))
 
 
 def save_options_flow(owner: str, symbol: str, session: str, payload: Any) -> None:

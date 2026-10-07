@@ -42,6 +42,19 @@ def client(store):
     return TestClient(dashboard.app)
 
 
+def _clear_kept_sec():
+    """SEC documents and Form 4s are kept in the ledger now (2026-10-07); a
+    test that swaps in its own EDGAR answer must not be served the last test's
+    kept copy, just as the memory cache is cleared between tests."""
+    try:
+        from alphadesk.ledger import store
+        with store._lock, store._connect() as conn:
+            conn.execute("DELETE FROM sec_documents")
+            conn.execute("DELETE FROM insider_form4")
+    except Exception:
+        pass                                          # no ledger yet: nothing kept
+
+
 @pytest.fixture(autouse=True)
 def _reset_providers():
     """Provider selection is cached for the process; clear it between tests so
@@ -52,6 +65,7 @@ def _reset_providers():
     registry.reset_cache()
     background_fill._failed.clear()
     edgar._json_cache.clear()
+    _clear_kept_sec()
     from alphadesk.desk import memo
     memo.clear()
     yield

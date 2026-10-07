@@ -65,6 +65,9 @@ def test_the_larger_taxonomy_wins_and_is_named(monkeypatch):
     def facts(payload):
         ef._cache.clear()
         ef.edgar._json_cache.clear()                    # the SEC documents are shared now: one URL, one copy
+        from alphadesk.ledger import store              # and kept (2026-10-07): the next answer is a new filing
+        with store._lock, store._connect() as conn:
+            conn.execute("DELETE FROM sec_documents")
         monkeypatch.setattr(ef.edgar, "cik_for", lambda s: "0000000001")
         monkeypatch.setattr(ef.edgar, "_get", lambda *a, **k: json.dumps(payload).encode())
         return ef._facts("X")

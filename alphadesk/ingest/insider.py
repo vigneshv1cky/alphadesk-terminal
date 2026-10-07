@@ -137,12 +137,27 @@ def get_insider_trades(symbol: str, limit: int = 20) -> list[dict] | None:
         forms = recent.get("form") or []
 
         rows: list[dict] = []
-        # Each Form 4 is its own HTTP fetch, so cap how many we open rather than
-        # walking hundreds of filings for one research section.
+        # EACH FORM 4 IS PARSED ONCE AND KEPT (2026-10-07): a filing never
+        # changes, and each was its own paced SEC request every time a symbol
+        # was asked about — up to twenty, again after every restart.
+        from alphadesk.ledger import store
+        accs = [recent["accessionNumber"][i] for i, form in enumerate(forms) if form == "4"]
+        try:
+            kept = store.insider_form4_get(accs)
+        except Exception as exc:
+            log.debug("kept form 4s unreadable: %s", exc)
+            kept = {}
+        # Each new Form 4 is its own HTTP fetch, so cap how many we open rather
+        # than walking hundreds of filings for one research section.
         for i, form in enumerate(forms):
             if form != "4":
                 continue
             acc = recent["accessionNumber"][i]
+            if acc in kept:
+                rows.extend(kept[acc])
+                if len(rows) >= limit:
+                    break
+                continue
             # The XSL view directory is a rendering, not the data — see module
             # docstring. The bare filename in the same folder is the XML.
             doc = (recent["primaryDocument"][i] or "").split("/")[-1]
@@ -151,9 +166,15 @@ def get_insider_trades(symbol: str, limit: int = 20) -> list[dict] | None:
             url = edgar._ARCHIVE_URL.format(
                 cik=cik_int, accession_nodash=acc.replace("-", ""), doc=doc)
             try:
-                rows.extend(_parse_form4(edgar._get(url), recent["filingDate"][i], url))
+                parsed = _parse_form4(edgar._get(url), recent["filingDate"][i], url)
             except Exception as exc:
                 log.debug("form 4 parse failed (%s): %s", url, exc)
+                continue                              # not kept: asked again next time
+            try:
+                store.insider_form4_put(acc, sym, parsed)
+            except Exception as exc:
+                log.debug("form 4 %s not kept: %s", acc, exc)
+            rows.extend(parsed)
             if len(rows) >= limit:
                 break
         out = rows[:limit] or None

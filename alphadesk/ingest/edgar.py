@@ -179,6 +179,11 @@ def _ticker_cik_map() -> dict[str, str]:
 # share this: fetched once, parsed once, fresh for a few minutes, with
 # concurrent askers sharing one download. A failure is never remembered.
 _JSON_TTL_S = {"submissions": 600.0, "facts": 900.0}
+#: Kinds also KEPT in the store (2026-10-07): read from there while younger
+#: than this, and used however old when EDGAR cannot be reached. A company's
+#: figures file changes only when it files a report, and was downloaded again
+#: after every restart — megabytes through the one paced SEC slot.
+_JSON_KEEP_FRESH_S = {"facts": 12 * 3600.0}
 _JSON_MAX = {"submissions": 128, "facts": 4}          # facts parse to tens of megabytes each
 _json_cache: "dict[str, tuple[float, str, object]]" = {}
 _json_guard = threading.Lock()
@@ -187,7 +192,6 @@ _json_locks: dict[str, threading.Lock] = {}
 
 def get_json(url: str, kind: str = "submissions", timeout: float = 15.0):
     """The parsed JSON at `url` (a data.sec.gov document), shared across callers."""
-    import json
     ttl = _JSON_TTL_S[kind]
     now = time.monotonic()
     with _json_guard:
@@ -200,13 +204,44 @@ def get_json(url: str, kind: str = "submissions", timeout: float = 15.0):
             hit = _json_cache.get(url)
             if hit and time.monotonic() - hit[0] < ttl:
                 return hit[2]
-        data = json.loads(_get(url, timeout=timeout))
+        data = _kept_or_fetched(url, kind, timeout)
         with _json_guard:
             _json_cache[url] = (time.monotonic(), kind, data)
             same = [(v[0], k) for k, v in _json_cache.items() if v[1] == kind]
             for _, k in sorted(same)[:max(0, len(same) - _JSON_MAX[kind])]:
                 _json_cache.pop(k, None)             # the oldest of this kind go first
         return data
+
+
+def _kept_or_fetched(url: str, kind: str, timeout: float):
+    """The parsed document: the store's copy while fresh, else EDGAR (kept),
+    else the store's copy however old. Kinds not kept go straight to EDGAR."""
+    import json
+    keep = _JSON_KEEP_FRESH_S.get(kind)
+    if keep is None:
+        return json.loads(_get(url, timeout=timeout))
+    kept = None
+    try:
+        from alphadesk.ledger import store
+        kept = store.sec_document_get(url)
+    except Exception as exc:
+        log.debug("kept SEC %s unreadable: %s", kind, exc)
+    if kept and time.time() - kept[1] < keep:
+        return json.loads(kept[0])
+    try:
+        raw = _get(url, timeout=timeout)
+    except Exception:
+        if kept:                                     # EDGAR down or pausing us: the last copy
+            log.info("SEC %s from the kept copy (%.0f h old): EDGAR not reachable", kind, (time.time() - kept[1]) / 3600)
+            return json.loads(kept[0])
+        raise
+    data = json.loads(raw)
+    try:
+        from alphadesk.ledger import store
+        store.sec_document_put(url, kind, raw)
+    except Exception as exc:
+        log.warning("SEC %s not kept: %s", kind, exc)
+    return data
 
 
 def sec_ticker(symbol: str) -> str:

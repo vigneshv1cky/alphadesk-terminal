@@ -38,3 +38,50 @@ def test_a_filing_list_writes_only_filings_not_stored_yet(store, monkeypatch):
     assert len(writes) == 1
     monkeypatch.undo()
     assert len(store.get_filings("EAF", limit=100)) == 41
+
+
+def test_a_companys_figures_file_is_kept_and_read_after_a_restart(store, monkeypatch):
+    import json
+    from alphadesk.ingest import edgar
+    asked: list[str] = []
+    monkeypatch.setattr(edgar, "_get", lambda url, timeout=15.0: asked.append(url) or json.dumps({"facts": {"x": 1}}).encode())
+    url = edgar._FACTS_URL.format(cik10="0000000001")
+    assert edgar.get_json(url, "facts")["facts"] == {"x": 1}
+    edgar._json_cache.clear()                                  # a restart: memory is empty
+    assert edgar.get_json(url, "facts")["facts"] == {"x": 1}
+    assert len(asked) == 1                                     # the second read is the kept copy
+
+
+def test_a_stale_figures_file_is_still_served_when_edgar_cannot_be_reached(store, monkeypatch):
+    import json
+    from alphadesk.ingest import edgar
+    url = edgar._FACTS_URL.format(cik10="0000000002")
+    store.sec_document_put(url, "facts", json.dumps({"facts": {"old": 1}}).encode())
+    with store._lock, store._connect() as conn:
+        conn.execute("UPDATE sec_documents SET fetched_at=0 WHERE url=?", (url,))   # far past fresh
+
+    def down(*a, **k):
+        raise edgar.EdgarRateLimited("paused")
+    monkeypatch.setattr(edgar, "_get", down)
+    edgar._json_cache.clear()
+    assert edgar.get_json(url, "facts")["facts"] == {"old": 1}
+
+
+def test_each_form_4_is_fetched_once(store, monkeypatch):
+    from alphadesk.ingest import edgar, insider
+    xml = (b"<ownershipDocument><reportingOwner><reportingOwnerId><rptOwnerName>A B</rptOwnerName></reportingOwnerId>"
+           b"</reportingOwner><nonDerivativeTable><nonDerivativeTransaction><transactionDate><value>2026-09-01</value>"
+           b"</transactionDate><transactionCoding><transactionCode>P</transactionCode></transactionCoding><transactionAmounts>"
+           b"<transactionShares><value>100</value></transactionShares><transactionPricePerShare><value>10</value>"
+           b"</transactionPricePerShare><transactionAcquiredDisposedCode><value>A</value></transactionAcquiredDisposedCode>"
+           b"</transactionAmounts></nonDerivativeTransaction></nonDerivativeTable></ownershipDocument>")
+    fetched: list[str] = []
+    monkeypatch.setattr(edgar, "cik_for", lambda s: "0000000003")
+    monkeypatch.setattr(edgar, "get_json", lambda url, kind="submissions", timeout=15.0: {"filings": {"recent": {
+        "form": ["4", "4"], "accessionNumber": ["0001-26-000001", "0001-26-000002"],
+        "primaryDocument": ["xslF345X06/a.xml", "xslF345X06/b.xml"], "filingDate": ["2026-09-02", "2026-09-01"]}}})
+    monkeypatch.setattr(edgar, "_get", lambda url, timeout=15.0: fetched.append(url) or xml)
+    first = insider.get_insider_trades("ZZZ")
+    insider._insider_cache.clear()                             # a restart
+    again = insider.get_insider_trades("ZZZ")
+    assert first == again and len(fetched) == 2                # two filings, each fetched once in all
