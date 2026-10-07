@@ -136,6 +136,8 @@ row keyed to it.
 | An owner's recent read requests, for prewarming (never the answers) | the owner | 24 hours unused |
 | SEC filing metadata, filing text, annual-report sections, 8-K/6-K results releases | public | kept |
 | SEC company figures files (companyfacts, compressed; refreshed after 12 hours, the kept copy used when EDGAR is unreachable) and each insider Form 4's parsed trades | public | kept |
+| The Treasury's daily par yield curve file (refreshed after an hour, the kept copy used when the Treasury is unreachable) | public | kept |
+| Each company's transcript and results-release list (refreshed after an hour, the kept copy used when the vendor fails) | the reader | as the other kept vendor answers |
 
 Quotes, bars and other vendor figures are otherwise held only in short-lived
 in-memory caches keyed by reader. There is no analytics, advertising or

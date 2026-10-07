@@ -107,10 +107,19 @@ def _from_news(symbol: str) -> list[dict]:
     return [r for r in out if r["id"]]
 
 
+#: A company's transcript list is kept an hour (2026-10-07): long enough to
+#: spare the vendor across restarts and answer when it is down, short enough
+#: that a release filed on report day shows within the hour.
+LIST_FRESH_S = 3600
+
+
 def list_transcripts(symbol: str) -> dict:
+    from alphadesk.identity import request_user
+    from alphadesk.ledger.keptlists import kept
     prov = get_transcripts()
     try:
-        rows = prov.list_transcripts(symbol)
+        rows = kept(request_user(), prov.name, f"transcripts:{symbol.upper()}", LIST_FRESH_S,
+                    lambda: prov.list_transcripts(symbol))
     except ProviderError as exc:
         log.info("transcripts list unavailable for %s via %s: %s", symbol, prov.name, exc)
         # SAY WHAT HAPPENED, NOT THE STATUS LINE (2026-09-28, the reader, on a

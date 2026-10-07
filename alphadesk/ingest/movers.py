@@ -241,18 +241,46 @@ def treasury_rows(csv_text: str) -> list[dict]:
     return out
 
 
+def _treasury_csv(year: int) -> str:
+    """One year's par yield curve file. Kept in the store (2026-10-07): the
+    store's copy while under an hour old, else the Treasury's (kept), else
+    the store's copy however old when the Treasury cannot be reached. Public
+    data, so one copy serves every reader."""
+    from alphadesk.ledger import store
+    url = _TREASURY_URL.format(year=year)
+    kept = None
+    try:
+        kept = store.sec_document_get(url)
+    except Exception as exc:
+        log.debug("kept yield curve unreadable: %s", exc)
+    if kept and time.time() - kept[1] < _TREASURY_TTL_S:
+        return kept[0].decode("utf-8", "replace")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "AlphaDesk/1.0"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read()
+    except Exception:
+        if kept:
+            log.info("yield curve from the kept copy (%.0f h old): the Treasury was not reachable",
+                     (time.time() - kept[1]) / 3600)
+            return kept[0].decode("utf-8", "replace")
+        raise
+    if treasury_rows(raw.decode("utf-8", "replace")):
+        try:
+            store.sec_document_put(url, "treasury_curve", raw)
+        except Exception as exc:
+            log.debug("yield curve not kept: %s", exc)
+    return raw.decode("utf-8", "replace")
+
+
 def _treasury() -> dict:
     global _treasury_cache
     ts, rows = _treasury_cache
     if not rows or time.time() - ts > _TREASURY_TTL_S:
         year = date.today().year
-        req = urllib.request.Request(_TREASURY_URL.format(year=year), headers={"User-Agent": "AlphaDesk/1.0"})
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            rows = treasury_rows(resp.read().decode("utf-8", "replace"))
+        rows = treasury_rows(_treasury_csv(year))
         if len(rows) < 2 and date.today().month == 1:
-            req = urllib.request.Request(_TREASURY_URL.format(year=year - 1), headers={"User-Agent": "AlphaDesk/1.0"})
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                rows = treasury_rows(resp.read().decode("utf-8", "replace"))
+            rows = treasury_rows(_treasury_csv(year - 1))
         _treasury_cache = (time.time(), rows)
     return {"tabs": tabs_from_list([dict(r) for r in rows], with_active=False), "source": "treasury"}
 

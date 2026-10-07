@@ -203,3 +203,60 @@ def test_a_saved_option_chain_is_read_back_for_a_past_day(store, monkeypatch):
     assert missing["saved"] is False and missing["saved_days"] == ["2026-10-07"]
     with pytest.raises(ValueError, match="saved expiries: 2026-10-09"):
         mcp_server.option_chain("NVDA", expiry="2026-10-16", on="2026-10-07")
+
+
+def test_the_yield_curve_file_is_kept_and_served_when_the_treasury_is_down(store, monkeypatch):
+    import io
+    import urllib.request
+    import pytest
+    from alphadesk.ingest import movers
+    csv_text = "Date,1 Mo,10 Yr\n10/07/2026,4.10,4.05\n10/06/2026,4.12,4.00\n"
+    fetched = []
+
+    def ok(req, timeout=20):
+        fetched.append(req.full_url)
+        return io.BytesIO(csv_text.encode())
+    monkeypatch.setattr(urllib.request, "urlopen", ok)
+    assert "10/07/2026" in movers._treasury_csv(2026) and len(fetched) == 1
+    assert "10/07/2026" in movers._treasury_csv(2026) and len(fetched) == 1     # fresh: the kept copy, no request
+    url = movers._TREASURY_URL.format(year=2026)
+    raw, _ = store.sec_document_get(url)
+    with store._lock, store._connect() as conn:                                   # an old copy
+        conn.execute("UPDATE sec_documents SET fetched_at=0 WHERE url=?", (url,))
+
+    def down(req, timeout=20):
+        raise OSError("unreachable")
+    monkeypatch.setattr(urllib.request, "urlopen", down)
+    assert movers.treasury_rows(movers._treasury_csv(2026))[0]["price"] == 4.10    # served however old
+    with pytest.raises(OSError):
+        movers._treasury_csv(2025)                                                # nothing kept: the failure stands
+
+
+def test_a_transcript_list_is_kept_and_served_when_the_vendor_fails(store, monkeypatch):
+    from alphadesk import identity
+    from alphadesk.desk import transcripts as tr
+    from alphadesk.providers.base import ProviderError
+    asked = []
+
+    class _P:
+        name, kind = "edgar", "release"
+        fail = False
+        def list_transcripts(self, sym):
+            asked.append(sym)
+            if self.fail:
+                raise ProviderError("down")
+            return [{"id": "0001", "title": "Q3 results", "date": "2026-10-01"}]
+    prov = _P()
+    monkeypatch.setattr(tr, "get_transcripts", lambda: prov)
+    monkeypatch.setattr(tr, "_from_news", lambda s: [])
+    token = identity.set_request_user("u-tx")
+    try:
+        first = tr.list_transcripts("nvda")
+        again = tr.list_transcripts("NVDA")
+        assert asked == ["nvda"] and first["transcripts"] == again["transcripts"]  # the second from the store
+        monkeypatch.setattr(tr, "LIST_FRESH_S", 0)
+        prov.fail = True
+        down = tr.list_transcripts("NVDA")
+        assert down["transcripts"] and down["transcripts"][0]["id"] == "0001"      # the vendor failed: the kept list
+    finally:
+        identity.reset_request_user(token)
