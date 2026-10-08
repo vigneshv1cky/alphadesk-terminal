@@ -146,7 +146,7 @@ function soonDay(iso: string): string {
     { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" })
 }
 
-export function ReportingSoonTile({ span = 4 }: { span?: number } = {}) {
+export function ReportingSoonTile({ span = 4, height = TILE_BODY_HEIGHT }: { span?: number; height?: number } = {}) {
   const [range, setRange] = useState<SoonRange>(readSoonRange)
   const pick = (r: SoonRange) => {
     setRange(r)
@@ -165,7 +165,7 @@ export function ReportingSoonTile({ span = 4 }: { span?: number } = {}) {
   return (
     <Widget span={span} title="Reporting soon"
             subtitle={`${rows.length} on the earnings calendar · vendor dates, often estimated past a week`}
-            scroll={TILE_BODY_HEIGHT}
+            scroll={height}
             toolbar={<TabStrip tabs={SOON_RANGES} value={range} onChange={pick} />}>
       {!data ? <Empty>loading…</Empty>
         : rows.length === 0 ? <Empty>nothing on the calendar</Empty> : (
