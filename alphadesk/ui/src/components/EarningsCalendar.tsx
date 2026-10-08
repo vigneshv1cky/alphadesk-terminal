@@ -763,7 +763,7 @@ export function EarningsCalendar({ picked, pickedRow, onPick }: {
 
       {/* Five equal columns: a week always fits the strip, on a phone too,
           where a row of 88px cells ran off the edge behind a scrollbar. */}
-      <div className="grid grid-cols-5 gap-1.5 border-b-2 border-border px-3 py-1.5">
+      <div className="grid grid-cols-5 gap-1.5 px-3 py-1.5">
         {days.map(d => (
           <DayCell
             key={d.date}
