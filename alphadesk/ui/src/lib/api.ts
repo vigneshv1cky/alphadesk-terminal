@@ -1627,8 +1627,8 @@ export const api = {
    * than stepping back a calendar day at a time. */
   moverSessions: (category: MoverCategory, count = 10) =>
     get<{ sessions: string[] }>(`/api/movers/${category}/sessions?count=${count}`),
-  earnings: () =>
-    get<{ upcoming: EarningsRow[]; reported: EarningsRow[] }>("/api/earnings"),
+  earnings: (days = 7) =>
+    get<{ upcoming: EarningsRow[]; reported: EarningsRow[] }>(`/api/earnings?days=${days}`),
   insider: (symbol: string) =>
     get<{ symbol: string; trades: InsiderTrade[] }>(`/api/insider/${encodeURIComponent(symbol)}`),
   ownership: (symbol: string) =>

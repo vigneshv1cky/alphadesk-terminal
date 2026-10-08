@@ -52,8 +52,9 @@ export const keys = {
     ["external-widget", uid, symbol] as const,
 }
 
-export const useEarnings = (enabled = true) =>
-  useQuery({ queryKey: keys.earnings, queryFn: ({ signal }) => on(signal).earnings(), refetchInterval: 300_000, enabled })
+export const useEarnings = (enabled = true, days = 7) =>
+  useQuery({ queryKey: [...keys.earnings, days], queryFn: ({ signal }) => on(signal).earnings(days),
+              refetchInterval: 300_000, enabled, placeholderData: prev => prev })
 
 /** One company's report dates — the calendar's symbol filter. Asked only
  * once a symbol is submitted; kept five minutes like the week. */

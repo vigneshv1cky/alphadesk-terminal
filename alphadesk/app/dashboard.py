@@ -2453,9 +2453,10 @@ def api_system():
 
 
 @app.get("/api/earnings")
-def api_earnings():
+def api_earnings(days: int = 7):
     """Be-ready view: who reports next (with the time to RUN the desk to catch the
-    drift) and who just reported."""
+    drift) and who just reported. `days` is how far ahead "next" reaches, 1 to 60
+    (the agent's earnings calendar reaches as far); a week by default."""
     from datetime import timedelta
 
     from alphadesk.config import now_et
@@ -2467,17 +2468,19 @@ def api_earnings():
     now = now_et()
     upcoming, reported = [], []
     from alphadesk.ingest import earnings_calendar
+    ahead = max(1, min(int(days), 60))
     window = earnings_calendar.rows_between((now.date() - timedelta(days=4)).isoformat(),
-                                            (now.date() + timedelta(days=14)).isoformat())
+                                            (now.date() + timedelta(days=max(14, ahead))).isoformat())
     # A symbol whose report is OUT — an actual EPS on any row in the window —
     # is never "reporting soon" on a sibling row: a stale projected date
     # next to a filled one read as a report still to come (2026-09-11).
     out_already = {e["symbol"] for e in window
                    if e.get("eps_actual") is not None or e.get("released_at") or e.get("released_on")}
     today = now.date().isoformat()
-    # The be-ready horizon is one week: a projected date two weeks out on a
-    # calendar that guesses from last year is not something to be ready for.
-    horizon = (now.date() + timedelta(days=7)).isoformat()
+    # The be-ready horizon is a week unless the reader asks for more (the tile's
+    # range, 2026-10-08): a projected date weeks out on a calendar that guesses
+    # from last year is an estimate, and the tile says so.
+    horizon = (now.date() + timedelta(days=ahead)).isoformat()
     for e in window:
         pub = reported_public(e["report_date"])
         e["public_at"] = pub.isoformat() if pub else None   # when the report becomes tradeable (BMO/DAY 4:00, AMC 16:00 ET)

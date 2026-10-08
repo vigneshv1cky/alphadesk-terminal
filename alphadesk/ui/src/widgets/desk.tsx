@@ -123,30 +123,77 @@ function AnalystConsensusTile() {
 
 /* ── Reporting soon ───────────────────────────────────────────────────── */
 
+/** How far ahead the tile reaches (2026-10-08, the owner's call: as far as
+ * the agent's earnings calendar). Remembered per browser. */
+const SOON_RANGES = [
+  { id: "7", label: "1W" }, { id: "14", label: "2W" }, { id: "30", label: "1M" }, { id: "60", label: "2M" },
+] as const
+type SoonRange = typeof SOON_RANGES[number]["id"]
+const SOON_KEY = "alphadesk.reportingSoon.days"
+
+function readSoonRange(): SoonRange {
+  try {
+    const v = localStorage.getItem(SOON_KEY)
+    if (SOON_RANGES.some(r => r.id === v)) return v as SoonRange
+  } catch { /* private mode */ }
+  return "7"
+}
+
+/** "Thu Oct 8" from a YYYY-MM-DD, read as a calendar date (no time zone). */
+function soonDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US",
+    { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" })
+}
+
 export function ReportingSoonTile() {
-  const { data } = useEarnings()
-  const rows = (data?.upcoming ?? []).slice(0, 14)
+  const [range, setRange] = useState<SoonRange>(readSoonRange)
+  const pick = (r: SoonRange) => {
+    setRange(r)
+    try { localStorage.setItem(SOON_KEY, r) } catch { /* private mode */ }
+  }
+  const { data, isPlaceholderData } = useEarnings(true, Number(range))
+  const rows = data?.upcoming ?? []
+  // Grouped by report day, in the order the server sends (earliest first,
+  // biggest companies first inside a day).
+  const days: { day: string; rows: typeof rows }[] = []
+  for (const r of rows) {
+    const last = days[days.length - 1]
+    if (last && last.day === r.report_date) last.rows.push(r)
+    else days.push({ day: r.report_date, rows: [r] })
+  }
   return (
-    <Widget span={4} title="Reporting soon" subtitle="from the earnings calendar" scroll={TILE_BODY_HEIGHT}>
+    <Widget span={4} title="Reporting soon"
+            subtitle={`${rows.length} on the earnings calendar · vendor dates, often estimated past a week`}
+            scroll={TILE_BODY_HEIGHT}
+            toolbar={<TabStrip tabs={SOON_RANGES} value={range} onChange={pick} />}>
       {!data ? <Empty>loading…</Empty>
         : rows.length === 0 ? <Empty>nothing on the calendar</Empty> : (
-        <ul>
-          {rows.map(r => (
-            <li key={`${r.symbol}:${r.report_date}`} className="row-rule">
-              <Link to={`/analysis?symbol=${encodeURIComponent(r.symbol)}`}
-                    className="flex items-center gap-2 px-3 py-2.5 hover:bg-foreground/5">
-                <span className="num w-[64px] shrink-0 text-body font-extrabold">{r.symbol}</span>
-                <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
-                  {r.company_name ?? ""}
-                </span>
-                <span className="num shrink-0 text-caption">{r.report_date.slice(5)}</span>
-                <span className="w-[34px] shrink-0 text-right text-label uppercase text-muted-foreground">
-                  {r.session ?? ""}
-                </span>
-              </Link>
-            </li>
+        <div className={isPlaceholderData ? "opacity-50 transition-opacity" : undefined}>
+          {days.map(g => (
+            <section key={g.day}>
+              <div className="row-rule bg-card px-3 pb-1 pt-2.5 text-label font-medium uppercase tracking-caps text-muted-foreground">
+                {soonDay(g.day)} <span className="normal-case tracking-normal">· {g.rows.length}</span>
+              </div>
+              <ul>
+                {g.rows.map(r => (
+                  <li key={`${r.symbol}:${r.report_date}`} className="row-rule">
+                    <Link to={`/analysis?symbol=${encodeURIComponent(r.symbol)}`}
+                          className="flex items-center gap-2 px-3 py-2.5 hover:bg-foreground/5">
+                      <span className="num w-[64px] shrink-0 text-body font-extrabold">{r.symbol}</span>
+                      <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
+                        {r.company_name ?? ""}
+                      </span>
+                      <span className="w-[34px] shrink-0 text-right text-label uppercase text-muted-foreground">
+                        {r.session ?? ""}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       )}
     </Widget>
   )

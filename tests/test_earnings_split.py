@@ -36,3 +36,19 @@ def test_released_stale_and_far_rows_are_kept_out_of_upcoming(monkeypatch):
     rep = {e["symbol"] for e in body["reported"]}
     assert up == [("SOON", (now + timedelta(days=3)).date().isoformat())]
     assert "EARLY" in rep and "STALE" in rep and "OUT" in rep
+
+
+def test_a_longer_range_reaches_further_ahead(monkeypatch):
+    now = datetime(2026, 9, 11, 12, 0, tzinfo=ET)
+    monkeypatch.setattr("alphadesk.config.now_et", lambda: now)
+    from alphadesk.ingest import earnings_calendar
+    asked = []
+
+    def rows(start, end, stats=True):
+        asked.append(end)
+        return _rows(now)
+    monkeypatch.setattr(earnings_calendar, "rows_between", rows)
+    two_weeks = TestClient(dashboard.app).get("/api/earnings?days=14").json()
+    assert {e["symbol"] for e in two_weeks["upcoming"]} == {"SOON", "FAR"}        # 12 days out is inside two weeks
+    TestClient(dashboard.app).get("/api/earnings?days=500")
+    assert asked[-1] == (now + timedelta(days=60)).date().isoformat()              # capped at 60 days, the agent's reach
