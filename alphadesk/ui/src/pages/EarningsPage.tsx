@@ -12,6 +12,7 @@ import { MarketChart } from "@/widgets/chart"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { normalize } from "@/lib/symbols"
 import { FiledQuarterPanel } from "@/components/FiledQuarterPanel"
+import { ReportingSoonTile } from "@/widgets/desk"
 
 /** The earnings hub (2026-09-14: the market-wide calendars — economic,
  * dividends, IPOs, splits — moved to their own Calendars tab, and the
@@ -141,6 +142,10 @@ export default function EarningsPage() {
           id: "transcript", label: "Earnings transcript",
           node: symbol ? <EarningsTranscriptPanel symbol={symbol} span={6} /> : needPick("Earnings transcript"),
         },
+        // Who reports in the next week, from the vendor calendars (2026-10-08,
+        // the owner's call): the calendar above is results only, so this is
+        // the page's one look ahead, last on the page and labelled as such.
+        { id: "reporting-soon", label: "Reporting soon", node: <ReportingSoonTile /> },
       ]}
     />
   )

@@ -123,7 +123,7 @@ function AnalystConsensusTile() {
 
 /* ── Reporting soon ───────────────────────────────────────────────────── */
 
-function ReportingSoonTile() {
+export function ReportingSoonTile() {
   const { data } = useEarnings()
   const rows = (data?.upcoming ?? []).slice(0, 14)
   return (
