@@ -76,7 +76,10 @@ export function NewsReader({ article: listed, onBack }: {
         <button
           type="button"
           onClick={onBack}
-          className="flex w-full items-center gap-2 border-b border-row-rule px-3 py-2 text-left text-label uppercase tracking-caps text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+          // Sticky at the top of the panel's scroll, so the way back stays in
+          // reach through a long story (2026-10-10, the owner). Opaque, or the
+          // story's text would show through it as it scrolls under.
+          className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-row-rule bg-card px-3 py-2 text-left text-label uppercase tracking-caps text-muted-foreground hover:bg-surface hover:text-foreground"
         >
           <ArrowLeft className="h-[12px] w-[12px] shrink-0" aria-hidden="true" />
           Back to the headlines
