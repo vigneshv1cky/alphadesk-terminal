@@ -1161,6 +1161,10 @@ class AlpacaPrices:
                 daily = {}
             today = datetime.now(ET).date()
             named = self.names(stocks)
+            # The overnight venue's trades (2026-10-12): the snapshots read the
+            # consolidated tape, which stops at 8pm, so every quote stood at
+            # the last after-hours print until four in the morning.
+            night = self._overnight_trades(stocks)
             for sym in stocks:
                 snap = snaps.get(sym)
                 bars = daily.get(sym) or []
@@ -1188,6 +1192,12 @@ class AlpacaPrices:
                 # morning, and the quote stood still until the opening bell.
                 bell = (datetime.combine(session["ts"].astimezone(ET).date(), dtime(16, 0), ET)
                         if session else None)
+                nt = night.get(sym) or {}
+                night_px, night_ts = _f(nt.get("p")), _stamp(nt.get("t"))
+                overnight = bool(night_px and night_ts and bell and night_ts.astimezone(ET) > bell
+                                 and (trade_ts is None or night_ts > trade_ts))
+                if overnight:
+                    trade_px, trade_ts = night_px, night_ts
                 late = (trade_px if (session and trade_px and trade_ts and bell
                                      and trade_ts.astimezone(ET) > bell) else None)
                 if late:
@@ -1221,8 +1231,10 @@ class AlpacaPrices:
                     "exchange": exch, "exchange_name": exch,
                     "quote_source": (f"Alpaca · last trade {as_of.astimezone(ET).date().isoformat()}, none since"
                                      if as_of else "Alpaca · no trade in 10 days") if stale else
+                                    "Alpaca · overnight venue" if (late and overnight) else
                                     ("Alpaca · real-time consolidated" if feed == "sip" else "Alpaca · IEX last trade")
                                     if (in_session or late) else "Alpaca · consolidated close",
+                    "overnight": bool(late and overnight),
                     # True when nothing traded in the last ten days: the price
                     # is the last trade there was, not a market.
                     "stale": stale,

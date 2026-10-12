@@ -616,3 +616,29 @@ def test_the_active_tab_reads_the_same_price_as_the_other_tabs():
     assert [r["symbol"] for r in got] == ["WFF", "T"]                                  # order kept
     assert got[0]["price"] == 10.71 and got[0]["overnight"] and got[0]["volume"] == 146_000_000
     assert got[1] == active[1]                                                         # not in the pool: as it was
+
+
+def test_a_quote_overnight_takes_the_overnight_venues_trade(monkeypatch):
+    from datetime import datetime, timezone
+    a = AlpacaPrices(api_key="k", api_secret="s")
+    after_hours = datetime(2026, 10, 9, 23, 59, 50, tzinfo=timezone.utc)      # 7:59pm New York
+    snaps = {"NVDA": SimpleNamespace(latest_trade=SimpleNamespace(price=229.33, timestamp=after_hours),
+                                     latest_quote=SimpleNamespace(bid_price=229.3, ask_price=229.4, bid_size=1, ask_size=1),
+                                     previous_daily_bar=SimpleNamespace(close=230.33))}
+    bars = {"NVDA": [{"ts": datetime(2026, 10, 8, 4, tzinfo=timezone.utc), "open": 1, "high": 1, "low": 1, "close": 230.33, "volume": 1},
+                     {"ts": datetime(2026, 10, 9, 4, tzinfo=timezone.utc), "open": 230.85, "high": 231.0, "low": 227.9,
+                      "close": 229.13, "volume": 85_308_537}]}
+    monkeypatch.setattr(a, "stock_feed", lambda: "sip")
+    monkeypatch.setattr(a, "_snapshots", lambda syms, feed: (snaps, "sip"))
+    monkeypatch.setattr(a, "stock_bars", lambda syms, tf, start: (bars, None))
+    monkeypatch.setattr(a, "names", lambda syms: {})
+    monkeypatch.setattr(a, "_overnight_trades", lambda syms: {"NVDA": {"p": 229.94, "t": "2026-10-12T05:58:25.621Z"}})
+    q = a.quotes(["NVDA"])["NVDA"]
+    assert q["price"] == 229.94 and q["overnight"] is True
+    assert q["quote_source"] == "Alpaca · overnight venue"
+    assert q["change_pct"] == round(100 * (229.94 / 229.13 - 1), 2)           # from Friday's close
+    assert q["as_of"].startswith("2026-10-12T01:58") and q["stale"] is False
+    # With no overnight trade the after-hours print stands, as before.
+    monkeypatch.setattr(a, "_overnight_trades", lambda syms: {})
+    q = a.quotes(["NVDA"])["NVDA"]
+    assert q["price"] == 229.33 and q["overnight"] is False and q["quote_source"] == "Alpaca · real-time consolidated"
