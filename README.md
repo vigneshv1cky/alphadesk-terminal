@@ -343,9 +343,9 @@ and why. Bring evidence and open an issue.
 | **Chart** | Full workspace: candles, line, area, step and other styles; 1-minute to multi-year intervals; indicators and templates; drawing tools (desktop, per visit); multi-chart layouts; overnight, pre-market, after-hours and weekend session shading; a crowded view draws one candle per pixel column so zooming stays smooth, a range you press shows a loading state, and the percent scale measures from one bar (the first the chart opened with, or any bar you pick from the right-click menu) |
 | **Analysis** | One name end to end: chart, filings, price performance, key statistics, earnings history and consensus, analysts, rating changes, financials as filed, splits, dividends, institutional and insider ownership, news. Funds add holdings and breakdown |
 | **Profile** | Who a company is: EDGAR registrant facts, the latest 10-K/20-F business and properties sections verbatim, locations, officers |
-| **News** | Each reader's merged feeds, three days deep, newest first; filter by words, source or board; search by words and by meaning; an in-page reader with full text where the feed carries it |
+| **News** | Each reader's merged feeds, three days deep, newest first; filter by words, source or board; search by words and by meaning; an in-page reader with full text where the feed carries it, its way back to the headlines kept at the top of a long story |
 | **Filings** | What companies just filed with the SEC, newest first, as a reader: a list down the left (time, ticker, company, form, grouped by day) and the chosen filing in full on the right, with every item the company declared in its own wording and the SEC's number, its tickers, and a link to EDGAR. Narrow it by item; move with the arrow keys (or j and k). Nothing is ranked or coloured by importance |
-| **Earnings** | The week's reporters, dated by the company's own release and joined to its SEC results filing; sessions predicted from history; estimates, actuals, surprise, market cap, volatility, liquidity |
+| **Earnings** | The week's reporters, dated by the company's own release and joined to its SEC results filing; sessions predicted from history; estimates, actuals, surprise, market cap, volatility, liquidity. Below it, **Reporting soon**: who reports in the next 1 week, 2 weeks, 1 month or 2 months from the vendors' calendars, grouped by day and labelled as estimates past a week (the same reach as the agent's earnings calendar) |
 | **Calendars** | Economic releases, dividends, corroborated splits and IPOs |
 | **Options** | Chains with implied volatility, calls green and puts red; options flow seen live |
 | **Sectors** | Sector funds by weight and dollars traded, with breadth |
@@ -377,7 +377,7 @@ and why. Bring evidence and open an issue.
 
 | Vendor | Carries (plan-dependent) |
 |---|---|
-| **Alpaca** | Consolidated (SIP) and IEX bars, overnight (Blue Ocean) session, quotes, movers, crypto, option chains with IV, options flow, corporate actions |
+| **Alpaca** | Consolidated (SIP) and IEX bars, overnight (Blue Ocean) session on charts, quotes and stock movers, quotes, movers, crypto, option chains with IV, options flow, corporate actions |
 | **Financial Modeling Prep** | Calendars (earnings, economic, dividends, splits, IPOs), key statistics, profiles, analysts, market caps, currencies, press releases, fund data |
 | **Polygon (Massive)** | Bars, quotes, movers, currencies, options |
 | **Finnhub** | Company metrics, profiles, earnings calendar and sessions |
@@ -524,6 +524,14 @@ rate-limited to 120 requests a minute per token.
 | What just happened | `catalysts` (filings, halts, government action and social posts on one tape), `filing_feed`, `trading_halts`, `government_actions`, `social_posts` |
 | A past session | `movers(session=…)` for stocks, ETFs, crypto and options, with `market_sessions(category=…)` for the days that exist; read from the recorded closes first. A big move explained by a corporate event is marked: a spin-off from Alpaca's corporate-actions feed carries the holder's move (the parent plus the new shares handed out), and a move with no listed event but the pattern of one (volume ten times its average, the next close within 15 percent) is flagged `possible_corporate_event` |
 | Provenance | `data_sources` — whether a figure came from a licensed vendor or a scraped page |
+
+**Prices around the clock.** Outside the regular session a quote and a movers
+row take the latest trade there is: after hours until 8pm New York, then the
+overnight venue until 4am (marked `overnight`, source "overnight venue"), then
+pre-market. The change is measured from the closed session's own close, and the
+trade's time is `as_of` (quotes) or `extended_at` (movers). Volume stays the
+closed session's. Overnight the bid and ask are still the evening's book from
+the regular exchanges, so a spread read then is not one to rely on.
 
 **A quote that is not a market.** A quote whose symbol has no daily bar in the
 last ten days — a retired ticker or a long halt — carries `stale: true`: its
