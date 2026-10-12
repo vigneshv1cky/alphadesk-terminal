@@ -576,3 +576,31 @@ def test_a_ticker_with_no_trading_in_ten_days_is_marked_stale(monkeypatch):
     assert dead["change"] is None and dead["change_pct"] is None              # two old closes are not today's move
     assert dead["as_of"].startswith("2026-09-02") and "none since" in dead["quote_source"]
     assert live["stale"] is False and live["quote_source"] == "Alpaca · real-time consolidated"
+
+
+def test_overnight_trades_move_the_list_from_the_closed_sessions_close():
+    from datetime import date
+    from alphadesk.providers.alpaca import apply_overnight_trades, snapshot_dollar_rows
+    friday = {"t": "2026-10-09T04:00:00Z", "o": 230.0, "h": 231.0, "l": 228.0, "c": 228.14, "v": 85_000_000, "vw": 229.0}
+    snaps = {
+        # After-hours print Friday 19:59 New York, then an overnight trade Monday 01:50.
+        "NVDA": {"dailyBar": friday, "prevDailyBar": {"c": 229.33},
+                 "latestTrade": {"p": 229.33, "t": "2026-10-09T23:59:50Z"}},
+        # Nothing after the close; an overnight trade older than the bell is ignored.
+        "OLD": {"dailyBar": {**friday, "c": 10.0, "vw": 10.0}, "prevDailyBar": {"c": 9.0},
+                "latestTrade": {"p": 10.0, "t": "2026-10-09T19:59:00Z"}},
+        # No overnight trade at all: unchanged.
+        "QUIET": {"dailyBar": {**friday, "c": 50.0, "vw": 50.0}, "prevDailyBar": {"c": 49.0},
+                  "latestTrade": {"p": 50.0, "t": "2026-10-09T19:59:00Z"}},
+    }
+    rows = {r["symbol"]: r for r in snapshot_dollar_rows(snaps, date(2026, 10, 12))}
+    trades = {"NVDA": {"p": 230.03, "t": "2026-10-12T05:50:01.123456789Z"},
+              "OLD": {"p": 11.0, "t": "2026-10-09T19:00:00Z"}}
+    assert apply_overnight_trades(list(rows.values()), trades) == 1
+    n = rows["NVDA"]
+    assert n["price"] == 230.03 and n["overnight"] is True
+    assert n["change_pct"] == round(100 * (230.03 / 228.14 - 1), 2)        # from Friday's close, not the after-hours print
+    assert n["extended_at"].startswith("2026-10-12T01:50")                  # New York time of the overnight trade
+    assert n["volume"] == 85_000_000                                         # still the closed session's
+    assert rows["OLD"]["price"] == 10.0 and "overnight" not in rows["OLD"]
+    assert rows["QUIET"]["price"] == 50.0 and "overnight" not in rows["QUIET"]

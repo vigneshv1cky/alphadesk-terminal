@@ -296,12 +296,46 @@ def snapshot_dollar_rows(snaps: dict[str, dict], today: date) -> list[dict]:
             continue
         dollars = (_f(day.get("vw")) or close or price) * day["v"]
         row = {"symbol": sym, "name": None, "price": price, "change_pct": change,
-               "volume": int(day["v"]), "turnover": dollars, "session": session.isoformat()}
+               "volume": int(day["v"]), "turnover": dollars, "session": session.isoformat(),
+               # The session's own close, which an overnight print is measured from.
+               "regular_close": close}
         if extended:
             row.update({"extended": True, "regular_pct": regular,
                         "extended_at": struck.astimezone(ET).isoformat()})
         rows.append(row)
     return sorted(rows, key=lambda r: -r["turnover"])
+
+
+def apply_overnight_trades(rows: list[dict], trades: dict[str, dict]) -> int:
+    """Price rows from the overnight venue's latest trades (2026-10-12).
+
+    The consolidated tape stops at eight in the evening; from then until four
+    in the morning the only trading is on the overnight venue, which the
+    snapshots do not read, so the list stood still at the last after-hours
+    print and called itself "Overnight". A row takes its overnight trade when
+    that trade is newer than the price it shows, measured from the closed
+    session's own close, and says so (`overnight`, `extended_at`). Volume and
+    dollars traded stay the closed session's: the overnight venue trades a
+    sliver of a day and would rank nothing. Returns how many rows moved. Pure."""
+    from alphadesk.config import ET
+    moved = 0
+    for r in rows:
+        t = trades.get(r["symbol"]) or {}
+        p, at = _f(t.get("p")), _stamp(t.get("t"))
+        close = r.get("regular_close")
+        if not p or at is None or not close:
+            continue
+        shown = _stamp(r.get("extended_at")) if r.get("extended_at") else None
+        if shown is None and r.get("session"):
+            shown = datetime.combine(date.fromisoformat(r["session"]), dtime(16, 0), ET)
+        if shown is not None and at <= shown:
+            continue
+        if not r.get("extended"):
+            r["regular_pct"] = r.get("change_pct")
+        r.update({"price": p, "change_pct": round(100 * (p / close - 1), 2), "extended": True,
+                  "overnight": True, "extended_at": at.astimezone(ET).isoformat()})
+        moved += 1
+    return moved
 
 
 def option_mover_rows(underlying: str, snaps: dict[str, dict]) -> list[dict]:
@@ -1433,11 +1467,39 @@ class AlpacaPrices:
             for got in ex.map(lambda part: self._data_get("/v2/stocks/snapshots", symbols=",".join(part), feed="sip") or {}, parts):
                 snaps.update(got)
         rows = snapshot_dollar_rows(snaps, datetime.now(ET).date())
+        apply_overnight_trades(rows, self._overnight_trades([r["symbol"] for r in rows]))
         named = self.names([r["symbol"] for r in rows])
         for r in rows:
             r["name"] = named.get(r["symbol"], (None, None))[0]
         self._pool_rows = (time.time(), rows)
         return rows
+
+    def _overnight_trades(self, symbols: list[str]) -> dict[str, dict]:
+        """The overnight venue's latest trade per symbol, 500 to a request,
+        while that session runs; {} at any other time or on any failure (the
+        list then keeps its after-hours prices, as before). Kept 30 s."""
+        from alphadesk.config import session_label
+        if session_label() != "Overnight" or not symbols:
+            return {}
+        from concurrent.futures import ThreadPoolExecutor
+        key = tuple(sorted(set(symbols)))
+        hit = getattr(self, "_night_trades", None)
+        if hit and hit[1] == key and time.time() - hit[0] < 30:
+            return hit[2]
+        parts = [list(key[i:i + 500]) for i in range(0, len(key), 500)]
+
+        def one(part: list[str]) -> dict:
+            try:
+                return (self._data_get("/v2/stocks/trades/latest", symbols=",".join(part), feed="boats") or {}).get("trades") or {}
+            except Exception as exc:
+                log.info("alpaca overnight latest trades: %s", exc)
+                return {}
+        out: dict[str, dict] = {}
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for got in ex.map(one, parts):
+                out.update(got)
+        self._night_trades = (time.time(), key, out)
+        return out
 
     def day_changes(self, symbols: list[str]) -> dict[str, dict] | None:
         """{symbol: {price, change_pct}} for many stocks at once, from raw
@@ -1467,6 +1529,7 @@ class AlpacaPrices:
             for got in pool.map(one, parts):
                 snaps.update(got)
         rows = snapshot_dollar_rows(snaps, datetime.now(ET).date())
+        apply_overnight_trades(rows, self._overnight_trades([r["symbol"] for r in rows]))
         return {back.get(r["symbol"], r["symbol"]): {"price": r["price"], "change_pct": r["change_pct"],
                                                      "session": r["session"], "turnover": r["turnover"],
                                                      **({"extended": True} if r.get("extended") else {})}
