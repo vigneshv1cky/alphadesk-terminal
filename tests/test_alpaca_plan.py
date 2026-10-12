@@ -604,3 +604,15 @@ def test_overnight_trades_move_the_list_from_the_closed_sessions_close():
     assert n["volume"] == 85_000_000                                         # still the closed session's
     assert rows["OLD"]["price"] == 10.0 and "overnight" not in rows["OLD"]
     assert rows["QUIET"]["price"] == 50.0 and "overnight" not in rows["QUIET"]
+
+
+def test_the_active_tab_reads_the_same_price_as_the_other_tabs():
+    from alphadesk.providers.alpaca import reprice_from_pool
+    active = [{"symbol": "WFF", "price": 10.0, "change_pct": -18.63, "volume": 146_000_000},
+              {"symbol": "T", "price": 22.24, "change_pct": 0.26, "volume": 150_000_000}]
+    pool = [{"symbol": "WFF", "price": 10.71, "change_pct": -12.86, "extended": True, "overnight": True,
+             "extended_at": "2026-10-12T01:57:10-04:00", "volume": 1}]
+    got = reprice_from_pool(active, pool)
+    assert [r["symbol"] for r in got] == ["WFF", "T"]                                  # order kept
+    assert got[0]["price"] == 10.71 and got[0]["overnight"] and got[0]["volume"] == 146_000_000
+    assert got[1] == active[1]                                                         # not in the pool: as it was

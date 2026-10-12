@@ -338,6 +338,20 @@ def apply_overnight_trades(rows: list[dict], trades: dict[str, dict]) -> int:
     return moved
 
 
+_PRICE_KEYS = ("price", "change_pct", "extended", "overnight", "extended_at", "regular_pct")
+
+
+def reprice_from_pool(rows: list[dict], pool: list[dict]) -> list[dict]:
+    """Rows in their own order, each priced like the pool's row for the same
+    symbol where there is one, so a stock reads one price on every tab. Pure."""
+    by = {r["symbol"]: r for r in pool or []}
+    out = []
+    for r in rows:
+        p = by.get(r.get("symbol"))
+        out.append({**r, **{k: p[k] for k in _PRICE_KEYS if k in p}} if p else r)
+    return out
+
+
 def option_mover_rows(underlying: str, snaps: dict[str, dict]) -> list[dict]:
     """Movers rows for one underlying's option snapshots (Alpaca's REST shape),
     in the shape the option movers tile reads: the contract, today's volume,
@@ -1320,6 +1334,11 @@ class AlpacaPrices:
             # rows stay, so a big move in a small stock still does.
             out["gainers"] = merge_movers(out["gainers"], dollar, up=True)
             out["losers"] = merge_movers(out["losers"], dollar, up=False)
+            # The Active tab is priced from quotes, which never read the
+            # overnight venue, so one stock showed two prices on two tabs
+            # (2026-10-12, WFF $10.00 and $10.71). The pool's price wins where
+            # it has the symbol; the screener's volume ranking stays.
+            out["most_active"] = reprice_from_pool(out["most_active"], dollar)
         return out
 
     def market_day(self, day: str) -> dict[str, dict]:
