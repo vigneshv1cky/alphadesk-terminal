@@ -124,11 +124,11 @@ test("the scale assertions above all held", () => {
 test("the view overscrolls a little past both ends, never more", () => {
   // 100 bars, a 40-bar window. Past the newest: 30% of the span.
   assert.deepEqual(clampView(80, 120, 100), { from: 72, to: 112 })
-  // Past the oldest: a whole screenful, because that is the direction the
-  // reader pulls into while the history loads behind them (2026-09-16). A
-  // 40-bar window may therefore sit 40 bars clear of the first bar.
-  assert.deepEqual(clampView(-30, 10, 100), { from: -30, to: 10 })
-  assert.deepEqual(clampView(-60, -20, 100), { from: -40, to: 0 })
+  // Past the oldest: a sliver, 5% of the span (2026-10-14). No older history
+  // is fetched any more, so there is nothing to pull into; it used to be a
+  // whole screenful while pages loaded behind the reader (2026-09-16).
+  assert.deepEqual(clampView(-30, 10, 100), { from: -2, to: 38 })
+  assert.deepEqual(clampView(-60, -20, 100), { from: -2, to: 38 })
   // Inside the series, untouched.
   assert.deepEqual(clampView(10, 50, 100), { from: 10, to: 50 })
 })
@@ -141,12 +141,10 @@ test("both ends keep room to push into", () => {
   const wide = clampView(2_000, 5_000, 4_000)
   assert.equal(wide.to - 4_000, 900)                  // 30% of the span
   assert.equal(wide.to - wide.from, 3_000)            // the zoom level is untouched
-  // The LEFT keeps its proportional room, because that is the direction the
-  // reader pulls INTO: theirs lets you fling onto blank canvas and fills it
-  // behind you, and a tight cap there turns one gesture into short tugs
-  // against a wall (2026-09-16 recording).
+  // The LEFT keeps a proportional sliver: 5% of the span (2026-10-14; it was
+  // a screenful while older pages were fetched behind the reader).
   const back = clampView(-5_000, -2_000, 4_000)
-  assert.equal(back.from, -3_000)                     // one screenful of blank
+  assert.equal(back.from, -150)
   assert.equal(back.to - back.from, 3_000)
   // A tight window keeps the proportional margin: 30% of 40 bars is 12.
   assert.deepEqual(clampView(80, 120, 100), { from: 72, to: 112 })
@@ -250,7 +248,9 @@ test("zooming out over blank canvas holds the live edge, not the emptiness", () 
     assert.ok(Math.abs((v.to - 4_000) / span - 0.05) < 0.001,
       `turn ${i + 1}: the gap is ${((v.to - 4_000) / span * 100).toFixed(1)}% of the view`)
   }
-  assert.equal(v.to - v.from, 8_000)                  // and it did zoom out
+  // It zoomed out, and stopped at the whole series plus its two gaps
+  // (2026-10-14): 4,000 bars x 1.10, not the 8,000 three turns would reach.
+  assert.equal(v.to - v.from, 4_400)
 })
 
 test("inside the series the bar under the cursor still stays put", () => {

@@ -188,7 +188,8 @@ export function ChartSurface({ e, legendTop, toolsAlwaysOn = false, children }: 
           // The workspace draws its readout over the plot; the series keeps
           // out from under it. The tile's readout sits above the canvas.
           topInset={legendTop ?? 0}
-          onNeedHistory={e.loadHistory}
+          // No older pages (2026-10-14, the owner): the chart shows the range
+          // picked and no more; a longer range is the way further back.
           focusFrom={e.focusFrom}
           historyNote={e.historyNote}
           live={e.live}

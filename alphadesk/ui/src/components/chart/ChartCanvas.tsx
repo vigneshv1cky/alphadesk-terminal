@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { ChartBar } from "@/lib/api"
 import {
-  clampView, indexToX, padRangeInset, priceDecimals, priceTicks, priceTicksLog, priceToY,
+  clampView, indexToX, maxSpan, padRangeInset, priceDecimals, priceTicks, priceTicksLog, priceToY,
   RIGHT_GAP, scaledRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
 } from "@/lib/chartScales"
 import { bucketBars } from "@/lib/chartBuckets"
@@ -1517,7 +1517,7 @@ export function ChartCanvas({
             const span = d.to - d.from
             // Same span floor and ceiling the wheel zoom applies (zoomAt), so
             // the two gestures can never reach states the other cannot leave.
-            const next = Math.max(5, Math.min(bars.length * 3, span * Math.exp(-dx / 200)))
+            const next = Math.max(5, Math.min(maxSpan(bars.length), span * Math.exp(-dx / 200)))
             setView(clampView(d.to - next, d.to, edgeLen))
           }}
           onPointerUp={e => {

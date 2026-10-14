@@ -179,8 +179,13 @@ export function clampView(from: number, to: number, total: number): { from: numb
   // cap turns one gesture into short tugs against a wall. One screenful is
   // the allowance — enough for that fling, bounded so a pan can always
   // bring the bars back.
+  // LEFT, SINCE 2026-10-14: a sliver only. The owner did not want a chart
+  // that grows without end as it zooms out, so no older history is fetched
+  // any more (ChartSurface) and there is nothing to pull into; a screen of
+  // blank past the oldest bar would be canvas with nothing behind it. The
+  // sliver keeps the first time label whole.
   const right = span * 0.3
-  const left = span
+  const left = span * LEFT_GAP
   if (t > total + right) { t = total + right; f = t - span }
   if (f < -left) { f = -left; t = f + span }
   return { from: f, to: t }
@@ -192,11 +197,20 @@ export function clampView(from: number, to: number, total: number): { from: numb
  * same at every zoom. */
 export const RIGHT_GAP = 0.05
 
+/** The margin past the oldest bar, as a share of the visible span. */
+export const LEFT_GAP = 0.05
+
+/** The widest a view may be: the whole series and the gaps beside it. Zooming
+ * out stops there (2026-10-14, the owner: no growing without end). */
+export function maxSpan(total: number): number {
+  return Math.max(5, total * (1 + RIGHT_GAP + LEFT_GAP))
+}
+
 /** Zoom about a fixed bar index, so the bar under the cursor stays put — the
  * behaviour every charting tool has, and its absence is immediately obvious. */
 export function zoomAt(s: Scale, anchorIndex: number, factor: number, total: number): { from: number; to: number } {
   const span = s.to - s.from
-  const next = Math.max(5, Math.min(total * 3, span * factor))
+  const next = Math.max(5, Math.min(maxSpan(total), span * factor))
   // THE ANCHOR IS A BAR, NOT A PIXEL (2026-09-16). Zooming out with the
   // cursor over the blank canvas past the live edge held THAT emptiness
   // still and pushed the series away from the axis, a little further on
