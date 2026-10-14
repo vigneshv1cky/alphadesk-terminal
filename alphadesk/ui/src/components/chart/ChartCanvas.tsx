@@ -1119,6 +1119,22 @@ export function ChartCanvas({
           )
         })}
 
+        {/* WHICH CANDLE IS 0% (2026-10-14, the owner). A dashed upright line
+            through the zero bar, darker and longer-dashed than the day
+            dividers so the two never read alike, labelled at the top. */}
+        {scaleMode === "percent" && bars.length > 0 && (() => {
+          const x = indexToX(s, baseIdx + 0.5)
+          if (x < 0 || x > seriesW) return null
+          const flip = x > seriesW - 30
+          return (
+            <g pointerEvents="none">
+              <line x1={x} y1={0} x2={x} y2={priceH} stroke={text} strokeWidth={1} strokeDasharray="4 3" opacity={0.75} />
+              <text x={flip ? x - 4 : x + 4} y={topInset + 12} fill={text} fontSize={11} fontWeight={600}
+                    textAnchor={flip ? "end" : "start"} className="tnum">0%</text>
+            </g>
+          )
+        })()}
+
         {/* the end of the feed's history, named where the reader meets it */}
         {historyNote && from < 8 && (
           <text x={8} y={topInset + 16} fill={text} fontSize={11} className="tnum">{historyNote}</text>
