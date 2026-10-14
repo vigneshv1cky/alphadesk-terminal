@@ -124,11 +124,11 @@ test("the scale assertions above all held", () => {
 test("the view overscrolls a little past both ends, never more", () => {
   // 100 bars, a 40-bar window. Past the newest: 30% of the span.
   assert.deepEqual(clampView(80, 120, 100), { from: 72, to: 112 })
-  // Past the oldest: a sliver, 5% of the span (2026-10-14). No older history
-  // is fetched any more, so there is nothing to pull into; it used to be a
-  // whole screenful while pages loaded behind the reader (2026-09-16).
-  assert.deepEqual(clampView(-30, 10, 100), { from: -2, to: 38 })
-  assert.deepEqual(clampView(-60, -20, 100), { from: -2, to: 38 })
+  // Past the oldest: the same 30% (2026-10-14, the owner: match the right). It
+  // was a whole screenful while older pages loaded behind the reader, and no
+  // pages are fetched any more.
+  assert.deepEqual(clampView(-30, 10, 100), { from: -12, to: 28 })
+  assert.deepEqual(clampView(-60, -20, 100), { from: -12, to: 28 })
   // Inside the series, untouched.
   assert.deepEqual(clampView(10, 50, 100), { from: 10, to: 50 })
 })
@@ -141,10 +141,10 @@ test("both ends keep room to push into", () => {
   const wide = clampView(2_000, 5_000, 4_000)
   assert.equal(wide.to - 4_000, 900)                  // 30% of the span
   assert.equal(wide.to - wide.from, 3_000)            // the zoom level is untouched
-  // The LEFT keeps a proportional sliver: 5% of the span (2026-10-14; it was
-  // a screenful while older pages were fetched behind the reader).
+  // The LEFT matches the right: 30% of the span (2026-10-14; it was a
+  // screenful while older pages were fetched behind the reader).
   const back = clampView(-5_000, -2_000, 4_000)
-  assert.equal(back.from, -150)
+  assert.equal(back.from, -900)
   assert.equal(back.to - back.from, 3_000)
   // A tight window keeps the proportional margin: 30% of 40 bars is 12.
   assert.deepEqual(clampView(80, 120, 100), { from: 72, to: 112 })

@@ -179,13 +179,13 @@ export function clampView(from: number, to: number, total: number): { from: numb
   // cap turns one gesture into short tugs against a wall. One screenful is
   // the allowance — enough for that fling, bounded so a pan can always
   // bring the bars back.
-  // LEFT, SINCE 2026-10-14: a sliver only. The owner did not want a chart
-  // that grows without end as it zooms out, so no older history is fetched
-  // any more (ChartSurface) and there is nothing to pull into; a screen of
-  // blank past the oldest bar would be canvas with nothing behind it. The
-  // sliver keeps the first time label whole.
-  const right = span * 0.3
-  const left = span * LEFT_GAP
+  // LEFT, SINCE 2026-10-14: the same room as the right. No older history is
+  // fetched any more (the owner did not want a chart that grows without end),
+  // so this is room to push the oldest bars in from the edge, the way the
+  // newest can be, and nothing loads into it. The owner asked for the two ends
+  // to match the same day.
+  const right = span * OVERSCROLL
+  const left = span * OVERSCROLL
   if (t > total + right) { t = total + right; f = t - span }
   if (f < -left) { f = -left; t = f + span }
   return { from: f, to: t }
@@ -197,7 +197,10 @@ export function clampView(from: number, to: number, total: number): { from: numb
  * same at every zoom. */
 export const RIGHT_GAP = 0.05
 
-/** The margin past the oldest bar, as a share of the visible span. */
+/** How far a pan may push past either end, as a share of the visible span. */
+export const OVERSCROLL = 0.3
+
+/** The margin past the oldest bar the widest zoom keeps, as a share of the span. */
 export const LEFT_GAP = 0.05
 
 /** The widest a view may be: the whole series and the gaps beside it. Zooming
