@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import { ChartCanvas } from "@/components/chart/ChartCanvas"
 import { ChartDrawings, DrawingToolbar, nextId } from "@/components/ChartDrawings"
@@ -6,6 +6,8 @@ import { IndicatorLegend, IndicatorSettings } from "@/components/chart/Indicator
 import type { ChartEngine } from "@/lib/chartEngine"
 import { menuItemCls, menuPanelCls } from "@/components/terminal"
 import { useNarrowViewport } from "@/lib/viewport"
+import { previousSessionLastIndex } from "@/lib/percentBase"
+import { useQuote } from "@/lib/queries"
 
 type MenuAt = { clientX: number; clientY: number; price: number | null; time: string | null }
 
@@ -65,7 +67,8 @@ function ContextMenu({ e, at, onClose, drawable }: { e: ChartEngine; at: MenuAt;
       {item("Logarithmic scale", () => e.setScale(e.scale === "log" ? "linear" : "log"), { on: e.scale === "log" })}
       {item("Percent scale", () => e.setScale(e.scale === "percent" ? "linear" : "percent"), { on: e.scale === "percent" })}
       {e.scale === "percent" && item("Start percent from here", () => { if (at.time) e.setPercentFrom(at.time) }, { disabled: !at.time })}
-      {e.scale === "percent" && item("Start percent from the first bar", () => e.setPercentFrom(null))}
+      {e.scale === "percent" && item(e.range === "1D" ? "Start percent from the previous close" : "Start percent from the first bar",
+                                     () => e.setPercentFrom(null))}
       {item("Last price line", () => e.setPriceLine(!e.priceLine), { on: e.priceLine })}
       {drawable && (
         <>
@@ -102,6 +105,16 @@ export function ChartSurface({ e, legendTop, toolsAlwaysOn = false, children }: 
   // finger on a small chart is not a real use.
   const narrow = useNarrowViewport()
   const drawable = toolsAlwaysOn && !narrow
+  // ON A ONE-DAY CHART THE PERCENT ZERO IS THE PREVIOUS CLOSE (2026-10-14, the
+  // owner), the figure the header measures from, so the scale's right edge
+  // and the header agree. A bar the reader picked still wins; longer ranges
+  // and a replay keep the first bar.
+  const { data: q } = useQuote(e.scale === "percent" && e.range === "1D" ? e.symbol : "")
+  const prevIdx = useMemo(() => previousSessionLastIndex(e.bars), [e.bars])
+  const percentBase = e.scale === "percent" && e.range === "1D" && !e.percentPicked && !e.replay.active
+    && (q?.previous_close || prevIdx >= 0)
+    ? { price: q?.previous_close ?? null, index: prevIdx }
+    : null
   if (!data) return null
   return (
     // The tool column sits BESIDE the canvas, not over it: a strip floating
@@ -157,6 +170,7 @@ export function ChartSurface({ e, legendTop, toolsAlwaysOn = false, children }: 
           kind={e.type}
           scale={e.scale}
           percentFrom={e.percentFrom}
+          percentBase={percentBase}
           height={e.canvasHeight}
           panes={e.stacked}
           overlays={e.overlaySeries}

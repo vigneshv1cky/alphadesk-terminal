@@ -94,7 +94,7 @@ export function ChartCanvas({
   onProjection, onHover, overlays = [], seriesId, intraday = false, onRemovePane,
   onResizePane, onPaneSettings,
   timeZone = "America/New_York", interval, priceLine = true, live = false, controlRef, onContextMenu,
-  compares = [], percentFrom = null, topInset = 0,
+  compares = [], percentFrom = null, percentBase = null, topInset = 0,
   ink,
   onNeedHistory, focusFrom = 0, historyNote, provisional = [],
 }: {
@@ -130,6 +130,9 @@ export function ChartCanvas({
   /** The bar the percent scale measures from: one bar for the life of the series, so
    * panning and zooming move the chart sideways and do not slide the line. */
   percentFrom?: string | null
+  /** A zero given outright: a price, and the bar comparison lines start from.
+   * Wins over `percentFrom` (ChartSurface sets it only when the reader has not picked a bar). */
+  percentBase?: { price: number | null; index: number } | null
   /** How the axis and the hover stamp label instants. */
   timeZone?: string
   /** The bar interval served, for the countdown to the forming bar's close. */
@@ -389,10 +392,11 @@ export function ChartCanvas({
 
   // The percent scale's zero point: the close of the chosen bar, else the first bar.
   const baseIdx = useMemo(() => {
+    if (percentBase && percentBase.index >= 0 && percentBase.index < bars.length) return percentBase.index
     const i = percentFrom ? bars.findIndex(b => b.t === percentFrom) : -1
     return i >= 0 ? i : 0
-  }, [bars, percentFrom])
-  const baseClose = bars[baseIdx]?.c
+  }, [bars, percentFrom, percentBase])
+  const baseClose = percentBase?.price ?? bars[baseIdx]?.c
   const targetRange = useMemo(() => {
     const ext = { ...visibleExtent(drawBars, from, to) }
     // The provisional line is on screen past the last bar: fit it too, or a

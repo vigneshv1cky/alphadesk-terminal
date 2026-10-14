@@ -324,6 +324,8 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
   const percentFrom = pctBase.key === seriesKey && pctBase.t
     ? pctBase.t
     : (openedWith.current.key === seriesKey ? openedWith.current.t : null)
+  /** True when the reader picked the zero bar from the menu. */
+  const percentPicked = pctBase.key === seriesKey && !!pctBase.t
   /** Move the percent scale's zero point to the bar at `t`; null returns it to the first bar. */
   const setPercentFrom = useCallback((t: string | null) => setPctBase({ key: seriesKey, t }), [seriesKey])
   const [older, setOlder] = useState<{ key: string; bars: ChartBar[]; done: boolean; loading: boolean; note: string | null }>(
@@ -554,7 +556,7 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
   return {
     provisional: replay.active ? [] : provisional,
     symbol, slot, applyPrefs, snapshotPrefs, replaceIndicators,
-    range, setRange, pickRange, type, setType, scale, setScale, percentFrom, setPercentFrom,
+    range, setRange, pickRange, type, setType, scale, setScale, percentFrom, percentPicked, setPercentFrom,
     loadHistory, historyLoading: pages.loading, historyDone: pages.done, historyNote: pages.note, focusFrom, seriesId: seriesKey,
     timeZone, setTimeZone, priceLine, setPriceLine, viewRef,
     interval, setInterval, intervalPinned, setIntervalPinned, pinInterval, intervalByRange,
