@@ -67,8 +67,7 @@ function ContextMenu({ e, at, onClose, drawable }: { e: ChartEngine; at: MenuAt;
       {item("Logarithmic scale", () => e.setScale(e.scale === "log" ? "linear" : "log"), { on: e.scale === "log" })}
       {item("Percent scale", () => e.setScale(e.scale === "percent" ? "linear" : "percent"), { on: e.scale === "percent" })}
       {e.scale === "percent" && item("Start percent from here", () => { if (at.time) e.setPercentFrom(at.time) }, { disabled: !at.time })}
-      {e.scale === "percent" && item(e.range === "1D" ? "Start percent from the previous close" : "Start percent from the first bar",
-                                     () => e.setPercentFrom(null))}
+      {e.scale === "percent" && item("Start percent from the previous close", () => e.setPercentFrom(null))}
       {item("Last price line", () => e.setPriceLine(!e.priceLine), { on: e.priceLine })}
       {drawable && (
         <>
@@ -105,13 +104,19 @@ export function ChartSurface({ e, legendTop, toolsAlwaysOn = false, children }: 
   // finger on a small chart is not a real use.
   const narrow = useNarrowViewport()
   const drawable = toolsAlwaysOn && !narrow
-  // ON A ONE-DAY CHART THE PERCENT ZERO IS THE PREVIOUS CLOSE (2026-10-14, the
-  // owner), the figure the header measures from, so the scale's right edge
-  // and the header agree. A bar the reader picked still wins; longer ranges
-  // and a replay keep the first bar.
-  const { data: q } = useQuote(e.scale === "percent" && e.range === "1D" ? e.symbol : "")
-  const prevIdx = useMemo(() => previousSessionLastIndex(e.bars), [e.bars])
-  const percentBase = e.scale === "percent" && e.range === "1D" && !e.percentPicked && !e.replay.active
+  // THE PERCENT ZERO IS THE PREVIOUS CLOSE, ON EVERY RANGE (2026-10-14, the
+  // owner: first 1D, then every range the same day), the figure the header
+  // measures from, so the scale's right edge and the header agree. A bar the
+  // reader picked still wins, and a replay keeps the first bar (its previous
+  // close belongs to a day it has not reached). The marked candle is the
+  // previous session's last regular bar on intraday bars; on daily and longer
+  // bars, the bar before the last.
+  const { data: q } = useQuote(e.scale === "percent" ? e.symbol : "")
+  const prevIdx = useMemo(() => {
+    const i = previousSessionLastIndex(e.bars)
+    return i >= 0 ? i : e.bars.length - 2
+  }, [e.bars])
+  const percentBase = e.scale === "percent" && !e.percentPicked && !e.replay.active
     && (q?.previous_close || prevIdx >= 0)
     ? { price: q?.previous_close ?? null, index: prevIdx }
     : null
