@@ -91,9 +91,22 @@ function frame<T>(e: Event, fn: (data: T) => void) {
   try { fn(JSON.parse((e as MessageEvent).data) as T) } catch { /* a malformed frame is not fatal */ }
 }
 
+/** This page's identity on the stream (2026-10-15): the server keeps one
+ * stream per tab and ends the older ones, because a phone can drop a
+ * connection without the server seeing it close. In memory, not storage, so
+ * a duplicated tab is a tab of its own. */
+const TAB = Math.random().toString(36).slice(2, 12)
+
 function open(url: string) {
-  const es = new EventSource(url)
+  const es = new EventSource(`${url}&tab=${TAB}`)
   const conn = { url, es }
+  // Replaced by a newer stream from this tab: close for good, so the browser
+  // does not reconnect it and end the newer one in turn.
+  es.addEventListener("superseded", () => {
+    es.close()
+    if (current === conn) current = null
+    if (pending === conn) pending = null
+  })
   es.addEventListener("hello", e => frame<{ trades?: Record<string, boolean> }>(e, hello => {
     // This connection now carries everything: the one it replaces can go.
     if (pending === conn) {

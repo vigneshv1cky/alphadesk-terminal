@@ -948,7 +948,8 @@ def stream_symbols(raw: str, cap: int = 10_000, extra: str = "") -> tuple[list[s
 
 
 @app.get("/api/stream")
-async def api_stream(request: Request, trades: str = "", quotes: str = "", crypto: str = "", news: int = 0):
+async def api_stream(request: Request, trades: str = "", quotes: str = "", crypto: str = "", news: int = 0,
+                     tab: str = ""):
     """Every live surface of one browser tab on ONE Server-Sent Events
     connection (2026-09-15): `trades` for the charted symbols (a frame per
     print), `quotes` for panel rows and `crypto` for coins (latest prices,
@@ -999,12 +1000,24 @@ async def api_stream(request: Request, trades: str = "", quotes: str = "", crypt
     def release_later(market, upstream):
         asyncio.get_running_loop().call_later(streams.RELEASE_GRACE_S, market.release, upstream)
 
+    # One seat per stream (2026-10-15): a newer stream from the same tab, or a
+    # reader past the cap, ends this one at its next pass. See StreamSeats.
+    from alphadesk.identity import request_user
+    reader = request_user() or "-"
+    seat = streams.SEATS.take(reader, (tab or "")[:40])
+
     async def events():
         hello = mux.open()
         try:
             yield f"event: hello\ndata: {json.dumps(hello)}\n\n"
             while True:
                 if await request.is_disconnected():
+                    break
+                if not streams.SEATS.holds(reader, seat):
+                    # Said before closing, so the tab closes this connection
+                    # for good instead of letting it reconnect and end the
+                    # newer one in turn.
+                    yield "event: superseded\ndata: {}\n\n"
                     break
                 sent = mux.frames(_time.monotonic())
                 for frame in sent:
@@ -1015,6 +1028,7 @@ async def api_stream(request: Request, trades: str = "", quotes: str = "", crypt
                     yield ": keep-alive\n\n"
                 await asyncio.sleep(0.25)
         finally:
+            streams.SEATS.leave(reader, seat)
             mux.close(release_later)
 
     return StreamingResponse(events(), media_type="text/event-stream", headers={

@@ -609,6 +609,56 @@ def status_all() -> dict:
 # resubscribe upstream per click, and the last price forgotten in between.
 RELEASE_GRACE_S = 5.0
 
+
+#: The most live streams one reader may hold at once (2026-10-15).
+MAX_STREAMS_PER_READER = 6
+
+
+class StreamSeats:
+    """Which of a reader's live streams may keep running (2026-10-15).
+
+    A phone on a mobile network can drop a stream without the server ever
+    seeing it close, so the stream ran on to the five-minute request limit:
+    flipping through thirteen symbols on an Android phone left 28 streams
+    open at once, and the server slowed for everyone. Each stream now takes
+    a seat. A new stream from the same browser tab ends that tab's older
+    ones, and past MAX_STREAMS_PER_READER the reader's oldest is ended; an
+    ended stream sees it on its next pass and closes. Thread-safe."""
+
+    def __init__(self, cap: int = MAX_STREAMS_PER_READER) -> None:
+        self.cap = cap
+        self._lock = threading.Lock()
+        self._next = 0
+        self._open: dict[str, list[tuple[int, str]]] = {}
+
+    def take(self, reader: str, tab: str) -> int:
+        with self._lock:
+            self._next += 1
+            seat = self._next
+            mine = [s for s in self._open.get(reader, []) if not (tab and s[1] == tab)]
+            mine.append((seat, tab))
+            self._open[reader] = mine[-self.cap:]
+            return seat
+
+    def holds(self, reader: str, seat: int) -> bool:
+        with self._lock:
+            return any(s[0] == seat for s in self._open.get(reader, []))
+
+    def leave(self, reader: str, seat: int) -> None:
+        with self._lock:
+            left = [s for s in self._open.get(reader, []) if s[0] != seat]
+            if left:
+                self._open[reader] = left
+            else:
+                self._open.pop(reader, None)
+
+    def count(self, reader: str) -> int:
+        with self._lock:
+            return len(self._open.get(reader, []))
+
+
+SEATS = StreamSeats()
+
 # What one connection may carry. Quotes are the panels' rows (movers,
 # watchlist, market ETFs) unioned; trades are the charts and quote blocks on
 # screen; coins are the tape and crypto movers.

@@ -427,6 +427,9 @@ def test_a_thin_history_page_reaches_further_back_until_it_can_fill_the_screen(m
     from datetime import datetime, timedelta, timezone
     a = AlpacaPrices(api_key="k", api_secret="s")
     cursor = datetime(2026, 9, 15, 13, 0, tzinfo=timezone.utc)
+    # "Today" pinned beside the cursor: a minute bar's history floor is counted
+    # from today, and from 2026-10-15 a real clock cut the 32-day page to 30.
+    monkeypatch.setattr("alphadesk.config.now_et", lambda: cursor + timedelta(hours=2))
     windows = []
 
     def fake_bars(symbols, spec, start, end=None, feed="sip"):

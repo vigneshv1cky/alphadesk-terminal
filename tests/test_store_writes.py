@@ -260,3 +260,19 @@ def test_a_transcript_list_is_kept_and_served_when_the_vendor_fails(store, monke
         assert down["transcripts"] and down["transcripts"][0]["id"] == "0001"      # the vendor failed: the kept list
     finally:
         identity.reset_request_user(token)
+
+
+def test_one_live_stream_per_tab_and_six_per_reader():
+    from alphadesk.ingest.stream import StreamSeats
+    seats = StreamSeats(cap=6)
+    a = seats.take("me", "tab1")
+    b = seats.take("me", "tab1")                       # the same tab opens a newer stream
+    assert not seats.holds("me", a) and seats.holds("me", b)
+    others = [seats.take("me", f"t{i}") for i in range(6)]
+    assert not seats.holds("me", b)                    # past six, the oldest is ended
+    assert all(seats.holds("me", s) for s in others) and seats.count("me") == 6
+    assert seats.holds("me", others[0]) and not seats.holds("you", others[0])
+    seats.leave("me", others[0])
+    assert seats.count("me") == 5
+    untabbed = [seats.take("old", "") for _ in range(2)]  # no tab given: never ends a sibling
+    assert all(seats.holds("old", s) for s in untabbed)
