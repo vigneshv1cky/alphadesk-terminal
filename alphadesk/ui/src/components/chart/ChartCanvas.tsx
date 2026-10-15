@@ -1036,7 +1036,7 @@ export function ChartCanvas({
           </clipPath>
           {/* Out-of-session hatching: fine diagonal lines in the ink colour. */}
           <pattern id={`${clipId}-hatch`} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <line x1={0} y1={0} x2={0} y2={6} stroke={ink ?? text} strokeOpacity={0.12} strokeWidth={1} />
+            <line x1={0} y1={0} x2={0} y2={6} stroke={ink ?? text} strokeOpacity={0.22} strokeWidth={1} />
           </pattern>
         </defs>
 
@@ -1103,7 +1103,10 @@ export function ChartCanvas({
           const w = Math.max(1, right - left)
           return (
             <g key={`b${i}`}>
-              {b.kind === "weekend" && <rect x={left} y={0} width={w} height={priceH} fill={ink ?? text} opacity={0.035} />}
+              {/* Stronger since 2026-10-15 (the owner: make the other hours more
+                  prominent, in both themes): a faint ground under every band,
+                  a darker one under weekends, and the hatch above at 22%. */}
+              <rect x={left} y={0} width={w} height={priceH} fill={ink ?? text} opacity={b.kind === "weekend" ? 0.06 : 0.025} />
               <rect x={left} y={0} width={w} height={priceH} fill={`url(#${clipId}-hatch)`}>
                 <title>{name}</title>
               </rect>
