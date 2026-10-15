@@ -30,3 +30,23 @@ export function useKeptState<T>(key: string, initial: T): [T, (v: T) => void] {
   }, [key, value])
   return [value, setValue]
 }
+
+/** A setting this browser keeps until it is changed (2026-10-15, the owner:
+ * "when I change this to all news, the setting is not maintained"). Plain
+ * component state was lost whenever the tile remounted: a reload, a return
+ * from another page, a phone suspending the tab. In localStorage, with no
+ * day stamp; an unreadable or unexpected value falls back to `initial`. */
+export function usePersistedState<T>(key: string, initial: T, valid: (v: unknown) => v is T): [T, (v: T) => void] {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const raw = localStorage.getItem(key)
+      if (raw == null) return initial
+      const got: unknown = JSON.parse(raw)
+      return valid(got) ? got : initial
+    } catch { return initial }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* private mode */ }
+  }, [key, value])
+  return [value, setValue]
+}

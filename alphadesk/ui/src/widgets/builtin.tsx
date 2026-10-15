@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils"
 import { registerWidget } from "@/widgets/registry"
 import { TILE_BODY_HEIGHT } from "@/widgets/tile"
 import { newsTime } from "@/lib/newsClock"
+import { usePersistedState } from "@/lib/keptState"
 
 /** The tiles AlphaDesk ships with.
  *
@@ -26,6 +27,10 @@ import { newsTime } from "@/lib/newsClock"
 // HALF THE ROW BY DEFAULT, so it sits beside the chart on the Markets
 // board. Every other caller passes its own span, so this default is the
 // registry's render and nothing else.
+type NewsView = { all: boolean; kind: "all" | "news" | "posts" }
+const isNewsView = (v: unknown): v is NewsView => !!v && typeof v === "object"
+  && typeof (v as NewsView).all === "boolean" && ["all", "news", "posts"].includes((v as NewsView).kind)
+
 export function NewsTape({ span = 6 }: {
   /** The markets board runs this full width; the news view runs it at 4 as the
    * secondary column beside the window, the way their news view puts a
@@ -37,7 +42,10 @@ export function NewsTape({ span = 6 }: {
   // 2026-09-02): with a symbol active, only stories naming it — the whole
   // window stays one click away on the toggle.
   const { active } = useBoardSymbols()
-  const [showAll, setShowAll] = useState(false)
+  // The tile's view is REMEMBERED (2026-10-15, the owner): which list it shows
+  // survives a reload, a page change and a phone suspending the tab.
+  const [view, setView] = usePersistedState<NewsView>("alphadesk.newsTape.view", { all: false, kind: "all" }, isNewsView)
+  const showAll = view.all
   const scoped = !!active && !showAll
   // One row per ARTICLE — /api/news dedupes server-side, so a story naming
   // six tickers is one row with six chips, not six rows.
@@ -78,7 +86,7 @@ export function NewsTape({ span = 6 }: {
   // no way to take them out, so a tile called Market News could not be made
   // to show only news. Three states, because both directions are wanted: the
   // mixed stream, the stories alone, and the posts alone.
-  const [kind, setKind] = useState<"all" | "news" | "posts">("all")
+  const kind = view.kind
   // ASKED WHETHER OR NOT THE TILE IS SCOPED (2026-09-23, the reader: "I
   // dont see any from trumpstruth.org"). This was gated on the tile being
   // UNSCOPED, and the tile is scoped whenever a chip is marked on the board
@@ -128,21 +136,21 @@ export function NewsTape({ span = 6 }: {
     ...(active ? [{
       id: "symbol", label: active, on: scoped,
       why: `Only stories naming ${active}`,
-      pick: () => { setShowAll(false); setKind("news") },
+      pick: () => setView({ all: false, kind: "news" }),
     }] : []),
     {
       id: "news", label: active ? "All news" : "News", on: !scoped && kind === "news",
       why: "Stories from the feeds you keyed — nothing unverified",
-      pick: () => { setShowAll(true); setKind("news") },
+      pick: () => setView({ all: true, kind: "news" }),
     },
     ...(hasPosts ? [{
       id: "all", label: "News and posts", on: !scoped && kind === "all",
       why: "Stories and posts together, newest first. A post carries no ticker, so this shows the whole window",
-      pick: () => { setShowAll(true); setKind("all") },
+      pick: () => setView({ all: true, kind: "all" }),
     }, {
       id: "posts", label: `Posts · ${livePosts.length}`, on: !scoped && kind === "posts",
       why: "Social posts only. Nobody is accountable for one. A post carries no ticker, so this shows the whole window",
-      pick: () => { setShowAll(true); setKind("posts") },
+      pick: () => setView({ all: true, kind: "posts" }),
     }] : []),
   ]
 
