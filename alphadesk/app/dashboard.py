@@ -2466,8 +2466,68 @@ def api_system():
     }
 
 
+# ONE BUILD, SHARED, AND REFRESHED BEHIND THE ANSWER (2026-10-15). On
+# 2026-10-15 at the open an 18-day build for the Reporting soon panel took
+# 31.5 s (SEC checks one company at a time, 14.6 s; ordering 1,689 rows,
+# 11.3 s) inside a page request, and another took 32 s, while every other
+# request waited behind them. The view is kept per reader and range: a
+# fresh copy is the answer; a stale one is the answer while a background
+# thread rebuilds it; only the very first ask builds in the request, and
+# a second ask arriving meanwhile waits for that build rather than starting
+# its own.
+EARNINGS_FRESH_S = 120.0
+_earnings_views: dict[tuple[str, int], tuple[float, dict]] = {}
+_earnings_building: dict[tuple[str, int], threading.Event] = {}
+_earnings_guard = threading.Lock()
+
+
+def _earnings_build(key: tuple[str, int]) -> dict:
+    """Build and keep one view, and wake anyone waiting on it."""
+    try:
+        payload = _earnings_view(key[1])
+        with _earnings_guard:
+            _earnings_views[key] = (time.time(), payload)
+        return payload
+    finally:
+        with _earnings_guard:
+            ev = _earnings_building.pop(key, None)
+        if ev:
+            ev.set()
+
+
 @app.get("/api/earnings")
 def api_earnings(days: int = 7):
+    """The Reporting soon view (see _earnings_view), built once per reader and
+    range and refreshed in the background once it is EARNINGS_FRESH_S old."""
+    import contextvars
+    from alphadesk.identity import request_user
+    key = (request_user() or "-", max(1, min(int(days), 60)))
+    with _earnings_guard:
+        hit = _earnings_views.get(key)
+        building = _earnings_building.get(key)
+        if hit is None and building is None:
+            building = _earnings_building[key] = threading.Event()
+            mine = True
+        else:
+            mine = False
+        stale_refresh = bool(hit and time.time() - hit[0] >= EARNINGS_FRESH_S and building is None)
+        if stale_refresh:
+            _earnings_building[key] = threading.Event()
+    if hit is not None:
+        if stale_refresh:
+            ctx = contextvars.copy_context()
+            threading.Thread(target=ctx.run, args=(_earnings_build, key), daemon=True,
+                             name="earnings-view").start()
+        return hit[1]
+    if mine:
+        return _earnings_build(key)
+    building.wait(timeout=90)
+    with _earnings_guard:
+        hit = _earnings_views.get(key)
+    return hit[1] if hit else _earnings_view(key[1])
+
+
+def _earnings_view(days: int = 7) -> dict:
     """Be-ready view: who reports next (with the time to RUN the desk to catch the
     drift) and who just reported. `days` is how far ahead "next" reaches, 1 to 60
     (the agent's earnings calendar reaches as far); a week by default."""

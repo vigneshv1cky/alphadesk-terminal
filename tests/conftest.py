@@ -103,6 +103,16 @@ def _no_vendor_key_check(monkeypatch):
     monkeypatch.setenv("ALPHADESK_SKIP_KEY_CHECK", "1")
 
 
+@pytest.fixture(autouse=True)
+def _fresh_earnings_views():
+    """The Reporting soon view is kept per reader and range for two minutes
+    (dashboard.api_earnings); each test builds its own."""
+    from alphadesk.app import dashboard
+    dashboard._earnings_views.clear()
+    yield
+    dashboard._earnings_views.clear()
+
+
 @pytest.fixture()
 def vendors(monkeypatch):
     """Install a signed-in user's connected vendors for one test:

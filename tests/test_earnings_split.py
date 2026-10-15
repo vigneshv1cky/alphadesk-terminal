@@ -52,3 +52,33 @@ def test_a_longer_range_reaches_further_ahead(monkeypatch):
     assert {e["symbol"] for e in two_weeks["upcoming"]} == {"SOON", "FAR"}        # 12 days out is inside two weeks
     TestClient(dashboard.app).get("/api/earnings?days=500")
     assert asked[-1] == (now + timedelta(days=60)).date().isoformat()              # capped at 60 days, the agent's reach
+
+
+def test_the_view_is_built_once_then_answered_while_it_refreshes(monkeypatch):
+    import threading
+    now = datetime(2026, 9, 11, 12, 0, tzinfo=ET)
+    monkeypatch.setattr("alphadesk.config.now_et", lambda: now)
+    from alphadesk.ingest import earnings_calendar
+    builds = []
+    gate = threading.Event()
+
+    def rows(start, end, stats=True):
+        builds.append(end)
+        if len(builds) == 2:
+            gate.wait(5)                                    # the background refresh is slow
+        return _rows(now)
+    monkeypatch.setattr(earnings_calendar, "rows_between", rows)
+    client = TestClient(dashboard.app)
+    first = client.get("/api/earnings?days=7").json()
+    again = client.get("/api/earnings?days=7").json()
+    assert len(builds) == 1 and again == first               # fresh: the kept copy
+    key = next(iter(dashboard._earnings_views))
+    dashboard._earnings_views[key] = (0.0, dashboard._earnings_views[key][1])   # make it stale
+    stale = client.get("/api/earnings?days=7").json()
+    assert stale == first                                     # answered at once, not after the rebuild
+    gate.set()
+    for _ in range(100):
+        if not dashboard._earnings_building:
+            break
+        threading.Event().wait(0.02)
+    assert len(builds) == 2 and dashboard._earnings_views[key][0] > 0  # rebuilt behind the answer
