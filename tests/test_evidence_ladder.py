@@ -222,6 +222,94 @@ def test_no_news_feed_leaves_the_story_checks_unread():
     assert set(lad["checks_unread"]) == {"company_word", "third_party", "roundup_passages"}
 
 
+
+# ── when the move began, and which records came before it ──
+
+def _bars(*pairs):
+    """1-minute bars from (New York HH:MM on the 27th, close) pairs, stamped in
+    UTC as the vendor stamps them."""
+    from datetime import datetime, timezone
+    from alphadesk.desk import sessions as cal
+    out = []
+    for hhmm, close in pairs:
+        day = 26 if hhmm >= "16:00" and hhmm.startswith(("16", "17", "18", "19")) else 27
+        h, m = map(int, hhmm.split(":"))
+        at = datetime(2026, 10, day, h, m, tzinfo=cal.NY).astimezone(timezone.utc)
+        out.append({"t": at.isoformat(), "c": close})
+    return out
+
+
+def _since():
+    from datetime import datetime
+    from alphadesk.desk import sessions as cal
+    return datetime(2026, 10, 26, 16, 0, tzinfo=cal.NY)
+
+
+def test_the_move_began_in_the_bar_that_first_covered_a_quarter_of_it():
+    bars = _bars(("09:30", 10.0), ("09:31", 10.1), ("09:32", 10.2), ("09:33", 10.3), ("09:34", 10.4),
+                 ("09:35", 10.6), ("09:36", 10.4), ("09:40", 11.2))
+    got = focus.move_start(bars, 10.0, 20.0, _since())
+    assert got["found"] and got["began_after"] == "2026-10-27T09:35-04:00"
+    assert got["began_by"] == "2026-10-27T09:36-04:00" and got["interval_minutes"] == 1
+    assert got["price_at_that_share"] == 10.5 and got["half_of_move_by"] == "2026-10-27T09:41-04:00"
+    # A loser is read the other way.
+    down = _bars(("09:30", 10.0), ("09:31", 9.7), ("09:32", 9.4))
+    assert focus.move_start(down, 10.0, -20.0, _since())["began_by"] == "2026-10-27T09:33-04:00"
+
+
+def test_sparse_trading_gives_a_wide_interval_never_a_guessed_instant():
+    bars = _bars(("16:30", 10.0), ("16:31", 10.0), ("08:00", 10.8))
+    got = focus.move_start(bars, 10.0, 20.0, _since())
+    assert got["began_after"] == "2026-10-26T16:32-04:00" and got["began_by"] == "2026-10-27T08:01-04:00"
+    assert got["interval_minutes"] == 929
+
+
+def test_no_bar_or_no_crossing_is_said_and_orders_nothing():
+    assert focus.move_start([], 10.0, 20.0, _since())["not_found_note"].startswith("the reader's intraday bars")
+    flat = focus.move_start(_bars(("09:30", 10.0), ("09:31", 10.1)), 10.0, 20.0, _since())
+    assert flat["found"] is False and "25%" in flat["not_found_note"]
+    assert focus.move_start(_bars(("09:30", 10.0)), None, 20.0, _since())["found"] is False
+    lad = focus.ladder("X", "X Corp", 20.0, WINDOW, move=flat,
+                       **_empty(filings=[{"form": "8-K", "filed_at": "2026-10-27T07:00:00-04:00"}]))
+    assert lad["time_order"] is None and lad["move_began"] is flat
+    assert "time_order" not in lad["rungs"]["company_word"]["records"][0]
+
+
+def test_each_timed_record_is_placed_before_inside_or_after_the_start():
+    start = focus.move_start(_bars(("09:34", 10.0), ("09:35", 10.6)), 10.0, 20.0, _since())
+    order = lambda rec: focus.time_order(rec, start)  # noqa: E731
+    assert order({"filed_at": "2026-10-27T07:00:00-04:00"}) == {"order": "before_move", "minutes_from_move_start": -155}
+    assert order({"published_at": "2026-10-27T13:35:30Z"})["order"] == "as_move_began"
+    assert order({"published_at": "2026-10-27T14:06:00Z"}) == {"order": "after_move_began", "minutes_from_move_start": 30}
+    assert order({"halted_at": "2026-10-27T09:40:00-04:00"})["order"] == "after_move_began"
+    assert order({"filed_at": "2026-10-27"}) == {"order": "dated_by_day_only"}
+    assert order({"type": "spin_offs", "dates": ["2026-10-24"]}) == {"order": "dated_by_day_only"}
+    assert order({"report_date": "2026-10-27", "session": "bmo"}) == {"order": "dated_by_day_only"}
+    assert order({"check": "sec_industry", "sic": "2911"}) is None
+
+
+def test_the_ladder_counts_records_by_order_and_names_the_earliest_before_the_move():
+    start = focus.move_start(_bars(("09:34", 10.0), ("09:35", 10.6)), 10.0, 20.0, _since())
+    story = {"article_id": "s1", "title": "X Corp shares trade higher", "published_at": "2026-10-27T14:10:00Z"}
+    lad = focus.ladder("X", "X Corp", 20.0, WINDOW, move=start, **_empty(
+        filings=[{"form": "8-K", "filed_at": "2026-10-27T07:00:00-04:00", "items": []},
+                 {"form": "8-K", "filed_at": "2026-10-26T17:05:00-04:00", "items": []}],
+        stories={"releases": [], "analyst_notes": [], "own": [story], "read_for_passages": []},
+        halts=[{"halted_at": "2026-10-27T09:40:00-04:00"}]))
+    assert lad["time_order"] == {"before_move": 2, "as_move_began": 0, "after_move_began": 2,
+                                 "dated_by_day_only": 0,
+                                 "earliest_before_move": {"rung": "company_word", "check": "sec_filing",
+                                                          "at": "2026-10-26T17:05:00-04:00"}}
+    assert lad["rungs"]["third_party"]["records"][0]["time_order"]["order"] == "after_move_began"
+    after_only = focus.ladder("Y", "Y Inc", 20.0, WINDOW, move=start, **_empty(
+        stories={"releases": [], "analyst_notes": [], "own": [{**story, "title": "Y Inc shares trade higher"}],
+                 "read_for_passages": []}))
+    cov = focus.coverage([lad, after_only])
+    assert cov["move_start_found"] == 2
+    assert cov["with_a_record_before_the_move"] == ["X"]
+    assert cov["records_only_after_the_move_began"] == ["Y"]
+
+
 # ── what may never appear ──
 
 def test_no_field_names_a_verdict_and_the_description_names_every_check():
@@ -252,6 +340,12 @@ class _Router:
             old = [{"ts": f"2026-10-{d:02d}T04:00:00Z", "close": 10.0} for d in (20, 21, 22, 23, 26)]
             return {s: ([] if s == "MSGR" else old) for s in args[0]}
         raise AssertionError(method)
+
+    # Flat from the open, then every name jumps at 09:45 New York.
+    BARS = [{"t": f"2026-10-27T13:{m:02d}:00Z", "c": 10.0 if m < 45 else 10.5} for m in range(30, 50)]
+
+    def chart_series(self, symbol, days=2, range_key=None, before=None, need=None):
+        return {"bars": self.BARS}
 
     def get(self, method, *args, **kw):
         return {"company_profile": {"sector": "Energy"}, "short_interest": {"shares_short": 1000, "as_of": "2026-10-15"}}.get(method)
@@ -308,6 +402,28 @@ def test_the_tool_returns_a_ladder_per_row_and_counts_coverage(monkeypatch):
     assert got["rows"][0]["context"]["short_interest"]["shares_short"] == 1000
     assert any("FDA" in n for n in got["not_covered"])
     assert got["unavailable"] == {}
+    # The 8-K at 07:00 came before the 09:45 move; the halt at 10:02 after it.
+    assert ev["AEHR"]["move_began"]["began_by"] == "2026-10-27T09:46-04:00"
+    assert ev["AEHR"]["rungs"]["company_word"]["records"][0]["time_order"]["order"] == "before_move"
+    assert ev["CLRO"]["rungs"]["market_structure"]["records"][0]["time_order"]["order"] == "after_move_began"
+    assert ev["VLO"]["rungs"]["roundup_passages"]["records"][0]["time_order"]["order"] == "after_move_began"
+    # MSGR has no prior session and no price, so no start can be measured.
+    assert ev["MSGR"]["move_began"]["found"] is False and ev["MSGR"]["time_order"] is None
+    assert got["coverage"]["with_a_record_before_the_move"] == ["AEHR"]
+
+    # After the bell the list measures a late print from the session just
+    # closed, so the start is searched from today's close, not yesterday's —
+    # where this name, high last evening and flat all day, would have read
+    # as moving from the first minute (live, 2026-10-27).
+    monkeypatch.setattr(cfg, "now_et", lambda: datetime(2026, 10, 27, 17, 0, tzinfo=cal.NY))
+    monkeypatch.setattr(mv, "category_movers", lambda cat, top=10: {"tabs": [{"id": "gainers", "rows": [
+        {"symbol": "UCTT", "name": "Ultra Clean Holdings", "price": 11.5, "change_pct": 15.0, "extended": True}]}]})
+    monkeypatch.setattr(_Router, "BARS", [{"t": "2026-10-26T20:01:00Z", "c": 10.5}, {"t": "2026-10-26T20:02:00Z", "c": 10.5},
+                                          {"t": "2026-10-27T19:58:00Z", "c": 10.0}, {"t": "2026-10-27T19:59:00Z", "c": 10.0},
+                                          {"t": "2026-10-27T20:10:00Z", "c": 11.5}])
+    late = mcp_server.movers_in_context("gainers", top=1, with_shape=False)["rows"][0]["evidence"]["move_began"]
+    assert late["measured_from"] == "2026-10-27T16:00-04:00" and late["previous_close"] == 10.0
+    assert late["began_by"] == "2026-10-27T16:11-04:00"
 
     # A past session: the story window's end reaches the store in UTC, the
     # stored stamps' own zone, because they are compared as text.

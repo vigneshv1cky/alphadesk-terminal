@@ -323,7 +323,13 @@ def _accepted_at(raw: str | None, file_date: str | None = None) -> str | None:
     release filed at 16:30 read as 12:30 and was labelled "during the day"
     (the earnings calendar's EDGAR-only rows and foreign-filer sessions both
     read this clock). Release clocks for the results table come from the
-    index header regardless — exact, one request, already paid for there."""
+    index header regardless — exact, one request, already paid for there.
+
+    AND ON 2026-10-27 THE SAME-DAY ENTRY WAS TRUE UTC: Ultra Clean's 8-K read
+    20:07:55Z against an index header of 16:07:55 New York, so this rule put
+    it four hours late. Neither reading can be trusted for a same-day filing;
+    where its clock matters, read the index header
+    (edgar_feed.same_day_clock)."""
     if not raw:
         return None
     try:

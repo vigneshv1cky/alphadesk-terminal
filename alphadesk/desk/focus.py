@@ -344,6 +344,131 @@ def action_ref(event: dict) -> dict:
             "detail": event.get("detail")}
 
 
+
+# ── WHEN THE MOVE BEGAN, AND WHICH RECORDS CAME BEFORE IT (2026-10-27) ──
+#
+# A record published BEFORE the price moved is a different fact from one
+# published AFTER: "why is X trading higher" stories, movers lists and the
+# halts a move trips are written about the move, while a filing or a release
+# that came first is something the market could have read. The order is a
+# MEASUREMENT of time, never a verdict on cause — a leak, a record no source
+# carries or plain flow can still sit before either — and nothing here ranks
+# a record by it.
+
+#: The move "began" in the bar whose close first covered this share of the
+#: change the list shows, counted bar by bar from the previous close. A
+#: quarter of a 20% gain is 5%: well past a quiet day's noise for a name on
+#: the movers list, and early enough that a story written about the move
+#: lands after it.
+MOVE_BEGAN_SHARE = 0.25
+#: The same, for the half-way mark, given as context.
+MOVE_HALF_SHARE = 0.5
+
+
+def _when(stamp):
+    from alphadesk.desk.movestate import _at
+    return _at(stamp) if stamp else None
+
+
+def _crossing(stamped: list, length, since, until, target: float, up: bool):
+    """(began_after, began_by) of the first bar whose close reached `target`,
+    or None. A bar is stamped at its START, so the price was short of the
+    mark when the bar before it closed and reached it by this one's close."""
+    prev_end = since
+    for t, b in stamped:
+        close = float(b["c"])
+        if (close >= target) if up else (close <= target):
+            end = t + length
+            return prev_end, (min(end, until) if until else end)
+        prev_end = t + length
+    return None
+
+
+def move_start(bars: list[dict], prev_close: float | None, change_pct: float | None, since,
+               until=None) -> dict:
+    """When the move began: the interval in which the price, read bar by bar
+    from the previous close, first covered MOVE_BEGAN_SHARE of the change the
+    list shows. Sparse bars give a WIDE interval rather than a guessed
+    instant — a thin overnight tape can leave hours between two prints, and
+    the interval says so. `found` false says why in `not_found_note`. Pure."""
+    from datetime import timedelta
+    from alphadesk.desk import sessions as cal
+    if not prev_close or change_pct is None or change_pct == 0:
+        return {"found": False, "not_found_note": "the previous close or the change is unknown"}
+    stamped = sorted(((t, b) for b in bars or [] for t in [_when(b.get("t"))]
+                      if t and b.get("c") is not None and t >= since and (until is None or t <= until)),
+                     key=lambda x: x[0])
+    if not stamped:
+        return {"found": False, "not_found_note": "the reader's intraday bars hold no trade after the previous close"}
+    gaps = [(b[0] - a[0]).total_seconds() for a, b in zip(stamped, stamped[1:]) if b[0] > a[0]]
+    # The bar length is the tightest spacing seen, held to half an hour so two
+    # prints hours apart are not read as one long bar.
+    length = timedelta(seconds=min(1800.0, max(60.0, min(gaps) if gaps else 60.0)))
+    up = change_pct > 0
+    hit = _crossing(stamped, length, since, until, prev_close * (1 + MOVE_BEGAN_SHARE * change_pct / 100), up)
+    if not hit:
+        return {"found": False, "not_found_note": f"no bar after the previous close had covered "
+                                          f"{int(MOVE_BEGAN_SHARE * 100)}% of the move"}
+    half = _crossing(stamped, length, since, until, prev_close * (1 + MOVE_HALF_SHARE * change_pct / 100), up)
+    iso = lambda d: d.astimezone(cal.NY).isoformat(timespec="minutes")  # noqa: E731
+    return {"found": True, "began_after": iso(hit[0]), "began_by": iso(hit[1]),
+            "interval_minutes": round((hit[1] - hit[0]).total_seconds() / 60),
+            "share_of_move": MOVE_BEGAN_SHARE,
+            "price_at_that_share": round(prev_close * (1 + MOVE_BEGAN_SHARE * change_pct / 100), 4),
+            "previous_close": round(prev_close, 4), "half_of_move_by": iso(half[1]) if half else None,
+            "measured_from": iso(since), "bars_read": len(stamped), "first_bar_at": iso(stamped[0][0])}
+
+
+#: A record's own clock, in the order a record carries one.
+_STAMP_KEYS = ("filed_at", "published_at", "released_at", "halted_at")
+TIME_ORDERS = ("before_move", "as_move_began", "after_move_began", "dated_by_day_only")
+
+
+def time_order(record: dict, start: dict) -> dict | None:
+    """Where one record sits against the move's start: "before_move" (at or
+    before the interval opened), "as_move_began" (inside it, so it cannot be
+    ordered either way), "after_move_began", or "dated_by_day_only" (a
+    corporate action, a calendar row with no release clock, a filing known
+    only by its date). `minutes_from_move_start` is negative before the
+    interval, positive after it, 0 inside. None for a record that is not a
+    publication (an industry group, the daily-bars count). Pure."""
+    stamp = next((record.get(k) for k in _STAMP_KEYS if record.get(k)), None)
+    if not stamp:
+        return {"order": "dated_by_day_only"} if (record.get("report_date") or record.get("dates")) else None
+    if len(str(stamp)) <= 10:
+        return {"order": "dated_by_day_only"}
+    at, after, by = _when(stamp), _when(start["began_after"]), _when(start["began_by"])
+    if at is None:
+        return None
+    if at <= after:
+        return {"order": "before_move", "minutes_from_move_start": round((at - after).total_seconds() / 60)}
+    if at > by:
+        return {"order": "after_move_began", "minutes_from_move_start": round((at - by).total_seconds() / 60)}
+    return {"order": "as_move_began", "minutes_from_move_start": 0}
+
+
+def mark_time_order(rungs: dict[str, dict], start: dict | None) -> dict | None:
+    """Stamp every timed record in `rungs` with its `time_order`, in place,
+    and count them by order. None when the start is unknown. Pure but for
+    the stamping."""
+    if not start or not start.get("found"):
+        return None
+    counts = {k: 0 for k in TIME_ORDERS}
+    earliest = None
+    for rung, r in rungs.items():
+        for rec in r.get("records") or []:
+            got = time_order(rec, start)
+            if got is None:
+                continue
+            rec["time_order"] = got
+            counts[got["order"]] += 1
+            if got["order"] == "before_move":
+                stamp = next(rec.get(k) for k in _STAMP_KEYS if rec.get(k))
+                if earliest is None or _when(stamp) < _when(earliest["at"]):
+                    earliest = {"rung": rung, "check": rec.get("check"), "at": stamp}
+    return {**counts, "earliest_before_move": earliest}
+
+
 def _filing_ref(f: dict) -> dict:
     return {"check": "sec_filing", "form": f.get("form"), "filed_at": f.get("filed_at"),
             "accession": f.get("accession"), "role": f.get("role"), "url": f.get("url"),
@@ -358,14 +483,17 @@ def ladder(symbol: str, name: str | None, change_pct: float | None, window: dict
            stories: dict[str, list[dict]] | None, passages_found: list[dict] | None,
            filings: list[dict] | None, earnings: list[dict] | None, actions: list[dict] | None,
            listing_filings: list[dict] | None, prior_sessions: int | None, halts: list[dict] | None,
-           group: dict | None, unread: dict[str, str] | None = None) -> dict:
+           group: dict | None, unread: dict[str, str] | None = None, move: dict | None = None) -> dict:
     """One mover's evidence, rung by rung. Each input is what a check read;
     None means the check COULD NOT BE READ (its reason in `unread`), an empty
     list means it ran and found nothing — the two are never confused. Pure.
 
     Every rung answers {status: "records" | "empty" | "unread", records}.
     `checks_with_records`, `checks_empty` and `checks_unread` summarise them,
-    and `nothing_found` is true only when no rung holds a record."""
+    and `nothing_found` is true only when no rung holds a record. `move` is
+    move_start()'s answer: with it found, every timed record carries its
+    `time_order` and `time_order` counts them; without it, `move_began` says
+    why and no record is ordered."""
     unread = dict(unread or {})
     rungs: dict[str, dict] = {}
 
@@ -433,6 +561,8 @@ def ladder(symbol: str, name: str | None, change_pct: float | None, window: dict
     return {
         "symbol": symbol, "name": name, "change_pct": change_pct, "window": window,
         "rungs": rungs,
+        "move_began": move or {"found": False, "not_found_note": "the reader's intraday bars were not read"},
+        "time_order": mark_time_order(rungs, move),
         "checks_with_records": with_records,
         "checks_empty": [k for k in RUNGS if rungs[k]["status"] == "empty"],
         "checks_unread": {k: unread[k] for k in RUNGS if rungs[k]["status"] == "unread"},
@@ -536,6 +666,12 @@ def coverage(ladders: list[dict]) -> dict:
     with nothing, how many had a check unread. Counts only — never a share
     of the move a rung accounts for."""
     by = {k: sum(1 for x in ladders if k in x["checks_with_records"]) for k in RUNGS}
+    ordered = [x for x in ladders if x.get("time_order")]
     return {"rows": len(ladders), "with_records_by_check": by,
+            "move_start_found": len(ordered),
+            "with_a_record_before_the_move": [x["symbol"] for x in ordered if x["time_order"]["before_move"]],
+            "records_only_after_the_move_began": [
+                x["symbol"] for x in ordered if not x["time_order"]["before_move"]
+                and not x["time_order"]["as_move_began"] and x["time_order"]["after_move_began"]],
             "nothing_found": [x["symbol"] for x in ladders if x["nothing_found"]],
             "with_an_unread_check": [x["symbol"] for x in ladders if x["checks_unread"]]}
