@@ -5,7 +5,7 @@
  */
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { parseLayout, resolveLayout, serializeLayout } from "../layoutEntries.ts"
+import { parseLayout, resolveLayout, serializeLayout, withdrawDefaults } from "../layoutEntries.ts"
 
 const analysis = [
   { id: "chart" }, { id: "filings" }, { id: "performance" }, { id: "stats" }, { id: "history" }, { id: "news" },
@@ -115,4 +115,22 @@ test("a height survives a round trip and is omitted when unset", () => {
   const back = serializeLayout(parseLayout(raw, all).visible, all, false)
   assert.equal(back, raw)
   assert.equal(serializeLayout([{ id: "chart", span: 6, height: null }], all, false), "chart:6")
+})
+
+test("a Markets board arranged while Session high was a default loses it", () => {
+  const raw = "news-tape:6,market-chart:6,session-high,equity-overview~3"
+  assert.equal(withdrawDefaults("markets", raw, "2026-10-27T18:55:00Z"), "news-tape:6,market-chart:6,equity-overview~3")
+  // A board with no arrangement time predates everything.
+  assert.equal(withdrawDefaults("markets", "session-high:6@c~2,market-chart", ""), "market-chart")
+})
+
+test("a reader who adds Session high back after the change keeps it", () => {
+  const raw = "market-chart,session-high:12~1"
+  assert.equal(withdrawDefaults("markets", raw, "2026-10-28T09:00:00Z"), raw)
+})
+
+test("withdrawing a Markets default touches no other page", () => {
+  const raw = "chart,stats,session-high"
+  assert.equal(withdrawDefaults("analysis", raw, ""), raw)
+  assert.equal(withdrawDefaults("view:abc", raw, ""), raw)
 })

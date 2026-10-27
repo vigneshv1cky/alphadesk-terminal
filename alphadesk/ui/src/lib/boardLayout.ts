@@ -4,7 +4,7 @@ import { widgets } from "@/widgets/registry"
 import { useExternalWidgets } from "@/lib/queries"
 import { whichWins } from "@/lib/boardSync"
 import { stepFor } from "@/lib/tileHeight"
-import { parseLayout, resolveLayout, serializeLayout, type LayoutEntry, type TileAlign, type TileHeight } from "@/lib/layoutEntries"
+import { parseLayout, resolveLayout, serializeLayout, withdrawDefaults, type LayoutEntry, type TileAlign, type TileHeight } from "@/lib/layoutEntries"
 
 /** The Markets board's composition — which tiles render, in what order.
  *
@@ -255,7 +255,9 @@ export function usePageLayout<T extends PanelDef>(
    * the store goes through `commit`, which changes the URL in the same call,
    * so there is no window where the two disagree. */
   const stored = useMemo(() => readStored(pageKey) || "", [pageKey, named])
-  const raw = named || stored
+  // A tile since taken off this page's default leaves a board arranged before
+  // that (see withdrawDefaults); the arrangement's own time decides.
+  const raw = useMemo(() => withdrawDefaults(pageKey, named || stored, storedAt(pageKey)), [pageKey, named, stored])
 
   /** The custom layout the URL names, filtered to tiles that exist here,
    * with any panel added since it was saved. Empty array = no custom layout
