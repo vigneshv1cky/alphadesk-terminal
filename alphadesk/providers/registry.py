@@ -39,6 +39,10 @@ Kind = Literal["news", "prices", "transcripts"]
 _REGISTRY: dict[str, dict[str, Callable[[], Any]]] = {"news": {}, "prices": {}, "transcripts": {}}
 _ENTRY_POINT_GROUP = "alphadesk.providers"
 _loaded = False
+# Held for the whole import, and _loaded set only once it is done: marking it
+# first let a second request see a half-filled registry while the first was
+# still importing (live 2026-10-27, Alpha Vantage "not registered" at start).
+_load_lock = threading.RLock()
 
 
 def register(kind: Kind, name: str, factory: Callable[[], Any]) -> None:
@@ -59,8 +63,14 @@ def _load_once() -> None:
     global _loaded
     if _loaded:
         return
-    _loaded = True
+    with _load_lock:
+        if _loaded:
+            return
+        _load_all()
+        _loaded = True
 
+
+def _load_all() -> None:
     from alphadesk.providers import builtin  # noqa: F401  (registers on import)
 
     for mod in (m.strip() for m in os.environ.get("ALPHADESK_PLUGINS", "").split(",")):

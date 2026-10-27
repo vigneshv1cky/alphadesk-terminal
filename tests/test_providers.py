@@ -57,6 +57,36 @@ def test_bad_plugin_module_does_not_kill_startup(monkeypatch):
     registry.available()          # must not raise
 
 
+def test_a_caller_during_loading_waits_for_the_whole_list(monkeypatch, tmp_path):
+    # Live 2026-10-27: the first requests after a start raced the import of
+    # the vendor modules. One caller marked the registry loaded and began
+    # importing; a second saw the mark, returned at once, and failed with
+    # "'alphavantage' is not a registered prices provider" while only Alpaca
+    # and the scraped sources had registered. A slow plugin reproduces it.
+    import sys
+    import threading
+    import time
+
+    (tmp_path / "slow_vendor_plugin.py").write_text(
+        "import time\n"
+        "from alphadesk.providers import registry\n"
+        "time.sleep(0.5)\n"
+        "registry.register('prices', 'slow-vendor', lambda **kw: object())\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setenv("ALPHADESK_PLUGINS", "slow_vendor_plugin")
+    monkeypatch.setattr(registry, "_loaded", False)
+    try:
+        first = threading.Thread(target=registry.available)
+        first.start()
+        time.sleep(0.1)                      # the first caller is mid-import
+        assert registry.build("prices", "slow-vendor") is not None
+    finally:
+        first.join()
+        registry._REGISTRY["prices"].pop("slow-vendor", None)
+        sys.modules.pop("slow_vendor_plugin", None)
+
+
 class TestNewsCapabilities:
     """The feed declares what it delivers; the UI frames itself on that.
     Declarations must match the feed's real payload — an optimistic one is a
