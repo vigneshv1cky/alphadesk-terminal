@@ -282,9 +282,72 @@ def recent(groups: list[str] | None = None, limit: int = 50,
     }
 
 
+#: The catalyst forms by their EXACT names, for a company's own filing list,
+#: which matches a form exactly where the feed above matches a prefix. A
+#: foreign issuer's events are 6-Ks, which the 8-K group never reaches.
+COMPANY_FORMS: tuple[str, ...] = (
+    "8-K", "8-K/A", "6-K", "6-K/A",
+    "SCHEDULE 13D", "SCHEDULE 13D/A", "SCHEDULE 13G", "SCHEDULE 13G/A",
+    "SC 13D", "SC 13D/A", "SC 13G", "SC 13G/A",
+    "SC TO-T", "SC TO-T/A", "SC TO-I", "SC TO-I/A", "SC 14D9", "SC 14D9/A",
+    "424B1", "424B2", "424B3", "424B4", "424B5", "424B7", "424B8",
+)
+
+
+def filings_since(symbols: list[str], since: str, feed_rows: list[dict] | None = None
+                  ) -> tuple[dict[str, list[dict]], dict[str, str]]:
+    """Each symbol's catalyst filings accepted at or after `since` (ISO, New
+    York), newest first, and the symbols whose list could not be read.
+
+    THE FEED ALONE CANNOT ANSWER THIS (2026-10-27). It is one page of the
+    newest forty per group, which on an earnings Tuesday was 25 listed 8-Ks
+    for the whole day: the gainers tool reported no filing for all fifteen
+    gainers while EDGAR held a same-day 8-K for eight of them (Herc, Kiniksa,
+    MidCap Financial, Better Home, SoFi among them). "No filing" is printed
+    as a fact, so a short feed must never be able to produce it. Each
+    company's own list is read instead — one request a company, cached ten
+    minutes by edgar.get_json — and the feed's rows are kept beside it,
+    because they carry the subject/filer role and an exact clock."""
+    from datetime import datetime
+    cut = datetime.fromisoformat(since)
+    def after(stamp: str | None) -> bool:
+        try:
+            return bool(stamp) and datetime.fromisoformat(stamp) >= cut
+        except ValueError:
+            return False
+    out: dict[str, list[dict]] = {}
+    unavailable: dict[str, str] = {}
+    for sym in symbols:
+        key = sym.upper()
+        rows: dict[str, dict] = {}
+        for f in feed_rows or []:
+            if key in (f.get("symbols") or []) and after(f.get("filed_at")):
+                rows[f.get("accession") or f"{f.get('form')}|{f.get('filed_at')}"] = f
+        # The list itself answers [] on any failure, which here would print
+        # "no filing" for a company whose list was never read — so the
+        # document is fetched first, where a failure can be seen. The list
+        # below then reads it from the cache.
+        own: list[dict] = []
+        cik10 = edgar.cik_for(key)
+        if cik10:
+            try:
+                edgar.get_json(edgar._SUBMISSIONS_URL.format(cik10=cik10))
+                own = edgar.filings_for_cik(cik10, key, COMPANY_FORMS, limit=20)
+            except Exception as exc:
+                unavailable[key] = str(exc)[:160]
+        for f in own:
+            if after(f.get("accepted_at")) and f.get("accession") not in rows:
+                rows[f["accession"]] = {"form": f.get("form"), "filed_at": f.get("accepted_at"),
+                                        "role": None, "accession": f.get("accession"),
+                                        "url": f.get("url"), "symbols": [key]}
+        out[key] = sorted(rows.values(), key=lambda r: str(r.get("filed_at")), reverse=True)
+    return out, unavailable
+
+
 def reset_cache() -> None:
     with _lock:
         _cache.clear()
 
 
-__all__ = ["DEFAULT_GROUPS", "GROUPS", "parse_entries", "recent", "reset_cache", "tag_symbols"]
+__all__ = ["COMPANY_FORMS", "DEFAULT_GROUPS", "GROUPS", "filings_since", "parse_entries", "recent",
+           "reset_cache", "tag_symbols"]
