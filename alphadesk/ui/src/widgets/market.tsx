@@ -11,6 +11,7 @@ import { useLiveQuotes } from "@/lib/liveQuotes"
 import { useNavigate } from "react-router-dom"
 import { useBoardSymbols } from "@/lib/boardSymbols"
 import { KeyStatisticsPanel } from "@/components/KeyStatistics"
+import { SessionHighPanel } from "@/components/SessionHigh"
 import { moneyIn, moneyOut } from "@/lib/floors"
 import { useLiveTrade } from "@/lib/live"
 import { Empty, Flash, Table, TD, TH, THead, TR, Widget, btnCls, menuHeadCls } from "@/components/terminal"
@@ -812,6 +813,14 @@ function KeyStatsTile() {
   return <KeyStatisticsPanel symbol={symbol} span={12} />
 }
 registerWidget({ id: "key-stats", label: "Key statistics", order: 12.5, optIn: true, component: KeyStatsTile })
+
+function SessionHighTile() {
+  const [params] = useSearchParams()
+  const symbol = (params.get("symbol") || "").toUpperCase()
+  if (!symbol) return <Widget span={12} title="Session high"><Empty>Pick a symbol to scope this board.</Empty></Widget>
+  return <SessionHighPanel symbol={symbol} span={12} />
+}
+registerWidget({ id: "session-high", label: "Session high", order: 12.6, optIn: true, component: SessionHighTile })
 
 const StockMovers = () => <CategoryMoversTile initial="stocks" title="Stock Movers" />
 /** The Sectors page's Market ETFs panel. Not a Markets board tile since

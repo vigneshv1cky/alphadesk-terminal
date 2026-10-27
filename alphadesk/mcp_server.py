@@ -1201,11 +1201,11 @@ def what_moved(symbol: str, days: int = 90, min_move_pct: float = 10.0) -> dict:
 
 
 @mcp.tool(annotations=READ_ONLY)
-def move_state(symbols: list[str] | str) -> dict:
-    """HAS THE MOVE DIED DOWN, HELD, OR TURNED: measurements of each symbol's
-    latest session (up to 8 symbols). Read `reliable` first: false means the
-    intraday bars are too few or too sparse to read a shape from, and only the
-    daily fields mean anything.
+def move_state(symbols: list[str] | str, history: bool = True) -> dict:
+    """HAS THE MOVE DIED DOWN, HELD, OR TURNED, AND HAS THE DAY'S HIGH BEEN PUT
+    IN: measurements of each symbol's latest session (up to 8 symbols). Read
+    `reliable` first: false means the intraday bars are too few or too sparse
+    to read a shape from, and only the daily fields mean anything.
 
     For the session: the change from the previous close, the gap at the open,
     the high and low with the times of each and the minutes since, how much of
@@ -1217,20 +1217,36 @@ def move_state(symbols: list[str] | str) -> dict:
     the typical range, consecutive up or down closes, the 20-day high and low and
     the last sessions side by side — what a multi-day fade looks like.
 
-    NO VERDICT: nothing says the move is over or will go on. Pair it with
+    `session_high` reads the day's high closely, withheld whole when `reliable`
+    is false: the high, its time (New York) and the minutes since; whether the
+    last bar is the high; how many bars set a NEW session high in the last 30
+    and 60 minutes and in the whole session; the session VWAP with the last
+    price and the high against it; volume on rising against falling bars SINCE
+    the high and in the 30 minutes INTO it (`up_to_down_volume` above 1 means
+    more traded on rising bars); the session's low-to-high range in units of
+    the typical daily range. `momentum` gives RSI-9 and the MACD histogram on
+    the intraday bars AT the price high against their highest EARLIER reading
+    in the session; `peaked_before_price` is true when that earlier reading was
+    higher (RSI by more than `rsi_margin_points`), false when momentum was as
+    high or higher at the price high, null when the high was the first bar.
+    It is withheld (`reliable` false) when the feed fails the chart's coverage
+    gate. `usual_high_time` (with `history`, the default; one more request per
+    symbol) lists when the regular-session high was set in each of up to the
+    last 20 sessions, their median time, and how many set it LATER than the time
+    this session has reached; withheld below 10 usable sessions, and for
+    round-the-clock markets. Regular-hours bars where the session has them.
+
+    NO VERDICT: nothing says the move is over, the high is in, or either will
+    go on; a past session's timing is not a forecast. Pair it with
     `what_moved` for why, and `priced_in` for how it compares with the stock's
     usual reactions. Read `data_freshness` first: on a free Alpaca plan the
     volume figures are the IEX exchange's alone and understate the market."""
-    from alphadesk.app import dashboard
     from alphadesk.desk import movestate
-    from alphadesk.providers import get_prices
     wanted = _symbols(symbols)[:8]
     if not wanted:
         raise ValueError("at least one symbol is required")
     def one(sym):
-        series = get_prices().chart_series(sym, days=5) or {}
-        daily = _http_errors(dashboard.api_chart, sym, range="3M", interval="1d").get("bars") or []
-        return movestate.move_state(series.get("bars") or [], daily)
+        return _http_errors(movestate.for_symbol, sym, history=bool(history))
 
     out, failed = {}, {}
     for sym, got in zip(wanted, _parallel(one, wanted)):

@@ -1673,6 +1673,18 @@ def api_key_stats(symbol: str):
     return keystats.key_stats(sym)
 
 
+@app.get("/api/move-state/{symbol}")
+def api_move_state(symbol: str):
+    """The latest session's shape and its high (desk/movestate.py), the same
+    measurements the agent's move_state tool returns, for the Session high
+    panel. Measurements only: nothing here says the high is in."""
+    from alphadesk.desk import movestate
+    sym = "".join(c for c in symbol.upper() if c.isalnum() or c in ".-^=")[:14]
+    if not sym:
+        raise HTTPException(400, "bad symbol")
+    return {"symbol": sym, **movestate.for_symbol(sym)}
+
+
 @app.get("/api/fund/{symbol}")
 def api_fund(symbol: str):
     """What an ETF or mutual fund holds (ingest/funds.py): category,
