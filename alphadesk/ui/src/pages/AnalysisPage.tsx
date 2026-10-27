@@ -11,6 +11,7 @@ import { InsiderTradesPanel, InstitutionalOwnershipPanel, StockOwnershipPanel } 
 import { AnalystPanel, RatingChangesPanel } from "@/components/Analysts"
 import { FundBreakdownPanel, FundHoldingsPanel, useFund } from "@/components/FundPanels"
 import { KeyStatisticsPanel } from "@/components/KeyStatistics"
+import { SessionHighPanel } from "@/components/SessionHigh"
 import { PricePerformancePanel } from "@/components/Compare"
 import { DEFAULT_SYMBOL } from "@/lib/boardSymbols"
 import { normalize } from "@/lib/symbols"
@@ -51,6 +52,7 @@ export default function AnalysisPage() {
         // (2026-09-14, the owner's call).
         { id: "performance", label: "Price performance", node: <PricePerformancePanel symbols={[symbol]} minSymbols={1} span={12} /> },
         { id: "stats", label: "Key statistics", node: <KeyStatisticsPanel symbol={symbol} span={12} /> },
+        { id: "session-high", label: "Session high", node: <SessionHighPanel symbol={symbol} span={12} /> },
         // The company's record, the same panels the Profile and Earnings
         // pages carry (2026-09-12: "bring the data from profile to
         // analysis") — one place to read a name end to end.

@@ -820,7 +820,7 @@ function SessionHighTile() {
   if (!symbol) return <Widget span={12} title="Session high"><Empty>Pick a symbol to scope this board.</Empty></Widget>
   return <SessionHighPanel symbol={symbol} span={12} />
 }
-registerWidget({ id: "session-high", label: "Session high", order: 12.6, optIn: true, component: SessionHighTile })
+registerWidget({ id: "session-high", label: "Session high", order: 12.6, component: SessionHighTile })
 
 const StockMovers = () => <CategoryMoversTile initial="stocks" title="Stock Movers" />
 /** The Sectors page's Market ETFs panel. Not a Markets board tile since
