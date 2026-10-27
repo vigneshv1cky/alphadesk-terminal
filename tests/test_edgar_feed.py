@@ -151,3 +151,46 @@ def test_a_repeated_item_is_listed_once():
 
     twice = "&lt;br&gt;Item 2.02: Results of Operations\n&lt;br&gt;Item 2.02: Results of Operations"
     assert [i["number"] for i in edgar_feed.parse_items(twice)] == ["2.02"]
+
+
+class TestFilingsSince:
+    """A short feed must never be able to print "no filing" (2026-10-27: the
+    gainers tool showed none for all fifteen gainers while EDGAR held a
+    same-day 8-K for eight of them)."""
+
+    SINCE = "2026-10-26T16:00:00-04:00"
+
+    def _company(self, monkeypatch, rows, fail=None):
+        from alphadesk.ingest import edgar
+        monkeypatch.setattr(edgar, "cik_for", lambda s: "0001364479" if s == "HRI" else None)
+        def get_json(url, *a, **k):
+            if fail:
+                raise fail
+            return {}
+        monkeypatch.setattr(edgar, "get_json", get_json)
+        monkeypatch.setattr(edgar, "filings_for_cik", lambda cik, sym, forms, limit=20:
+                            [r for r in rows if r["form"] in forms])
+
+    def test_a_filing_the_feed_never_reached_is_found_on_the_company_list(self, monkeypatch):
+        self._company(monkeypatch, [
+            {"accession": "0001364479-26-000050", "form": "8-K", "accepted_at": "2026-10-27T06:31:02-04:00", "url": "u1"},
+            {"accession": "0001364479-26-000049", "form": "10-Q", "accepted_at": "2026-10-27T06:35:00-04:00", "url": "u2"},
+            {"accession": "0001364479-26-000040", "form": "8-K", "accepted_at": "2026-10-26T09:10:00-04:00", "url": "u3"},
+        ])
+        got, unavailable = edgar_feed.filings_since(["hri"], self.SINCE, feed_rows=[])
+        assert unavailable == {}
+        # Today's 8-K counts; the quarterly report is not a catalyst form and
+        # yesterday's morning 8-K came before the previous close.
+        assert [(f["form"], f["filed_at"]) for f in got["HRI"]] == [("8-K", "2026-10-27T06:31:02-04:00")]
+
+    def test_the_feed_row_wins_a_duplicate_and_its_role_is_kept(self, monkeypatch):
+        acc = "0001364479-26-000050"
+        self._company(monkeypatch, [{"accession": acc, "form": "8-K", "accepted_at": "2026-10-27T06:31:02-04:00", "url": "u"}])
+        feed = [{"accession": acc, "form": "8-K", "filed_at": "2026-10-27T06:31:02-04:00", "role": "filer", "symbols": ["HRI"]}]
+        got, _ = edgar_feed.filings_since(["HRI"], self.SINCE, feed_rows=feed)
+        assert len(got["HRI"]) == 1 and got["HRI"][0]["role"] == "filer"
+
+    def test_an_unreadable_list_is_reported_not_read_as_no_filing(self, monkeypatch):
+        self._company(monkeypatch, [], fail=RuntimeError("EDGAR rate limit: paused"))
+        got, unavailable = edgar_feed.filings_since(["HRI"], self.SINCE, feed_rows=[])
+        assert got["HRI"] == [] and "HRI" in unavailable

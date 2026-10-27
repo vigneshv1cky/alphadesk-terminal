@@ -1404,11 +1404,14 @@ def movers_in_context(direction: str = "gainers", category: str = "stocks", top:
     except Exception as exc:
         feed = {}
         unavailable["filings"] = str(exc)[:160]
-    by_symbol: dict[str, list[dict]] = {}
-    for f in feed.get("filings") or []:
-        if str(f.get("filed_at") or "")[:19] >= since.isoformat()[:19]:
-            for sym in f.get("symbols") or []:
-                by_symbol.setdefault(sym.upper(), []).append(f)
+    # The feed is one page of the newest entries, so each name's own filing
+    # list is read too; a list that could not be read is said, never shown
+    # as "no filing" (edgar_feed.filings_since, 2026-10-27).
+    by_symbol, unread = edgar_feed.filings_since(
+        [str(m.get("symbol") or "") for m in rows if m.get("symbol")],
+        since.isoformat(timespec="seconds"), feed.get("filings") or [])
+    for sym, why in unread.items():
+        unavailable[f"filings:{sym}"] = why
     try:
         halted = {str(h.get("symbol") or "").upper() for h in (get_prices().ask("trading_halts", limit=100, surface="trading_halts") or [])
                   if str(h.get("halted_at") or "")[:10] >= session.isoformat()}
