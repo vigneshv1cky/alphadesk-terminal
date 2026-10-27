@@ -88,13 +88,17 @@ def daily_context(daily: list[dict], session_date: str | None) -> dict:
             "recent_sessions": recent}
 
 
-def move_state(intraday: list[dict], daily: list[dict]) -> dict:
+def move_state(intraday: list[dict], daily: list[dict], history: list[dict] | None = None,
+               indicators_reliable: bool = False) -> dict:
     """Measurements for the symbol's latest session. `intraday` and `daily` are
-    {t, o, h, l, c, v} bars, oldest first."""
+    {t, o, h, l, c, v} bars, oldest first; intraday bars may carry `_rsi` and
+    `_macd_hist` (see with_indicators). `history` is a month of intraday bars
+    for the usual time of the high, or None to skip it."""
     day, bars = latest_session(intraday)
     ctx = daily_context(daily, day)
     if not bars:
-        return {"session": None, "reliable": False, "note": "no intraday bars", "daily": ctx}
+        return {"session": None, "reliable": False, "note": "no intraday bars", "daily": ctx,
+                "session_high": session_high([])}
     prev_close = ctx["prev_close"]
     first, last = bars[0], bars[-1]
     hi = max(bars, key=lambda b: b.get("h") if b.get("h") is not None else b["c"])
@@ -154,4 +158,202 @@ def move_state(intraday: list[dict], daily: list[dict]) -> dict:
                            "session_range_pct": _pct(hi_p, lo_p),
                            "move_in_typical_ranges": round(abs(change) / ctx_range, 1) if change is not None and ctx_range else None},
         "daily": ctx,
+        "session_high": session_high(bars, prev_close=prev_close, typical_range_pct=ctx_range,
+                                     reliable=reliable, indicators_reliable=indicators_reliable,
+                                     history=history, session_date=day),
     }
+
+
+# ── Has the day's high been put in (2026-10-27, the owner's "daily peaks") ──
+#
+# The session high, read more closely than the block above: whether new highs
+# are still being set, the price against the session's volume-weighted
+# average, whether momentum peaked BEFORE the price did, how the volume split
+# between rising and falling bars either side of the high, and when this
+# stock's daily high has usually come. Every figure is a measurement; nothing
+# here says the high is in. A flag that can read "yes" can as easily read
+# "no", and each one carries the readings it was made from.
+
+MOMENTUM_RSI_MARGIN = 5.0   # RSI points: a smaller shortfall at the high is not flagged
+LEAD_IN_MIN = 30            # the minutes leading into the high whose volume is compared
+HABIT_SESSIONS = 20         # past sessions read for the usual time of the high
+HABIT_MIN_SESSIONS = 10     # fewer usable past sessions and the habit is withheld
+HABIT_MIN_BARS = 20         # a past session with fewer regular-hours bars is skipped
+
+
+def _h(b) -> float:
+    return b["h"] if b.get("h") is not None else b["c"]
+
+
+def _l(b) -> float:
+    return b["l"] if b.get("l") is not None else b["c"]
+
+
+def _updown(part: list[dict], prior: float | None) -> dict:
+    """Volume on bars that closed above the previous bar's close against bars
+    that closed below it. An unchanged bar counts on neither side."""
+    up = down = 0.0
+    n_up = n_down = 0
+    prev = prior
+    for b in part:
+        v = b.get("v") or 0
+        if prev is not None:
+            if b["c"] > prev:
+                up, n_up = up + v, n_up + 1
+            elif b["c"] < prev:
+                down, n_down = down + v, n_down + 1
+        prev = b["c"]
+    return {"bars": len(part), "up_bars": n_up, "down_bars": n_down,
+            "up_volume": up, "down_volume": down,
+            # Above 1: more volume traded on rising bars than on falling ones.
+            "up_to_down_volume": round(up / down, 2) if down else None}
+
+
+def _momentum(bars: list[dict], hi_i: int, key: str, margin: float) -> dict | None:
+    at = bars[hi_i].get(key)
+    earlier = [(b[key], b["_t"]) for b in bars[:hi_i] if b.get(key) is not None]
+    if at is None:
+        return None
+    if not earlier:
+        return {"at_high": at, "earlier_peak": None, "earlier_peak_at": None,
+                "peaked_before_price": None}
+    peak, when = max(earlier, key=lambda x: x[0])
+    return {"at_high": at, "earlier_peak": peak, "earlier_peak_at": when.strftime("%H:%M"),
+            # True: momentum's highest reading came earlier and was higher than
+            # at the price high. False: momentum was as high or higher at the
+            # price high. Both readings are here to check it.
+            "peaked_before_price": bool(peak - at > margin)}
+
+
+def high_habit(history: list[dict], session_date: str | None, now_hm: str) -> dict:
+    """When this stock's regular-session high was set in each of the last
+    HABIT_SESSIONS sessions before `session_date`, and how many of them came
+    later than `now_hm` (HH:MM New York). Withheld below HABIT_MIN_SESSIONS."""
+    days: dict[str, list[dict]] = {}
+    for b in history:
+        t = _at(b.get("t"))
+        if t is None or b.get("c") is None or not (OPEN <= t.time() < CLOSE):
+            continue
+        d = t.date().isoformat()
+        if session_date and d >= session_date:
+            continue
+        days.setdefault(d, []).append({**b, "_t": t})
+    usable = [(d, bs) for d, bs in sorted(days.items()) if len(bs) >= HABIT_MIN_BARS][-HABIT_SESSIONS:]
+    if len(usable) < HABIT_MIN_SESSIONS:
+        return {"sessions": len(usable), "reliable": False,
+                "note": f"only {len(usable)} past sessions with enough intraday bars; "
+                        f"{HABIT_MIN_SESSIONS} are needed"}
+    times = []
+    for d, bs in usable:
+        top = max(bs, key=_h)       # the first bar at the session's highest price
+        times.append({"date": d, "high_at": top["_t"].strftime("%H:%M")})
+    mins = sorted(int(x["high_at"][:2]) * 60 + int(x["high_at"][3:]) for x in times)
+    mid = int(median(mins))
+    return {"sessions": len(times), "reliable": True,
+            "window": f"the {len(times)} sessions from {times[0]['date']} to {times[-1]['date']}",
+            "median_high_at": f"{mid // 60:02d}:{mid % 60:02d}",
+            "compared_with": now_hm,
+            # How many of those sessions set their high LATER in the day than
+            # the time this session has reached.
+            "set_later_than_now": sum(1 for x in times if x["high_at"] > now_hm),
+            "highs": times}
+
+
+def session_high(bars: list[dict], *, prev_close: float | None = None,
+                 typical_range_pct: float | None = None, reliable: bool = True,
+                 indicators_reliable: bool = False, history: list[dict] | None = None,
+                 session_date: str | None = None) -> dict:
+    """Measurements around the session high. `bars` are the session's bars as
+    latest_session returns them, optionally carrying `_rsi` and `_macd_hist`.
+    Withheld whole when the session's bars are too thin to read a shape."""
+    if not bars or not reliable:
+        return {"reliable": False,
+                "note": "the session's intraday bars are too few or too sparse to read where the high was set"}
+    now = bars[-1]["_t"]
+    last = bars[-1]["c"]
+    run, hi_i, new_highs = _h(bars[0]), 0, []
+    for i, b in enumerate(bars[1:], 1):
+        if _h(b) > run:
+            run, hi_i = _h(b), i
+            new_highs.append(b["_t"])
+    hi_p, lo_p = run, min(_l(b) for b in bars)
+    at = bars[hi_i]
+
+    vol = sum(b.get("v") or 0 for b in bars)
+    vwap = (sum((_h(b) + _l(b) + b["c"]) / 3 * (b.get("v") or 0) for b in bars) / vol) if vol else None
+
+    lead = [b for b in bars[:hi_i + 1] if b["_t"] >= at["_t"] - timedelta(minutes=LEAD_IN_MIN)]
+    lead_start = bars.index(lead[0]) if lead else 0
+    lead_prior = bars[lead_start - 1]["c"] if lead_start else None
+
+    rng = (100 * (hi_p - lo_p) / prev_close) if prev_close else None
+    regular = all(OPEN <= b["_t"].time() < CLOSE for b in bars)
+
+    out = {
+        "reliable": True,
+        "high": hi_p, "high_at": at["_t"].strftime("%H:%M"),
+        "minutes_since_high": int((now - at["_t"]).total_seconds() // 60),
+        "down_from_high_pct": _pct(last, hi_p),
+        "at_session_high": hi_i == len(bars) - 1,
+        "new_highs": {"last_30min": sum(1 for t in new_highs if t > now - timedelta(minutes=30)),
+                      "last_60min": sum(1 for t in new_highs if t > now - timedelta(minutes=60)),
+                      "session": len(new_highs)},
+        "vwap": {"session_vwap": round(vwap, 4) if vwap else None,
+                 "last_vs_vwap_pct": _pct(last, vwap) if vwap else None,
+                 "high_vs_vwap_pct": _pct(hi_p, vwap) if vwap else None},
+        "volume": {"since_high": _updown(bars[hi_i + 1:], at["c"]),
+                   f"last_{LEAD_IN_MIN}min_into_high": _updown(lead, lead_prior)},
+        "range": {"session_range_pct": round(rng, 2) if rng is not None else None,
+                  "typical_daily_range_pct": typical_range_pct,
+                  # The session's low-to-high range in units of the stock's
+                  # typical daily range over the last 20 sessions.
+                  "session_range_in_typical_ranges": round(rng / typical_range_pct, 2)
+                  if rng is not None and typical_range_pct else None},
+    }
+    if indicators_reliable:
+        out["momentum"] = {"reliable": True,
+                           "rsi_9": _momentum(bars, hi_i, "_rsi", MOMENTUM_RSI_MARGIN),
+                           "macd_hist": _momentum(bars, hi_i, "_macd_hist", 0.0),
+                           "rsi_margin_points": MOMENTUM_RSI_MARGIN}
+    else:
+        out["momentum"] = {"reliable": False,
+                           "note": "the intraday feed fails the chart's coverage gate, so RSI and MACD are not read"}
+    if history is None:
+        out["usual_high_time"] = None
+    elif not regular:
+        out["usual_high_time"] = {"reliable": False, "note": "no regular session to compare (round-the-clock market)"}
+    else:
+        now_hm = min(now.strftime("%H:%M"), "15:59")
+        out["usual_high_time"] = high_habit(history, session_date, now_hm)
+    return out
+
+
+def with_indicators(series: dict) -> list[dict]:
+    """The intraday series' bars with each bar's own RSI-9 and MACD histogram
+    attached, so the session's slice keeps them."""
+    bars = series.get("bars") or []
+    rsi = series.get("rsi_9") or []
+    hist = series.get("macd_hist") or []
+    out = []
+    for i, b in enumerate(bars):
+        out.append({**b, "_rsi": rsi[i] if i < len(rsi) else None,
+                    "_macd_hist": hist[i] if i < len(hist) else None})
+    return out
+
+
+def for_symbol(sym: str, history: bool = True) -> dict:
+    """Fetch the reader's bars through the price router and measure: the
+    latest session's minute bars, three months of daily bars and, with
+    `history`, a month of five-minute bars for the usual time of the high."""
+    from alphadesk.app import dashboard
+    from alphadesk.providers import get_prices
+    series = get_prices().chart_series(sym, days=5) or {}
+    daily = dashboard.api_chart(sym, range="3M", interval="1d").get("bars") or []
+    past = None
+    if history:
+        try:
+            past = dashboard.api_chart(sym, range="1M", interval="5m").get("bars") or []
+        except Exception:            # the habit is withheld, the rest still answers
+            past = []
+    return move_state(with_indicators(series), daily, history=past,
+                      indicators_reliable=bool(series.get("indicators_reliable")))

@@ -1644,6 +1644,7 @@ export const api = {
   fund: (symbol: string) => get<FundProfile | null>(`/api/fund/${encodeURIComponent(symbol)}`),
   relatedFunds: (symbol: string) => get<RelatedFunds>(`/api/funds/related/${encodeURIComponent(symbol)}`),
   keyStats: (symbol: string) => get<KeyStats | null>(`/api/stats/${encodeURIComponent(symbol)}`),
+  moveState: (symbol: string) => get<MoveState>(`/api/move-state/${encodeURIComponent(symbol)}`),
   economic: (start?: string, end?: string) =>
     get<EconomicCalendar>(`/api/economic?start=${start ?? ""}&end=${end ?? ""}`),
   dividendCalendar: (start: string, end: string) =>
@@ -1725,6 +1726,56 @@ export interface EconomicCalendar {
 
 /** The summary block. Fractions stay fractions (profit_margin 0.276) except
  * dividend_yield, which the vendors already state as a percent. */
+/** The latest session's shape and its high (desk/movestate.py). Measurements
+ * only: nothing here says the high is in. */
+export interface UpDownVolume {
+  bars: number
+  up_bars: number
+  down_bars: number
+  up_volume: number
+  down_volume: number
+  up_to_down_volume: number | null
+}
+export interface MomentumAtHigh {
+  at_high: number
+  earlier_peak: number | null
+  earlier_peak_at: string | null
+  peaked_before_price: boolean | null
+}
+export interface UsualHighTime {
+  reliable: boolean
+  sessions: number
+  note?: string
+  window?: string
+  median_high_at?: string
+  compared_with?: string
+  set_later_than_now?: number
+  highs?: { date: string; high_at: string }[]
+}
+export interface SessionHigh {
+  reliable: boolean
+  note?: string
+  high?: number
+  high_at?: string
+  minutes_since_high?: number
+  down_from_high_pct?: number | null
+  at_session_high?: boolean
+  new_highs?: { last_30min: number; last_60min: number; session: number }
+  vwap?: { session_vwap: number | null; last_vs_vwap_pct: number | null; high_vs_vwap_pct: number | null }
+  volume?: { since_high: UpDownVolume; last_30min_into_high: UpDownVolume }
+  range?: { session_range_pct: number | null; typical_daily_range_pct: number | null; session_range_in_typical_ranges: number | null }
+  momentum?: { reliable: boolean; note?: string; rsi_9?: MomentumAtHigh | null; macd_hist?: MomentumAtHigh | null; rsi_margin_points?: number }
+  usual_high_time?: UsualHighTime | null
+}
+export interface MoveState {
+  symbol: string
+  session: string | null
+  reliable: boolean
+  given_back_from_high_pct?: number | null
+  prices?: { prev_close: number | null; open: number; high: number; low: number; last: number }
+  session_high: SessionHigh
+}
+
 export interface KeyStats {
   symbol: string; name: string | null; currency: string | null; quote_type: string | null
   vendor?: string | null
