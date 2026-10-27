@@ -360,12 +360,17 @@ def filings_since(symbols: list[str], since: str, feed_rows: list[dict] | None =
     minutes by edgar.get_json — and the feed's rows are kept beside it,
     because they carry the subject/filer role and an exact clock."""
     from datetime import datetime
+    from alphadesk.config import now_et
     cut = datetime.fromisoformat(since)
     end = datetime.fromisoformat(until) if until else None
+    today = now_et().date().isoformat()
     def after(stamp: str | None) -> bool:
         # `until` closes the window for a past session: a filing after that
-        # day's close bears on the next session, not this one.
+        # day's close bears on the next session, not this one. A filing
+        # known only by its date counts when that date is inside the window.
         try:
+            if stamp and len(stamp) == 10:
+                return cut.date().isoformat() <= stamp <= (end.date().isoformat() if end else stamp)
             at = datetime.fromisoformat(stamp) if stamp else None
             return at is not None and at >= cut and (end is None or at <= end)
         except ValueError:
@@ -391,13 +396,51 @@ def filings_since(symbols: list[str], since: str, feed_rows: list[dict] | None =
             except Exception as exc:
                 unavailable[key] = str(exc)[:160]
         for f in own:
-            if after(f.get("accepted_at")) and f.get("accession") not in rows:
-                rows[f["accession"]] = {"form": f.get("form"), "filed_at": f.get("accepted_at"),
+            if f.get("accession") in rows:
+                continue
+            clock = f.get("accepted_at")
+            if f.get("filing_date") == today and f.get("accession"):
+                clock = same_day_clock(cik10, f["accession"], f["filing_date"])
+            if after(clock):
+                rows[f["accession"]] = {"form": f.get("form"), "filed_at": clock,
                                         "role": None, "accession": f.get("accession"),
                                         "url": f.get("url"), "symbols": [key],
                                         "items": items_from_codes(f.get("items"))}
         out[key] = sorted(rows.values(), key=lambda r: str(r.get("filed_at")), reverse=True)
     return out, unavailable
+
+
+#: Acceptance instants read from index headers, by accession. A filing's
+#: acceptance never changes, so an entry is kept for the life of the process;
+#: the cap only bounds a long-running server.
+_clocks: dict[str, str] = {}
+_CLOCKS_MAX = 5000
+
+
+def same_day_clock(cik10: str, accession: str, filing_date: str) -> str:
+    """A filing accepted TODAY, timed from its index header (one request,
+    then remembered), or its date alone when the header cannot be read.
+
+    THE SUBMISSIONS RECORD'S SAME-DAY CLOCK CANNOT BE TRUSTED EITHER WAY.
+    On 2026-09-14 it was New York time wearing a UTC suffix (edgar.
+    _accepted_at reads it so); on 2026-10-27 it was true UTC — Ultra Clean's
+    results 8-K read 20:07:55Z against an index header of 16:07:55 New York,
+    Manhattan Associates' 20:02:29Z against 16:02:29 — so every same-day
+    filing was stamped four hours late, after the very move it preceded.
+    The index header is New York time on both dates. A date alone is said
+    rather than a guessed clock: an order against a move is only as good as
+    the clock it is read from."""
+    if accession in _clocks:
+        return _clocks[accession]
+    try:
+        clock = edgar.accepted_at_from_index(cik10, accession)
+    except Exception:
+        clock = None
+    if not clock:
+        return filing_date
+    if len(_clocks) < _CLOCKS_MAX:
+        _clocks[accession] = clock
+    return clock
 
 
 def reset_cache() -> None:
@@ -406,5 +449,5 @@ def reset_cache() -> None:
 
 
 __all__ = ["COMPANY_FORMS", "DEFAULT_GROUPS", "GROUPS", "ITEM_LABELS", "filings_since", "items_from_codes",
-           "parse_entries", "recent",
+           "parse_entries", "recent", "same_day_clock",
            "reset_cache", "tag_symbols"]

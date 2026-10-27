@@ -194,3 +194,33 @@ class TestFilingsSince:
         self._company(monkeypatch, [], fail=RuntimeError("EDGAR rate limit: paused"))
         got, unavailable = edgar_feed.filings_since(["HRI"], self.SINCE, feed_rows=[])
         assert got["HRI"] == [] and "HRI" in unavailable
+
+    def test_a_same_day_filing_is_timed_from_its_index_header_or_by_its_date_alone(self, monkeypatch):
+        # 2026-10-27: the submissions record gave Ultra Clean's results 8-K
+        # as 20:07:55Z, which the reader stamped 20:07:55 New York — four
+        # hours after the 16:07:55 its index header records.
+        from datetime import datetime
+        from alphadesk import config
+        from alphadesk.desk import sessions as cal
+        from alphadesk.ingest import edgar
+        monkeypatch.setattr(config, "now_et", lambda: datetime(2026, 10, 27, 18, 0, tzinfo=cal.NY))
+        monkeypatch.setattr(edgar_feed, "_clocks", {})
+        self._company(monkeypatch, [
+            {"accession": "a-today", "form": "8-K", "filing_date": "2026-10-27",
+             "accepted_at": "2026-10-27T20:07:55-04:00", "url": "u"},
+            {"accession": "b-today", "form": "8-K", "filing_date": "2026-10-27",
+             "accepted_at": "2026-10-27T21:00:00-04:00", "url": "u"}])
+        asked = []
+
+        def header(cik, acc):
+            asked.append(acc)
+            if acc == "b-today":
+                raise RuntimeError("EDGAR rate limit: paused")
+            return "2026-10-27T16:07:55-04:00"
+        monkeypatch.setattr(edgar, "accepted_at_from_index", header)
+        got, _ = edgar_feed.filings_since(["HRI"], self.SINCE, feed_rows=[])
+        clocks = {f["accession"]: f["filed_at"] for f in got["HRI"]}
+        assert clocks == {"a-today": "2026-10-27T16:07:55-04:00", "b-today": "2026-10-27"}
+        # A clock read once is remembered; a failed read is asked again.
+        edgar_feed.filings_since(["HRI"], self.SINCE, feed_rows=[])
+        assert asked.count("a-today") == 1 and asked.count("b-today") == 2
