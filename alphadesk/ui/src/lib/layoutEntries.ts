@@ -144,3 +144,25 @@ export function serializeLayout(
   }
   return parts.join(",")
 }
+
+/** A TILE TAKEN BACK OFF A PAGE'S DEFAULT BOARD (2026-10-27, the owner:
+ * "remove Session high from markets"). While it was a default, every saved
+ * board that opened gained it and wrote it back to the browser's store, so
+ * turning the default off alone would have left it on those boards. A layout
+ * ARRANGED BEFORE `before` that names the tile has it dropped; one arranged
+ * later — the reader adding it back in the editor — keeps it. Per page. */
+export const WITHDRAWN_DEFAULTS: Record<string, { id: string; before: string }[]> = {
+  markets: [{ id: "session-high", before: "2026-10-27T19:10:00Z" }],
+}
+
+/** `raw` without the tiles `page` withdrew from its default since the layout
+ * was arranged at `at` (an ISO instant; empty means unknown, which predates
+ * everything). Pure. */
+export function withdrawDefaults(page: string, raw: string, at: string): string {
+  const gone = (WITHDRAWN_DEFAULTS[page] || []).filter(w => !at || at < w.before).map(w => w.id)
+  if (!raw || !gone.length) return raw
+  return raw.split(",").filter(part => {
+    const id = part.replace(/^-/, "").split(/[:@~]/)[0]
+    return !gone.includes(id)
+  }).join(",")
+}
