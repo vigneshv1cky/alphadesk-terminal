@@ -11,6 +11,8 @@ flag cuts depends on the case, and that is left to the reader.
 
 from __future__ import annotations
 
+import re
+
 _OFFERING = ("424B1", "424B4", "424B5", "S-1", "F-1")   # not 424B2/3 (structured notes) or shelf S-3/F-3
 _STAKE = ("SCHEDULE 13D", "SC 13D", "SCHEDULE 13G", "SC 13G", "SC TO")
 #: A story naming this many tickers or more is a list ("12 Industrials Stocks
@@ -110,3 +112,430 @@ def scan_news(articles: list[dict], kinds: set[str] | None = None, min_stories: 
                                 "with_other_tickers": len(s.get("tickers") or []) - 1} for s in stories[:3]]})
     out.sort(key=lambda r: (r["stories"], r["newest"][0]["published_at"] or ""), reverse=True)
     return out
+
+
+# ── THE EVIDENCE LADDER (2026-10-27) ─────────────────────────────────────
+#
+# "How to explain every gainer and loser" (the owner). The answer here is
+# never an explanation: it is every public record that bears on the move,
+# each marked with the check that found it, or a plain statement of every
+# check that ran and came back empty and every one that could not be read.
+# The reader's agent draws the conclusion (invariant 1). Measured the day it
+# was asked: of the day's top 15 gainers and top 15 losers, eleven had no
+# story of their own, no filing and no list mention, and seven more were
+# explained only inside a round-up's body — Boeing's 737 schedule and the
+# refiners' fuel futures among them.
+#
+# The rungs, in roughly the order of how directly a record speaks for the
+# company. ORDER IS NOT WEIGHT: nothing here scores a record or says which
+# one moved the price.
+
+RUNGS: tuple[str, ...] = ("company_word", "scheduled_report", "corporate_action", "third_party",
+                          "roundup_passages", "group_move", "market_structure")
+
+#: What no source in the catalogue covers, said rather than invented. A
+#: biotech's FDA decision date or trial readout is the commonest reason a
+#: small one moves on no filing and no story; no connected vendor carries it.
+NOT_COVERED: tuple[str, ...] = (
+    "FDA decision dates (PDUFA) and advisory-committee meetings: no source in the catalogue",
+    "clinical-trial readout dates and registry changes: no source in the catalogue",
+    "commodity futures and their moves: no source in the catalogue; a round-up passage is the only record",
+    "social-media and forum attention: deliberately not read (removed 2026-09-23)",
+)
+
+#: The forms that register or list a security — a new listing, a spin-off's
+#: Form 10, an IPO's final prospectus. Within NEW_LISTING_DAYS of the session
+#: they mean the change may be measured against a base that is not a prior
+#: session's close of the same security.
+LISTING_FORMS: tuple[str, ...] = ("8-A12B", "8-A12G", "10-12B", "10-12B/A", "10-12G", "S-1", "F-1",
+                                  "424B4", "S-4", "F-4", "25-NSE")
+NEW_LISTING_DAYS = 30
+#: Prior daily bars needed before a percentage change is a change from the
+#: same security's own previous close.
+MIN_PRIOR_SESSIONS = 1
+
+_TENDER = ("SC TO", "SC 14D9")
+_SUFFIXES = {"inc", "incorporated", "corp", "corporation", "company", "co", "ltd", "limited", "plc", "holdings",
+             "holding", "group", "common", "stock", "class", "a", "b", "c", "ordinary", "shares", "share", "the",
+             "nv", "sa", "ag", "se", "lp", "llc", "trust", "ads", "adr", "depositary", "units", "unit"}
+#: First words too common to stand alone for a company in running text.
+_GENERIC = {"national", "american", "united", "general", "first", "global", "international", "applied",
+            "critical", "new", "great", "western", "eastern", "southern", "northern", "pacific", "atlantic",
+            "energy", "digital", "advanced", "real", "health", "capital", "financial", "home", "better", "clear",
+            "usa", "us", "mid", "midcap", "royal", "standard", "central", "north", "south", "east", "west",
+            "world", "universal", "premier", "power", "data", "bio", "medical", "life", "smart", "big", "blue"}
+
+
+def company_short_name(name: str | None) -> str | None:
+    """The words a story uses for the company: "Boeing Company" -> "Boeing",
+    "Par Pacific Holdings, Inc. Common Stock" -> "Par Pacific". The first
+    word alone when it is distinctive; two words when it is short or common
+    ("National Vision", "HF Sinclair"). None when nothing distinctive is left.
+    A heuristic for FINDING sentences, never shown as a fact. Pure."""
+    words = [w for w in re.split(r"[\s,]+", (name or "").strip()) if w]
+    kept: list[str] = []
+    for w in words:
+        bare = re.sub(r"[^A-Za-z0-9&'-]", "", w)
+        if bare.lower().strip(".") in _SUFFIXES:
+            break
+        if bare:
+            kept.append(bare)
+    if not kept:
+        return None
+    first = kept[0]
+    if (len(first) < 4 or first.lower() in _GENERIC) and len(kept) > 1:
+        return f"{first} {kept[1]}"
+    return first if len(first) >= 3 else None
+
+
+def _ticker_patterns(symbol: str) -> list[re.Pattern]:
+    s = re.escape(symbol.upper())
+    pats = [re.compile(rf"\(\s*(?:(?:NYSE|NASDAQ|Nasdaq|NYSE American|AMEX|OTC|CBOE)\s*:\s*)?{s}\s*\)"),
+            re.compile(rf"\b(?:NYSE|NASDAQ|Nasdaq|NYSE American|AMEX|OTC)\s*:\s*{s}\b"),
+            re.compile(rf"\${s}\b")]
+    # A bare capitalised ticker only from three letters: "BA" or "DK" in
+    # running text is too often something else.
+    if len(symbol) >= 3:
+        pats.append(re.compile(rf"(?<![A-Za-z$]){s}(?![A-Za-z])"))
+    return pats
+
+
+def names_company(text: str | None, symbol: str, short_name: str | None) -> bool:
+    """Does `text` name the company, by its ticker in a ticker's usual dress
+    or by its short name as a whole word? Pure."""
+    if not text:
+        return False
+    if any(p.search(text) for p in _ticker_patterns(symbol)):
+        return True
+    return bool(short_name) and re.search(rf"(?<![A-Za-z]){re.escape(short_name)}(?![A-Za-z])", text, re.I) is not None
+
+
+def plain_text(body: str | None) -> str:
+    """A stored body as running text: tags dropped, entities decoded. Pure."""
+    from html import unescape
+    text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", body or "", flags=re.S | re.I)
+    text = re.sub(r"<br\s*/?>|</p>|</li>|</h\d>", ". ", text, flags=re.I)
+    text = unescape(re.sub(r"<[^>]+>", " ", text))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+#: A passage is quoted whole up to this length; a longer sentence is cut to
+#: this many characters around the match, with an ellipsis marking each cut.
+PASSAGE_MAX = 420
+
+
+#: Words a full stop follows without ending the sentence: "Valero Energy
+#: Corp. (NYSE:VLO) dropped 7%" is one sentence, and cutting it after "Corp"
+#: quoted a company name with nothing it did (2026-10-27).
+_ABBREV = ("Inc", "Corp", "Co", "Ltd", "Cos", "Bros", "Mr", "Mrs", "Ms", "Dr", "St", "Jr", "Sr", "vs", "No",
+           "U.S", "U.K", "Jan", "Feb", "Mar", "Apr", "Jun", "Jul", "Aug", "Sep", "Sept", "Oct", "Nov", "Dec",
+           "approx", "est", "Hldgs", "Intl", "N.V", "S.A", "L.P", "plc")
+_SPLIT = re.compile(
+    "".join(rf"(?<!\b{re.escape(a)}\.)" for a in _ABBREV) + r"(?<=[.!?])\s+(?=[\"“(A-Z0-9$])"
+    r"|\s*\n+\s*|\s+[•·]\s+|\.\s*\.\s+")
+#: A "sentence" naming this many ticker-like capitalised words is a table row
+#: (an options-activity grid), not prose about the company.
+_TABLE_TOKENS = 10
+
+
+def passages(text: str, symbol: str, short_name: str | None, limit: int = 2) -> list[str]:
+    """The sentences of `text` that name the company, VERBATIM, in order,
+    at most `limit`. A list item is a sentence here, so a movers round-up's
+    "Boeing Co (NYSE:BA) shares fell 11% after …" is one passage. A line
+    break ends a sentence too — headline, summary and body are kept as
+    separate lines — and a table row is skipped. Pure."""
+    out: list[str] = []
+    for sentence in _SPLIT.split(text):
+        sentence = sentence.strip(" .")
+        if len(sentence) < 12 or not names_company(sentence, symbol, short_name):
+            continue
+        if len(re.findall(r"\b[A-Z]{2,5}\b", sentence)) >= _TABLE_TOKENS and len(sentence) > PASSAGE_MAX:
+            continue
+        if len(sentence) > PASSAGE_MAX:
+            at = next((m.start() for p in _ticker_patterns(symbol) for m in [p.search(sentence)] if m), None)
+            if at is None and short_name:
+                m = re.search(re.escape(short_name), sentence, re.I)
+                at = m.start() if m else 0
+            lo = max(0, (at or 0) - PASSAGE_MAX // 3)
+            cut = sentence[lo:lo + PASSAGE_MAX]
+            sentence = ("…" if lo else "") + cut + ("…" if lo + PASSAGE_MAX < len(sentence) else "")
+        if sentence not in out:
+            out.append(sentence)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _story_ref(a: dict) -> dict:
+    return {"article_id": a.get("article_id"), "title": a.get("title"), "published_at": a.get("published_at"),
+            "kind": a.get("kind"), "source": a.get("source")}
+
+
+def sort_stories(symbol: str, short_name: str | None, articles: list[dict]) -> dict[str, list[dict]]:
+    """A name's tagged stories split by what they are, without reading them:
+    a wire release whose headline names the company is its own word; an
+    analyst note is a third party; a story of eight tickers or more is a list;
+    any other story whose headline names the company is a story of its own;
+    the rest (a wire release about someone else, a market wrap tagged with
+    it) can only bear on the move through a sentence inside them, so they go
+    to the round-up check with the lists. Pure."""
+    out: dict[str, list[dict]] = {"releases": [], "analyst_notes": [], "own": [], "read_for_passages": []}
+    for a in articles:
+        many = len(a.get("tickers") or []) >= LIST_STORY_TICKERS
+        named = names_company(a.get("title"), symbol, short_name)
+        if many:
+            out["read_for_passages"].append(a)
+        elif a.get("kind") == "release" and named:
+            out["releases"].append(a)
+        elif a.get("kind") == "rating":
+            out["analyst_notes"].append(a)
+        elif named:
+            out["own"].append(a)
+        else:
+            out["read_for_passages"].append(a)
+    return out
+
+
+#: The calendar's after-the-close spellings; a report then bears on the next
+#: session.
+_AFTER_CLOSE = ("amc", "after", "after close", "after market close", "post-market")
+
+
+def report_in_window(row: dict, symbol: str, day) -> bool:
+    """Is this calendar row a report the session's move can follow? Either
+    EDGAR's clock for its results filing falls between the previous close and
+    the session's close, or the row is dated the session (and not after its
+    close) or the previous session after its close. Pure."""
+    from datetime import datetime
+    from alphadesk.desk import sessions as cal
+    if str(row.get("symbol") or "").upper() != symbol.upper():
+        return False
+    prev = cal.previous_session(day)
+    released = row.get("released_at")
+    if released:
+        try:
+            at = datetime.fromisoformat(str(released))
+            at = at if at.tzinfo else at.replace(tzinfo=cal.NY)
+            return datetime.combine(prev, cal.CLOSE, tzinfo=cal.NY) < at <= datetime.combine(day, cal.CLOSE, tzinfo=cal.NY)
+        except ValueError:
+            pass
+    rep = str(row.get("report_date") or "")[:10]
+    after = str(row.get("session") or "").strip().lower() in _AFTER_CLOSE
+    return (rep == day.isoformat() and not after) or (rep == prev.isoformat() and after)
+
+
+def report_ref(row: dict) -> dict:
+    return {k: row.get(k) for k in ("report_date", "session", "released_at", "sources", "fiscal_period",
+                                    "eps_actual", "eps_estimate", "form") if row.get(k) is not None}
+
+
+def action_counts(event: dict, span: tuple[str, str]) -> bool:
+    """A corporate action dated within the span. An ordinary cash dividend is
+    left out — it cannot move a price this far — and a special one kept. Pure."""
+    if not any(span[0] <= d <= span[1] for d in event.get("dates") or []):
+        return False
+    if event.get("type") == "cash_dividends":
+        return bool((event.get("detail") or {}).get("special"))
+    return True
+
+
+def action_ref(event: dict) -> dict:
+    return {"type": event.get("type"), "dates": event.get("dates"), "symbols": event.get("symbols"),
+            "detail": event.get("detail")}
+
+
+def _filing_ref(f: dict) -> dict:
+    return {"check": "sec_filing", "form": f.get("form"), "filed_at": f.get("filed_at"),
+            "accession": f.get("accession"), "role": f.get("role"), "url": f.get("url"),
+            "items": f.get("items") or []}
+
+
+def _rung(status: str, records: list | None = None, **extra) -> dict:
+    return {"status": status, "records": records or [], **extra}
+
+
+def ladder(symbol: str, name: str | None, change_pct: float | None, window: dict, *,
+           stories: dict[str, list[dict]] | None, passages_found: list[dict] | None,
+           filings: list[dict] | None, earnings: list[dict] | None, actions: list[dict] | None,
+           listing_filings: list[dict] | None, prior_sessions: int | None, halts: list[dict] | None,
+           group: dict | None, unread: dict[str, str] | None = None) -> dict:
+    """One mover's evidence, rung by rung. Each input is what a check read;
+    None means the check COULD NOT BE READ (its reason in `unread`), an empty
+    list means it ran and found nothing — the two are never confused. Pure.
+
+    Every rung answers {status: "records" | "empty" | "unread", records}.
+    `checks_with_records`, `checks_empty` and `checks_unread` summarise them,
+    and `nothing_found` is true only when no rung holds a record."""
+    unread = dict(unread or {})
+    rungs: dict[str, dict] = {}
+
+    def status(*inputs) -> str | None:
+        return "unread" if any(i is None for i in inputs) else None
+
+    # 1. The company's own word: its filings and its own wire releases.
+    word: list[dict] = []
+    for f in filings or []:
+        word.append(_filing_ref(f))
+    for a in (stories or {}).get("releases") or []:
+        word.append({"check": "wire_release", **_story_ref(a)})
+    rungs["company_word"] = _rung("records" if word else (status(filings, stories) or "empty"), word)
+
+    # 2. A scheduled report: the calendar's row, and a results 8-K (Item 2.02).
+    sched = [{"check": "earnings_calendar", **e} for e in earnings or []]
+    for f in filings or []:
+        if any(i.get("number") == "2.02" for i in f.get("items") or []):
+            sched.append({"check": "results_filing", "form": f.get("form"), "filed_at": f.get("filed_at"),
+                          "accession": f.get("accession"), "item": "2.02"})
+    rungs["scheduled_report"] = _rung("records" if sched else (status(earnings) or "empty"), sched)
+
+    # 3. Corporate actions, and whether the change has a prior close at all.
+    corp = [{"check": "corporate_actions_feed", **a} for a in actions or []]
+    corp += [{"check": "listing_filing", "form": f.get("form"), "filed_at": f.get("filed_at"),
+              "accession": f.get("accession"), "url": f.get("url")} for f in listing_filings or []]
+    base = None
+    if prior_sessions is not None:
+        base = {"prior_sessions_in_daily_bars": prior_sessions,
+                "change_has_a_prior_close": prior_sessions >= MIN_PRIOR_SESSIONS}
+        if prior_sessions < MIN_PRIOR_SESSIONS:
+            corp.append({"check": "daily_bars", "prior_sessions_in_daily_bars": prior_sessions,
+                         "note": "the reader's daily bars hold no session before this one, so the percentage "
+                                 "is not a change from this security's own previous close"})
+    rungs["corporate_action"] = _rung("records" if corp else (status(actions, listing_filings, prior_sessions) or "empty"),
+                                      corp, change_base=base)
+
+    # 4. Third parties on the company: analyst notes and stories of its own.
+    third = [{"check": "analyst_note", **_story_ref(a)} for a in (stories or {}).get("analyst_notes") or []]
+    third += [{"check": "story_of_its_own", **_story_ref(a)} for a in (stories or {}).get("own") or []]
+    rungs["third_party"] = _rung("records" if third else (status(stories) or "empty"), third[:6],
+                                 total=len(third))
+
+    # 5. Sentences inside round-ups, lists and wraps that name the company.
+    rungs["roundup_passages"] = _rung("records" if passages_found else (status(passages_found, stories) or "empty"),
+                                      (passages_found or [])[:4], total=len(passages_found or []))
+
+    # 6. Moving with a group: other movers in its SEC industry, its basket.
+    g = group or {}
+    grp_records = [r for r in (g.get("sec_industry"), g.get("vendor_industry"), g.get("basket"))
+                   if r and r.get("moved_together")]
+    grp_records += [{**p, "found_by": p.get("check"), "check": "group_member_passage"}
+                    for p in g.get("member_passages") or []]
+    rungs["group_move"] = _rung("records" if grp_records else (status(group) or "empty"), grp_records,
+                                sector_fund=g.get("sector_fund"))
+
+    # 7. Market structure: a halt during the session.
+    rungs["market_structure"] = _rung("records" if halts else (status(halts) or "empty"),
+                                      [{"check": "trading_halt", **h} for h in halts or []])
+
+    for k, r in rungs.items():
+        if r["status"] == "unread" and k not in unread:
+            unread[k] = "a source this check reads could not be read"
+    with_records = [k for k in RUNGS if rungs[k]["status"] == "records"]
+    return {
+        "symbol": symbol, "name": name, "change_pct": change_pct, "window": window,
+        "rungs": rungs,
+        "checks_with_records": with_records,
+        "checks_empty": [k for k in RUNGS if rungs[k]["status"] == "empty"],
+        "checks_unread": {k: unread[k] for k in RUNGS if rungs[k]["status"] == "unread"},
+        "nothing_found": not with_records,
+    }
+
+
+_TICKER_DRESS = re.compile(r"\(\s*(?:(?:NYSE|NASDAQ|Nasdaq|NYSE American|AMEX|OTC|CBOE)\s*:\s*)?([A-Z]{1,5}(?:\.[A-Z])?)\s*\)"
+                           r"|\b(?:NYSE|NASDAQ|Nasdaq|NYSE American|AMEX|OTC)\s*:\s*([A-Z]{1,5}(?:\.[A-Z])?)\b")
+
+
+#: Other rows of the list that must share an industry before it holds a
+#: record — the same two the basket rule asks for.
+GROUP_PEERS = 2
+
+
+def tickers_named(sentence: str) -> set[str]:
+    """Tickers a sentence names in a ticker's dress — "(NYSE:VLO)",
+    "Nasdaq: AEHR". Pure."""
+    return {a or b for a, b in _TICKER_DRESS.findall(sentence or "")}
+
+
+def group_records(rows: list[dict], industry_of: dict[str, dict | None], basket_of: dict[str, dict],
+                  basket_moves: dict[str, float | None], passages_of: dict[str, list[dict]],
+                  sector_of: dict[str, dict | None], vendor_industry_of: dict[str, str | None] | None = None
+                  ) -> dict[str, dict]:
+    """Each mover's group context. Pure.
+
+    SEC INDUSTRY: the registrant's Standard Industrial Classification as the
+    SEC records it. VENDOR INDUSTRY: the industry the reader's vendor files
+    the company under — finer where the SEC's code is stale (on 2026-10-27
+    the SEC filed HF Sinclair under pipelines and Par Pacific under crude
+    production, while the vendor put all seven falling refiners under one
+    industry). For each basis, the other rows of THIS list sharing it, with
+    their moves; `moved_together` when at least one does, which on a
+    one-direction list means they moved the same way.
+    BASKET: the curated basket the symbol belongs to (each ticker has one
+    home), every member's move, and how many moved the same way as this one;
+    `moved_together` when at least two other members did.
+    MEMBER PASSAGES: a round-up sentence found for another row sharing either
+    industry, attached with `via` naming that row — ONLY when the sentence
+    names at least one company besides that row by ticker. A sentence about
+    one company's own news says nothing about its neighbours; a sentence
+    naming several is about the group (the refiners' wrap named two of seven).
+    SECTOR FUND: the vendor's sector and that sector fund's move, as context;
+    it never makes the rung hold a record."""
+    vendor_industry_of = vendor_industry_of or {}
+    peers_by: dict[tuple[str, str], list[dict]] = {}
+    for r in rows:
+        ind = industry_of.get(r["symbol"])
+        if ind and ind.get("sic"):
+            peers_by.setdefault(("sic", str(ind["sic"])), []).append(r)
+        vi = vendor_industry_of.get(r["symbol"])
+        if vi:
+            peers_by.setdefault(("vendor", str(vi).strip().lower()), []).append(r)
+    out: dict[str, dict] = {}
+    for r in rows:
+        sym, chg = r["symbol"], r.get("change_pct")
+        g: dict = {}
+        neighbours: dict[str, dict] = {}
+        ind = industry_of.get(sym)
+        if ind and ind.get("sic"):
+            peers = [p for p in peers_by.get(("sic", str(ind["sic"])), []) if p["symbol"] != sym]
+            g["sec_industry"] = {"check": "sec_industry", "sic": ind.get("sic"), "industry": ind.get("industry"),
+                                 "others_in_this_list": [{"symbol": p["symbol"], "change_pct": p.get("change_pct")}
+                                                         for p in peers],
+                                 "moved_together": len(peers) >= GROUP_PEERS}
+            neighbours.update({p["symbol"]: p for p in peers})
+        vi = vendor_industry_of.get(sym)
+        if vi:
+            peers = [p for p in peers_by.get(("vendor", str(vi).strip().lower()), []) if p["symbol"] != sym]
+            g["vendor_industry"] = {"check": "vendor_industry", "industry": vi,
+                                    "others_in_this_list": [{"symbol": p["symbol"], "change_pct": p.get("change_pct")}
+                                                            for p in peers],
+                                    "moved_together": len(peers) >= GROUP_PEERS}
+            neighbours.update({p["symbol"]: p for p in peers})
+        shared: list[dict] = []
+        for p in neighbours:
+            for ps in passages_of.get(p) or []:
+                if tickers_named(ps.get("passage") or "") - {p}:
+                    shared.append({**ps, "via": p})
+        if shared:
+            g["member_passages"] = shared[:4]
+        basket = basket_of.get(sym)
+        if basket:
+            members = [{"symbol": m, "change_pct": basket_moves.get(m)} for m in basket["symbols"] if m != sym]
+            same = [m for m in members if m["change_pct"] is not None and chg is not None
+                    and (m["change_pct"] > 0) == (chg > 0) and m["change_pct"] != 0]
+            measured = [m for m in members if m["change_pct"] is not None]
+            g["basket"] = {"check": "basket", "id": basket.get("id"), "label": basket.get("label"),
+                           "members": members, "members_measured": len(measured),
+                           "same_direction": len(same), "moved_together": len(same) >= 2}
+        if sym in sector_of:
+            g["sector_fund"] = sector_of[sym]
+        out[sym] = g
+    return out
+
+
+def coverage(ladders: list[dict]) -> dict:
+    """Counts across rows: how many have records at each rung, how many end
+    with nothing, how many had a check unread. Counts only — never a share
+    of the move a rung accounts for."""
+    by = {k: sum(1 for x in ladders if k in x["checks_with_records"]) for k in RUNGS}
+    return {"rows": len(ladders), "with_records_by_check": by,
+            "nothing_found": [x["symbol"] for x in ladders if x["nothing_found"]],
+            "with_an_unread_check": [x["symbol"] for x in ladders if x["checks_unread"]]}

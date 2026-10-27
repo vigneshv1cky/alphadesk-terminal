@@ -294,8 +294,59 @@ COMPANY_FORMS: tuple[str, ...] = (
 )
 
 
-def filings_since(symbols: list[str], since: str, feed_rows: list[dict] | None = None
-                  ) -> tuple[dict[str, list[dict]], dict[str, str]]:
+#: The SEC's own titles for each 8-K item (Form 8-K, General Instructions B
+#: and the item headings). The company-list rows carry only the codes
+#: ("2.02,9.01"); these are the words the feed would print beside them, so a
+#: filing read either way names its items the same — never our paraphrase.
+ITEM_LABELS: dict[str, str] = {
+    "1.01": "Entry into a Material Definitive Agreement",
+    "1.02": "Termination of a Material Definitive Agreement",
+    "1.03": "Bankruptcy or Receivership",
+    "1.04": "Mine Safety - Reporting of Shutdowns and Patterns of Violations",
+    "1.05": "Material Cybersecurity Incidents",
+    "2.01": "Completion of Acquisition or Disposition of Assets",
+    "2.02": "Results of Operations and Financial Condition",
+    "2.03": "Creation of a Direct Financial Obligation or an Obligation under an Off-Balance Sheet Arrangement of a Registrant",
+    "2.04": "Triggering Events That Accelerate or Increase a Direct Financial Obligation or an Obligation under an Off-Balance Sheet Arrangement",
+    "2.05": "Costs Associated with Exit or Disposal Activities",
+    "2.06": "Material Impairments",
+    "3.01": "Notice of Delisting or Failure to Satisfy a Continued Listing Rule or Standard; Transfer of Listing",
+    "3.02": "Unregistered Sales of Equity Securities",
+    "3.03": "Material Modification to Rights of Security Holders",
+    "4.01": "Changes in Registrant's Certifying Accountant",
+    "4.02": "Non-Reliance on Previously Issued Financial Statements or a Related Audit Report or Completed Interim Review",
+    "5.01": "Changes in Control of Registrant",
+    "5.02": "Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers",
+    "5.03": "Amendments to Articles of Incorporation or Bylaws; Change in Fiscal Year",
+    "5.04": "Temporary Suspension of Trading Under Registrant's Employee Benefit Plans",
+    "5.05": "Amendment to Registrant's Code of Ethics, or Waiver of a Provision of the Code of Ethics",
+    "5.06": "Change in Shell Company Status",
+    "5.07": "Submission of Matters to a Vote of Security Holders",
+    "5.08": "Shareholder Director Nominations",
+    "6.01": "ABS Informational and Computational Material",
+    "6.02": "Change of Servicer or Trustee",
+    "6.03": "Change in Credit Enhancement or Other External Support",
+    "6.04": "Failure to Make a Required Distribution",
+    "6.05": "Securities Act Updating Disclosure",
+    "7.01": "Regulation FD Disclosure",
+    "8.01": "Other Events",
+    "9.01": "Financial Statements and Exhibits",
+}
+
+
+def items_from_codes(codes: str | None) -> list[dict]:
+    """"2.02,9.01" as the feed's own item shape, labelled with the SEC's
+    titles. An unknown code keeps its number and no label. Pure."""
+    out: list[dict] = []
+    for c in (codes or "").split(","):
+        c = c.strip()
+        if c and c not in {o["number"] for o in out}:
+            out.append({"number": c, "label": ITEM_LABELS.get(c)})
+    return out
+
+
+def filings_since(symbols: list[str], since: str, feed_rows: list[dict] | None = None,
+                  until: str | None = None) -> tuple[dict[str, list[dict]], dict[str, str]]:
     """Each symbol's catalyst filings accepted at or after `since` (ISO, New
     York), newest first, and the symbols whose list could not be read.
 
@@ -310,9 +361,13 @@ def filings_since(symbols: list[str], since: str, feed_rows: list[dict] | None =
     because they carry the subject/filer role and an exact clock."""
     from datetime import datetime
     cut = datetime.fromisoformat(since)
+    end = datetime.fromisoformat(until) if until else None
     def after(stamp: str | None) -> bool:
+        # `until` closes the window for a past session: a filing after that
+        # day's close bears on the next session, not this one.
         try:
-            return bool(stamp) and datetime.fromisoformat(stamp) >= cut
+            at = datetime.fromisoformat(stamp) if stamp else None
+            return at is not None and at >= cut and (end is None or at <= end)
         except ValueError:
             return False
     out: dict[str, list[dict]] = {}
@@ -339,7 +394,8 @@ def filings_since(symbols: list[str], since: str, feed_rows: list[dict] | None =
             if after(f.get("accepted_at")) and f.get("accession") not in rows:
                 rows[f["accession"]] = {"form": f.get("form"), "filed_at": f.get("accepted_at"),
                                         "role": None, "accession": f.get("accession"),
-                                        "url": f.get("url"), "symbols": [key]}
+                                        "url": f.get("url"), "symbols": [key],
+                                        "items": items_from_codes(f.get("items"))}
         out[key] = sorted(rows.values(), key=lambda r: str(r.get("filed_at")), reverse=True)
     return out, unavailable
 
@@ -349,5 +405,6 @@ def reset_cache() -> None:
         _cache.clear()
 
 
-__all__ = ["COMPANY_FORMS", "DEFAULT_GROUPS", "GROUPS", "filings_since", "parse_entries", "recent",
+__all__ = ["COMPANY_FORMS", "DEFAULT_GROUPS", "GROUPS", "ITEM_LABELS", "filings_since", "items_from_codes",
+           "parse_entries", "recent",
            "reset_cache", "tag_symbols"]
