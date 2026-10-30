@@ -2697,30 +2697,86 @@ def data_sources() -> dict:
 #: or more `what_moved` calls in the same second, each reading 45 days of
 #: bars, news and filings; on a 2-CPU server every call then took 40-58 s and
 #: the reader's own pages took 9-13 s behind them (802 of 2,000 requests over
-#: 5 s in one hour). Past this many at once a heavy call WAITS its turn — it is
-#: never refused — and everything else (pages, light tools) is untouched.
+#: 5 s in one hour). Past this many at once a heavy call waits its turn, and
+#: everything else (pages, light tools) is untouched.
 HEAVY_TOOLS = frozenset({
     "what_moved", "related_assets", "news_search", "movers_in_context", "candidates",
     "earnings_calendar", "entry_facts", "options_flow", "priced_in", "analyst_view",
 })
 HEAVY_AT_ONCE = max(1, int(os.environ.get("ALPHADESK_AGENT_HEAVY_CONCURRENCY", "2") or 2))
 _heavy_slots = threading.BoundedSemaphore(HEAVY_AT_ONCE)
+#: HOW LONG A HEAVY CALL WAITS FOR ITS TURN BEFORE IT IS TOLD THE SERVER IS
+#: BUSY (2026-10-30). The wait used to be unbounded and was spent INSIDE a
+#: worker thread — the same forty the web pages run on. An agent's burst of
+#: 94 calls (07:58-09:08 UTC) queued for up to 319 s each, held those workers,
+#: and the front page took 23 s while data requests got no answer in 60. The
+#: wait is now spent on the event loop, holding no worker, and is bounded.
+HEAVY_WAIT_S = max(1.0, float(os.environ.get("ALPHADESK_AGENT_HEAVY_WAIT_S", "30") or 30))
 
 
-def _capped(fn):
-    """`fn` behind the heavy-tool limit, for the worker thread it runs on. The
-    wait is logged when it passes a second, so a queue is visible."""
+class HeavyBusy(RuntimeError):
+    """A heavy tool call found every slot taken for HEAVY_WAIT_S."""
+
+
+async def _heavy_turn(name: str) -> None:
+    """Take a heavy slot, waiting ON THE EVENT LOOP — a waiting call holds no
+    worker thread, so a queue of them cannot starve the pages — for at most
+    HEAVY_WAIT_S, then raise HeavyBusy. The caller releases the slot."""
+    import time
+
+    import anyio
+    asked = time.perf_counter()
+    while not _heavy_slots.acquire(blocking=False):
+        if time.perf_counter() - asked >= HEAVY_WAIT_S:
+            log.info("agent tool %s found no heavy slot in %.0fs (%d at once); answered busy",
+                     name, HEAVY_WAIT_S, HEAVY_AT_ONCE)
+            raise HeavyBusy(
+                f"AlphaDesk is busy: {HEAVY_AT_ONCE} heavy tool calls are already running and this "
+                f"{name} call waited {HEAVY_WAIT_S:.0f}s for a turn. Nothing was read. Try again in a "
+                "minute, and send heavy calls one or two at a time rather than in a burst.")
+        await anyio.sleep(0.05)
+    waited = time.perf_counter() - asked
+    if waited >= 1.0:
+        log.info("agent tool %s waited %.1fs for a heavy slot (%d at once)", name, waited, HEAVY_AT_ONCE)
+
+
+def _threaded(fn):
+    """`fn` as an async tool: a heavy one first takes a heavy slot on the
+    event loop (_heavy_turn), then the call runs on a worker thread, and every
+    call is filed with how it ended."""
     import functools
     import time
 
+    import anyio
+
+    from alphadesk import agent_log
+
+    heavy = fn.__name__ in HEAVY_TOOLS
+
     @functools.wraps(fn)
-    def run(*args, **kwargs):
-        asked = time.perf_counter()
-        with _heavy_slots:
-            waited = time.perf_counter() - asked
-            if waited >= 1.0:
-                log.info("agent tool %s waited %.1fs for a heavy slot (%d at once)", fn.__name__, waited, HEAVY_AT_ONCE)
-            return fn(*args, **kwargs)
+    async def run(**kwargs):
+        started, result, failed = time.perf_counter(), None, None
+        try:
+            if heavy:
+                await _heavy_turn(fn.__name__)
+            try:
+                result = await anyio.to_thread.run_sync(functools.partial(fn, **kwargs))
+            finally:
+                if heavy:
+                    _heavy_slots.release()
+            return result
+        except Exception as exc:
+            failed = exc
+            raise
+        finally:
+            # Every call is filed with how it ended (alphadesk/agent_log.py),
+            # off the event loop and never allowed to fail the call.
+            ms = (time.perf_counter() - started) * 1000
+            try:
+                await anyio.to_thread.run_sync(
+                    functools.partial(agent_log.record, fn.__name__, kwargs, ms, result, failed))
+            except Exception:
+                pass
     return run
 
 
@@ -2733,37 +2789,6 @@ def _run_tools_in_threads() -> int:
     A worker thread keeps the loop free; anyio copies the request's context
     across, so the reader identity the token gate set still applies. Idempotent:
     a tool already async is left alone. Returns how many were moved."""
-    import functools
-
-    import anyio
-
-    import time
-
-    from alphadesk import agent_log
-
-    def threaded(fn):
-        body = _capped(fn) if fn.__name__ in HEAVY_TOOLS else fn
-
-        @functools.wraps(fn)
-        async def run(**kwargs):
-            started, result, failed = time.perf_counter(), None, None
-            try:
-                result = await anyio.to_thread.run_sync(functools.partial(body, **kwargs))
-                return result
-            except Exception as exc:
-                failed = exc
-                raise
-            finally:
-                # Every call is filed with how it ended (alphadesk/agent_log.py),
-                # off the event loop and never allowed to fail the call.
-                ms = (time.perf_counter() - started) * 1000
-                try:
-                    await anyio.to_thread.run_sync(
-                        functools.partial(agent_log.record, fn.__name__, kwargs, ms, result, failed))
-                except Exception:
-                    pass
-        return run
-
     moved = 0
     try:
         tools = list(mcp._tool_manager._tools.values())
@@ -2772,7 +2797,7 @@ def _run_tools_in_threads() -> int:
         return 0
     for tool in tools:
         if not tool.is_async:
-            tool.fn = threaded(tool.fn)
+            tool.fn = _threaded(tool.fn)
             tool.is_async = True
             moved += 1
     return moved
