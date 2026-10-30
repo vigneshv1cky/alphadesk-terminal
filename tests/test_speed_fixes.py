@@ -203,26 +203,27 @@ def test_a_postgres_url_without_a_user_connects_as_the_os_user(monkeypatch):
     from alphadesk.ledger import db
     seen = {}
     monkeypatch.setattr(pg8000.dbapi, "connect", lambda **kw: seen.update(kw) or object())
-    monkeypatch.setattr(db, "_PgConn", lambda raw: raw)
     monkeypatch.setenv("ALPHADESK_DATABASE_URL", "postgresql://localhost:5432/alphadesk")
     monkeypatch.delenv("PGUSER", raising=False)
     monkeypatch.setenv("USER", "someone")
-    db._pg_connect()
+    db._raw_connect()
     assert seen["user"] == "someone" and seen["database"] == "alphadesk" and seen["port"] == 5432
     monkeypatch.setenv("PGUSER", "pguser")
-    db._pg_connect()
+    db._raw_connect()
     assert seen["user"] == "pguser"
     monkeypatch.setenv("ALPHADESK_DATABASE_URL", "postgresql://named@localhost/alphadesk")
-    db._pg_connect()
+    db._raw_connect()
     assert seen["user"] == "named"                                   # a user in the URL always wins
 
 
-def test_heavy_agent_tools_run_a_few_at_a_time(monkeypatch):
-    """A burst of heavy calls waits its turn instead of all running at once
-    (2026-10-06: four what_moved calls in one second slowed every page)."""
+def _heavy_tool(monkeypatch, slots, wait_s, hold_s):
+    """A stand-in `what_moved` behind the real tool wrapper, with `slots` heavy
+    slots and a `wait_s` limit; it records how many run at once."""
     import time
-    from alphadesk import mcp_server
-    monkeypatch.setattr(mcp_server, "_heavy_slots", threading.BoundedSemaphore(2))
+    from alphadesk import agent_log, mcp_server
+    monkeypatch.setattr(mcp_server, "_heavy_slots", threading.BoundedSemaphore(slots))
+    monkeypatch.setattr(mcp_server, "HEAVY_WAIT_S", wait_s)
+    monkeypatch.setattr(agent_log, "record", lambda *a, **k: None)
     running, peak = [0], [0]
     lock = threading.Lock()
 
@@ -230,16 +231,110 @@ def test_heavy_agent_tools_run_a_few_at_a_time(monkeypatch):
         with lock:
             running[0] += 1
             peak[0] = max(peak[0], running[0])
-        time.sleep(0.15)
+        time.sleep(hold_s)
         with lock:
             running[0] -= 1
         return "ok"
 
-    capped = mcp_server._capped(what_moved)
-    threads = [threading.Thread(target=capped) for _ in range(6)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    assert peak[0] == 2
+    return mcp_server._threaded(what_moved), peak
+
+
+def test_heavy_agent_tools_run_a_few_at_a_time(monkeypatch):
+    """A burst of heavy calls waits its turn instead of all running at once
+    (2026-10-06: four what_moved calls in one second slowed every page)."""
+    import anyio
+    from alphadesk import mcp_server
+    tool, peak = _heavy_tool(monkeypatch, slots=2, wait_s=10, hold_s=0.15)
+    got = []
+
+    async def burst():
+        async with anyio.create_task_group() as tg:
+            for _ in range(6):
+                tg.start_soon(lambda: _append(got, tool))
+    anyio.run(burst)
+    assert got == ["ok"] * 6 and peak[0] == 2
     assert "what_moved" in mcp_server.HEAVY_TOOLS and "quote" not in mcp_server.HEAVY_TOOLS
+
+
+async def _append(out, tool):
+    out.append(await tool())
+
+
+def test_a_queued_heavy_call_holds_no_worker_and_is_answered_busy(monkeypatch):
+    """2026-10-30: an agent's burst queued for up to 319 s each INSIDE the
+    worker threads the pages run on, and the front page took 23 s. A waiting
+    call now holds no worker, and past the limit it is told the server is busy
+    and given its slot back to nobody — nothing was read."""
+    import anyio
+    from alphadesk import mcp_server
+    tool, peak = _heavy_tool(monkeypatch, slots=1, wait_s=0.3, hold_s=0.8)
+    borrowed, outcomes = [], []
+
+    async def call():
+        try:
+            outcomes.append(await tool())
+        except mcp_server.HeavyBusy as exc:
+            outcomes.append(str(exc))
+
+    async def scenario():
+        async with anyio.create_task_group() as tg:
+            for _ in range(4):
+                tg.start_soon(call)
+            await anyio.sleep(0.15)
+            # One call runs on a worker; the three waiting hold none.
+            borrowed.append(anyio.to_thread.current_default_thread_limiter().borrowed_tokens)
+    anyio.run(scenario)
+    assert borrowed == [1]
+    assert outcomes.count("ok") == 1 and peak[0] == 1
+    busy = [o for o in outcomes if o != "ok"]
+    assert len(busy) == 3 and all("busy" in b and "Nothing was read" in b for b in busy)
+    # The slot came back exactly once: the next call takes it at once, and a
+    # busy answer released nothing it never held (a bounded semaphore would
+    # have raised).
+    assert mcp_server._heavy_slots.acquire(blocking=False)
+    mcp_server._heavy_slots.release()
+
+
+def test_database_connections_are_capped_and_always_given_back(monkeypatch):
+    """2026-10-30: nothing bounded how many connections were open, and a burst
+    met Cloud SQL's limit ("remaining connection slots are reserved"). Past the
+    cap a caller waits for one to close; a failed connect, a with-block and a
+    dropped connection all give their place back."""
+    import gc
+    import pytest
+    from alphadesk.ledger import db
+
+    class Raw:
+        closed = 0
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            Raw.closed += 1
+
+    monkeypatch.setattr(db, "_open", threading.BoundedSemaphore(2))
+    monkeypatch.setattr(db, "CONNECT_WAIT_S", 0.2)
+    monkeypatch.setattr(db, "_raw_connect", Raw)
+    a, b = db._pg_connect(), db._pg_connect()
+    with pytest.raises(db.ConnectionsBusy):
+        db._pg_connect()
+    with a:
+        pass                                      # a with-block closes and gives back
+    c = db._pg_connect()
+    del b, c
+    gc.collect()                                  # dropped without a with-block: given back
+    d, e = db._pg_connect(), db._pg_connect()
+    with d, e:
+        pass
+
+    def refused():
+        raise ConnectionError("refused")
+    monkeypatch.setattr(db, "_raw_connect", refused)
+    for _ in range(3):                            # a failed connect never keeps a place
+        with pytest.raises(ConnectionError):
+            db._pg_connect()
+    assert Raw.closed == 5

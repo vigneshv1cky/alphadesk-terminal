@@ -101,8 +101,9 @@ class _Row(dict):
 
 
 class _PgConn:
-    def __init__(self, raw: Any) -> None:
+    def __init__(self, raw: Any, release: Any = None) -> None:
         self._raw = raw
+        self._release = release
 
     def execute(self, sql: str, params: tuple | list = ()) -> _PgCursor:
         cur = self._raw.cursor()
@@ -130,7 +131,25 @@ class _PgConn:
             else:
                 self._raw.rollback()
         finally:
+            self._close()
+
+    def _close(self) -> None:
+        """Close the connection and give its place back, exactly once."""
+        release, self._release = self._release, None
+        try:
             self._raw.close()
+        finally:
+            if release:
+                release()
+
+    def __del__(self) -> None:
+        # A connection dropped without its with-block still gives its place
+        # back, or the cap would shrink by one for the life of the process.
+        if getattr(self, "_release", None):
+            try:
+                self._close()
+            except Exception:
+                pass
 
 
 def _is_schema_error(exc: Exception) -> bool:
@@ -140,7 +159,38 @@ def _is_schema_error(exc: Exception) -> bool:
     return bool(re.search(r"'C': '42(701|P07|703|P01)'", text))
 
 
+#: HOW MANY DATABASE CONNECTIONS THIS PROCESS HOLDS AT ONCE (2026-10-30).
+#: Every store call opens its own connection and most reads take no lock, so
+#: nothing bounded how many were open: an agent's burst of heavy calls, each
+#: fanning out over a few threads, met Cloud SQL's limit — the smallest tier
+#: allows 25, three reserved — and from 09:03 to 09:06 UTC new connections
+#: were refused ("remaining connection slots are reserved") and requests
+#: failed. Past this many a caller WAITS for a connection to close. Ten
+#: leaves room for the old and new copies of the service that overlap during
+#: a deploy (2 x 10 within 22).
+MAX_CONNECTIONS = max(1, int(os.environ.get("ALPHADESK_DB_MAX_CONNECTIONS", "10") or 10))
+#: A caller that waits this long for a connection gets an error rather than
+#: holding its request open indefinitely.
+CONNECT_WAIT_S = 30.0
+_open = threading.BoundedSemaphore(MAX_CONNECTIONS)
+
+
+class ConnectionsBusy(RuntimeError):
+    """Every one of MAX_CONNECTIONS stayed in use for CONNECT_WAIT_S."""
+
+
 def _pg_connect() -> _PgConn:
+    if not _open.acquire(timeout=CONNECT_WAIT_S):
+        raise ConnectionsBusy(f"all {MAX_CONNECTIONS} database connections stayed in use for "
+                              f"{CONNECT_WAIT_S:.0f}s")
+    try:
+        return _PgConn(_raw_connect(), release=_open.release)
+    except BaseException:
+        _open.release()
+        raise
+
+
+def _raw_connect() -> Any:
     import pg8000.dbapi
     u = urlparse(url() or "")
     kwargs: dict[str, Any] = {
@@ -160,7 +210,7 @@ def _pg_connect() -> _PgConn:
     else:
         kwargs["host"] = u.hostname or "localhost"
         kwargs["port"] = u.port or 5432
-    return _PgConn(pg8000.dbapi.connect(**kwargs))
+    return pg8000.dbapi.connect(**kwargs)
 
 
 def _qs(query: str, key: str) -> str | None:
