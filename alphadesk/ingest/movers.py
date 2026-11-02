@@ -484,6 +484,8 @@ def _build(router, key: str, cat: str, top: int, mp: float, ml_floor: tuple[Opti
         tabs = _normalize_tabs(got, cat)
         if got.get("funds") in ("only", "exclude"):
             split_funds(tabs, got["funds"], fund_list(router))
+        if cat in LIVE_CHECKED:
+            _verify_live_extremes(router, tabs)
     # A vendor whose volume is one venue's (Alpaca's crypto: Bitcoin about
     # $1.2M a day there, 2026-09-15) cannot meet a market-wide turnover
     # floor — the default $1M left Crypto movers one row. Its default is
@@ -1235,6 +1237,100 @@ def _verify_extremes(router, rows: list[dict], prev_day: str, day: str,
             r = _possible_event(r, bars.get(r["symbol"]) or [], day)
         out.append(r)
     return out, dropped
+
+
+#: The live categories whose rows are company shares with per-symbol daily
+#: bars to check against.
+LIVE_CHECKED = ("stocks", "etfs")
+#: How far the close a live change was measured from may sit from the
+#: split-adjusted close of the same session before the change is called a
+#: basis error. A real close and its adjusted copy agree to the cent unless
+#: the shares changed in between.
+LIVE_BASE_GAP_PCT = 5.0
+
+
+def _bar_day(b: dict) -> str:
+    ts = b.get("ts")
+    return ts.date().isoformat() if hasattr(ts, "date") else str(ts or "")[:10]
+
+
+def _verify_live_extremes(router, tabs: list[dict]) -> None:
+    """THE LIVE LIST'S CHECK FOR A CLOSE THAT IS NOT THE SAME SHARE'S
+    (2026-11-02), in place.
+
+    Sempreon, renamed from Heritage Distilling, opened on CASK at $17.78
+    against a previous close of $0.60 and sat first among the gainers at
+    +2,861.67% — a reverse split of about one for thirty, measured against
+    the unadjusted close the vendor's live snapshot carries. The past-session
+    list has re-measured moves this large against split-adjusted bars since
+    Tutor Perini's false +406% (_verify_extremes); the live list never did.
+
+    Today's bar is still forming, so this checks the OTHER side of the
+    change: the close it was measured from, backed out of the row's own price
+    and change, against the split-adjusted close of that same session — the
+    session just closed for a print struck after its bell (a row's
+    `extended`, providers/alpaca), the one before it otherwise. Where they
+    disagree the change is re-measured from the adjusted close and the
+    vendor's own figure kept beside it; a corporate action the feed lists is
+    named; a row with no adjusted close to check against is DROPPED, because
+    an unverifiable 2,862% belongs nowhere near the top of the list. Gainers
+    and losers keep only rows still on their side, re-sorted; a corrected row
+    is never ADDED to a list the vendor did not put it on, because CASK's
+    -1.2% is no top loser. Only rows past _SPLIT_CHECK_PCT are looked up,
+    so an ordinary minute costs nothing."""
+    from alphadesk.config import now_et
+    from alphadesk.desk import sessions as cal
+    suspicious = {r["symbol"]: r for t in tabs for r in t["rows"]
+                  if abs(r.get("change_pct") or 0) >= _SPLIT_CHECK_PCT}
+    if not suspicious:
+        return
+    day = cal.latest_session(now_et())
+    prev = cal.previous_session(day)
+    syms = sorted(suspicious)[:60]
+    try:
+        bars = router.get("daily_history", syms, 10)
+    except Exception as exc:                   # no second source is not a verdict
+        log.info("live movers: cannot check %d large move(s) (%s)", len(syms), exc)
+        return
+    if bars is None:                           # no vendor carries daily bars: leave the list as it came
+        return
+    checked: dict[str, Optional[dict]] = {}
+    corrected: list[str] = []
+    for sym in syms:
+        r = suspicious[sym]
+        price, chg = r.get("price"), r.get("change_pct")
+        if not price or chg is None or chg <= -100:
+            continue
+        base_day = (day if r.get("extended") else prev).isoformat()
+        close = next((b.get("close") for b in bars.get(sym) or [] if _bar_day(b) == base_day), None)
+        if not close:
+            checked[sym] = None
+            continue
+        quoted = price / (1 + chg / 100.0)
+        if abs(quoted / close - 1) * 100.0 <= LIVE_BASE_GAP_PCT:
+            continue
+        checked[sym] = {**r, "change_pct": round((price / close - 1) * 100.0, 2), "vendor_change_pct": chg,
+                        "previous_close": round(close, 4), "vendor_previous_close": round(quoted, 4),
+                        "change_corrected": True}
+        corrected.append(sym)
+    if corrected:
+        events = _feed_events(router, corrected, (prev - timedelta(days=7)).isoformat(), day.isoformat())
+        for sym in corrected:
+            checked[sym] = _named_event(checked[sym], events, (prev - timedelta(days=7)).isoformat(),
+                                        day.isoformat(), {})
+    if not checked:
+        return
+    dropped = sorted(s for s, r in checked.items() if r is None)
+    log.info("live movers: %d large move(s) re-measured %s, %d dropped as unverifiable %s",
+             len(corrected), corrected, len(dropped), dropped)
+    for t in tabs:
+        rows = [checked[r["symbol"]] if r["symbol"] in checked else r for r in t["rows"]]
+        rows = [r for r in rows if r is not None]
+        if t["id"] == "gainers":
+            rows = sorted((r for r in rows if (r.get("change_pct") or 0) > 0), key=lambda r: -r["change_pct"])
+        elif t["id"] == "losers":
+            rows = sorted((r for r in rows if (r.get("change_pct") or 0) < 0), key=lambda r: r["change_pct"])
+        t["rows"] = rows
 
 
 def _unavailable(cat: str, day: str, why: str) -> dict:
