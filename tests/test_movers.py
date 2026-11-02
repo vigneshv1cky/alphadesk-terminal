@@ -45,7 +45,14 @@ class _Alpaca:
                 {"symbol": "THIN", "name": "Thin", "price": 9.0, "change_pct": 12.0, "volume": 20_000}]},
             {"id": "losers", "label": "Losers", "rows": []}]}
     def daily_history(self, symbols, sessions=21):
-        return {"KHC": _bars(24.5, 30_000_000), "ACVA": _bars(10, 8_000_000)}
+        # TRUG's +76.1% is past the live list's check (2026-11-02), so it
+        # needs the close it was measured from, on the previous session.
+        from alphadesk.config import now_et
+        from alphadesk.desk import sessions as cal
+        prev = cal.previous_session(cal.latest_session(now_et()))
+        trug = [{"ts": datetime(prev.year, prev.month, prev.day, 4, tzinfo=timezone.utc), "close": 0.65 / 1.761,
+                 "volume": 1_000_000}]
+        return {"KHC": _bars(24.5, 30_000_000), "ACVA": _bars(10, 8_000_000), "TRUG": trug}
 
 
 def test_stocks_from_the_vendor_with_floors_and_statistics(vendors):

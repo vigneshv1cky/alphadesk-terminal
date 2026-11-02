@@ -693,3 +693,89 @@ def test_a_finished_coin_list_is_held_in_memory_after_the_first_read(store, monk
     first = movers._crypto_session(owner, "2020-01-25", 50, None, None, None, None)
     again = movers._crypto_session(owner, "2020-01-25", 50, None, None, None, None)
     assert first == again == kept and len(reads) == 1
+
+
+# ── the LIVE list's check (2026-11-02) ──
+
+def _live_tabs(*rows):
+    """The live list's tabs as _normalize_tabs leaves them: the vendor's own
+    gainers and losers, plus an active tab carrying every row."""
+    rows = list(rows)
+    return [{"id": "most_active", "label": "Active", "rows": list(rows)},
+            {"id": "gainers", "label": "Gainers", "rows": [r for r in rows if r["change_pct"] > 0]},
+            {"id": "losers", "label": "Losers", "rows": [r for r in rows if r["change_pct"] < 0]}]
+
+
+@pytest.fixture
+def _monday(monkeypatch):
+    """Monday 2026-11-02 at 13:53 New York: the previous session is Friday."""
+    import datetime as dt
+    from alphadesk import config
+    from alphadesk.desk import sessions as cal
+    monkeypatch.setattr(config, "now_et", lambda: dt.datetime(2026, 11, 2, 13, 53, tzinfo=cal.NY))
+
+
+def test_a_live_move_from_an_unadjusted_close_is_remeasured_and_named(_monday):
+    # Sempreon (renamed from Heritage Distilling) on CASK: $17.78 against a
+    # previous close of $0.60, +2,861.67%, first among the gainers. The
+    # split-adjusted close for Friday is $18.00 — a reverse split of about one
+    # for thirty — so the move is about -1.2% and leaves the gainers.
+    cask = movers._row("CASK", 17.78, 2861.67, 120_656)
+    real = movers._row("CLRO", 5.31, 55.72, 37_281_880)          # a real +55.72%: 3.41 → 5.31
+    plain = movers._row("PERI", 11.41, 31.26, 6_581_037)
+    events = [{"type": "reverse_splits", "symbols": ["CASK"], "dates": ["2026-11-02"], "detail": {}}]
+    router = _Feed({"CASK": [_Bar("2026-10-30", 18.00)], "CLRO": [_Bar("2026-10-30", 3.41)]}, events)
+    tabs = _live_tabs(cask, real, plain)
+    movers._verify_live_extremes(router, tabs)
+    by = {t["id"]: t["rows"] for t in tabs}
+    assert [r["symbol"] for r in by["gainers"]] == ["CLRO", "PERI"]
+    # -1.2% is no top loser either: it was never on the vendor's losers list
+    # and is not added to it. It stays where it was, corrected.
+    assert by["losers"] == []
+    fixed = next(r for r in by["most_active"] if r["symbol"] == "CASK")
+    assert fixed["change_pct"] == pytest.approx(-1.22, abs=0.01) and fixed["vendor_change_pct"] == 2861.67
+    assert fixed["previous_close"] == 18.0 and fixed["vendor_previous_close"] == pytest.approx(0.6, abs=0.001)
+    assert fixed["change_corrected"] is True and fixed["corporate_action_type"] == "reverse split"
+    assert by["gainers"][0]["change_pct"] == 55.72 and "change_corrected" not in by["gainers"][0]
+
+
+def test_a_live_extreme_with_no_adjusted_close_is_dropped_but_a_missing_vendor_drops_nothing(_monday):
+    cask = movers._row("CASK", 17.78, 2861.67, 120_656)
+    tabs = _live_tabs(cask, movers._row("PERI", 11.41, 31.26, 6_581_037))
+    movers._verify_live_extremes(_Router({}), tabs)                 # answered, but no bar for CASK
+    assert all(r["symbol"] != "CASK" for t in tabs for r in t["rows"])
+
+    class _NoBars(_Router):
+        def get(self, method, *args, **kwargs):
+            return None                                              # no vendor carries daily bars
+    tabs = _live_tabs(movers._row("CASK", 17.78, 2861.67, 120_656))
+    movers._verify_live_extremes(_NoBars(), tabs)
+    assert tabs[1]["rows"][0]["change_pct"] == 2861.67
+
+
+def test_a_late_print_is_checked_against_the_session_just_closed(_monday):
+    # After the bell a late print is measured from TODAY's close, so that is
+    # the close it must agree with — Friday's would call a real move an error.
+    late = {**movers._row("UCTT", 57.56, 11.81, 900_000), "extended": True}
+    wild = {**movers._row("WILD", 30.0, 200.0, 900_000), "extended": True}   # today's close 10.0: real
+    router = _Router({"WILD": [_Bar("2026-10-30", 2.0), _Bar("2026-11-02", 10.0)]})
+    tabs = _live_tabs(late, wild)
+    movers._verify_live_extremes(router, tabs)
+    got = next(r for r in tabs[1]["rows"] if r["symbol"] == "WILD")
+    assert got["change_pct"] == 200.0 and "change_corrected" not in got
+
+
+def test_the_live_build_runs_the_check(monkeypatch, _monday):
+    seen = []
+    monkeypatch.setattr(movers, "_verify_live_extremes", lambda router, tabs: seen.append([t["id"] for t in tabs]))
+
+    class _Live(_Router):
+        answered_by = "alpaca"
+
+        def ask(self, method, *args, **kwargs):
+            return {"tabs": [{"id": "gainers", "label": "Gainers",
+                              "rows": [{"symbol": "CASK", "price": 17.78, "change_pct": 2861.67, "volume": 120_656,
+                                        "turnover": 2_145_263.68}]}]}
+    monkeypatch.setattr(movers, "_enrich_stats", lambda *a, **k: None)
+    movers._build(_Live(), "test|stocks", "stocks", 10, 0.0, (None, 0.0, 0.0))
+    assert seen == [["gainers"]]
