@@ -1317,7 +1317,8 @@ def api_category_movers(category: str, top: int = 20,
                         min_turnover: float | None = Query(None, ge=0),
                         min_liquidity: float | None = Query(None, ge=0),
                         min_volatility: float | None = Query(None, ge=0),
-                        session: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$")):
+                        session: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                        period: str | None = Query(None, pattern=r"^(day|week|month)$")):
     """Movers by category — stocks, crypto, etfs, mutual_funds, options,
     indices, futures, bonds, currencies — one shape for one tile
     (ingest/movers.py). The floors are the reader's when given, the
@@ -1326,8 +1327,24 @@ def api_category_movers(category: str, top: int = 20,
     `session` asks for a PAST session instead of now: stocks and ETFs from
     the whole market that day against the session before it, crypto from
     that day's coin bars against the day before, options from the list
-    recorded after that close (2026-10-05). 404 names the ones that can."""
+    recorded after that close (2026-10-05). 404 names the ones that can.
+
+    `period` week or month ranks a CALENDAR week or month instead of a day
+    (stocks and ETFs, ingest/period_movers.py); `session` then names any date
+    inside it, the current period when absent. 400 for a period that has not
+    begun."""
     from alphadesk.ingest import movers
+    if period and period != "day":
+        from alphadesk.ingest import period_movers
+        if category not in period_movers.PERIOD_CATEGORIES:
+            raise HTTPException(404, f"a week or month is only available for "
+                                     f"{', '.join(period_movers.PERIOD_CATEGORIES)}")
+        try:
+            return period_movers.period_movers(category, period, session, top=max(1, min(top, 50)),
+                                               min_price=min_price, min_turnover=min_turnover,
+                                               min_liquidity=min_liquidity, min_volatility=min_volatility)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
     if session:
         if category not in movers.SESSION_CATEGORIES:
             raise HTTPException(404, f"a past session is only available for "
