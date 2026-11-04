@@ -916,6 +916,36 @@ def session_movers(category: str, day: str, top: int = 20,
     apply_floors(tabs, 0.0, 0.0, ml, mv)
     for t in tabs:
         t["rows"] = t["rows"][:top]
+    fill_names(router, tabs)
+
+    result = {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
+              "session": day, "previous_session": prev_day, "historical": True,
+              "extended": False, "session_label": None,
+              "official": True, "source": _day_vendor.get((router.owner, day), "unknown"),
+              "filling": False,
+              "note": (f"{day} close against {prev_day}. Volatility and liquidity are the "
+                       f"twenty sessions ending {day}, not today's."
+                       + (f" {unverified} large move{'s' if unverified != 1 else ''} left out: "
+                          f"no second source to check it against." if unverified else "")
+                       + (f" {events} move{'s' if events != 1 else ''} with a corporate action that day, marked." if events else "")
+                       + (f" {maybe} move{'s' if maybe != 1 else ''} marked as a possible corporate event: volume ten times "
+                          f"its average and the new price held the next session; no source names one." if maybe else "")),
+              "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
+                         "default_min_price": d_price, "default_min_turnover": d_turn},
+              "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": tabs}
+    if finished:
+        _finished_put(router, cat, fkey, result)
+    with _lock:
+        if len(_cache) > 2048:
+            _cache.clear()
+        _cache[key] = (time.time(), result)
+    return result
+
+
+def fill_names(router, tabs: list[dict]) -> None:
+    """In place: every row's company name, from the SEC's ticker file and,
+    for the funds it does not carry, the reader's quotes. Shared by the
+    past-session and calendar-period lists."""
     # Names only for the rows that survived — the SEC's ticker file is one
     # cached lookup, so twenty of them cost nothing, and ten thousand would.
     from alphadesk.ingest import edgar
@@ -940,35 +970,12 @@ def session_movers(category: str, day: str, top: int = 20,
         try:
             quotes.update(router.get("quotes", nameless[i:i + 100]) or {})
         except Exception as exc:
-            log.debug("session movers: no names from quotes (%s)", exc)
+            log.debug("movers: no names from quotes (%s)", exc)
             break
         for t in tabs:
             for r in t["rows"]:
                 if not r.get("name"):
                     r["name"] = (quotes.get(r["symbol"]) or {}).get("name")
-
-    result = {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
-              "session": day, "previous_session": prev_day, "historical": True,
-              "extended": False, "session_label": None,
-              "official": True, "source": _day_vendor.get((router.owner, day), "unknown"),
-              "filling": False,
-              "note": (f"{day} close against {prev_day}. Volatility and liquidity are the "
-                       f"twenty sessions ending {day}, not today's."
-                       + (f" {unverified} large move{'s' if unverified != 1 else ''} left out: "
-                          f"no second source to check it against." if unverified else "")
-                       + (f" {events} move{'s' if events != 1 else ''} with a corporate action that day, marked." if events else "")
-                       + (f" {maybe} move{'s' if maybe != 1 else ''} marked as a possible corporate event: volume ten times "
-                          f"its average and the new price held the next session; no source names one." if maybe else "")),
-              "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
-                         "default_min_price": d_price, "default_min_turnover": d_turn},
-              "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": tabs}
-    if finished:
-        _finished_put(router, cat, fkey, result)
-    with _lock:
-        if len(_cache) > 2048:
-            _cache.clear()
-        _cache[key] = (time.time(), result)
-    return result
 
 
 def _closed(cat: str, day: str) -> dict:

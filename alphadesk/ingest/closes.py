@@ -17,7 +17,10 @@ import time
 log = logging.getLogger("alphadesk.closes")
 
 CHECK_EVERY_S = 1800.0
-BACKFILL_SESSIONS = 15
+# A month's list compares the close before the month with its last one, so
+# the recorder keeps a full month and a week back (2026-11-04: it was 15,
+# which covered the session stepper but not a calendar month).
+BACKFILL_SESSIONS = 25
 _started = False
 
 

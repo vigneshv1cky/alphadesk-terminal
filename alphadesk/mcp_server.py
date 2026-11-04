@@ -259,7 +259,7 @@ def quote(symbol: str) -> dict:
 
 @mcp.tool(annotations=READ_ONLY)
 @with_venue
-def movers(category: str = "stocks", top: int = 20, session: str = "") -> dict:
+def movers(category: str = "stocks", top: int = 20, session: str = "", period: str = "") -> dict:
     """Most active, gainers and losers, for one asset class.
 
     `category` is one of: stocks, etfs, indices, crypto, currencies, options,
@@ -297,10 +297,33 @@ def movers(category: str = "stocks", top: int = 20, session: str = "") -> dict:
     The payload says `closed` when the market did not open and `unavailable`
     when the vendor was asked and refused. Those are different things and
     neither is an empty market.
+
+    `period` = "week" or "month" (stocks and ETFs) ranks a CALENDAR week
+    (Monday to Friday) or month instead of one day: each stock's return from
+    the close before the period opened to its last finished session. Name the
+    period with `session` = any date inside it (default: the current one).
+    A period still under way says `complete: false` and is labelled WTD or
+    MTD; `period_label`, `base_session` and `session` (the end) say exactly
+    which closes were compared. Every ranked figure is re-measured from the
+    stock's own split-adjusted bars; `turnover` is the AVERAGE dollars a day
+    over the period and `volume` its total. `not_started` means no session
+    of that period has finished yet.
     """
     from alphadesk.ingest import movers as mv
     cat = (category or "stocks").strip().lower()
     top = max(1, min(int(top), 50))
+    per = (period or "").strip().lower()
+    if per and per not in ("day", "1d"):
+        from alphadesk.ingest import period_movers as pm
+        if per not in pm.PERIODS:
+            return {"error": f"period must be one of day, {', '.join(pm.PERIODS)}", "period": period}
+        if cat not in pm.PERIOD_CATEGORIES:
+            return {"error": f"a week or month is only available for {', '.join(pm.PERIOD_CATEGORIES)}",
+                    "category": cat, "period": per}
+        try:
+            return _mover_lists(pm.period_movers(cat, per, session.strip() or None, top=top))
+        except ValueError as exc:
+            return {"error": str(exc), "category": cat, "period": per, "session": session}
     if session:
         if cat not in mv.SESSION_CATEGORIES:
             return {"error": f"a past session is only available for {', '.join(mv.SESSION_CATEGORIES)}",
