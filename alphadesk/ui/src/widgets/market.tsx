@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { on, type CategoryMoverRow, type MoverCategory } from "@/lib/api"
+import { on, type CategoryMoverRow, type MoverCategory, type MoverPeriod } from "@/lib/api"
 import { usePrefetchChart, useQuote } from "@/lib/queries"
 import { useCryptoTicks } from "@/lib/liveCrypto"
 import { QueryFailure } from "@/components/KeyPrompt"
@@ -15,6 +15,7 @@ import { SessionHighPanel } from "@/components/SessionHigh"
 import { moneyIn, moneyOut } from "@/lib/floors"
 import { useLiveTrade } from "@/lib/live"
 import { Empty, Flash, Table, TD, TH, THead, TR, Widget, btnCls, menuHeadCls } from "@/components/terminal"
+import { cn } from "@/lib/utils"
 import { registerWidget } from "@/widgets/registry"
 import { RelatedFundsTile } from "@/components/RelatedFunds"
 import { Menu } from "@/components/ChartToolbar"
@@ -465,6 +466,9 @@ const CATEGORY_LABELS: Record<MoverCategory, string> = {
   stocks: "Stocks", crypto: "Crypto", etfs: "ETFs", options: "Options",
   indices: "Market ETFs", bonds: "Treasury yields", currencies: "Currencies",
 }
+/** A period in words, for the subtitle and the picker's hover. */
+const PERIOD_NAMES: Record<MoverPeriod, string> = { "1D": "1 session", "1W": "1 week", "1M": "1 month" }
+
 const SOURCE_LABELS: Record<string, string> = {
   alpaca: "Alpaca", treasury: "US Treasury",
   polygon: "Polygon", finnhub: "Finnhub", alphavantage: "Alpha Vantage", fmp: "FMP",
@@ -607,6 +611,15 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   // silently showing last Tuesday would be the worst kind of stale.
   const canStep = category === "stocks" || category === "etfs" || category === "options" || category === "crypto"
   const [session, setSession] = useState<string | null>(null)
+  // A WEEK OR A MONTH (2026-11-10, the reader: "we are able to only look at
+  // daily gainer or loosers"). Stocks and ETFs only — no other category has a
+  // whole-market day to measure from. A period list always ends now, so the
+  // session stepper steps aside while one is shown; not kept across visits,
+  // for the same reason the session is not.
+  const canPeriod = category === "stocks" || category === "etfs"
+  const [periodPicked, setPeriod] = useState<MoverPeriod>("1D")
+  const period: MoverPeriod = canPeriod ? periodPicked : "1D"
+  const spans = period !== "1D"
   const sessions = useQuery({
     queryKey: ["mover-sessions", category, SESSIONS_BACK],
     queryFn: ({ signal }) => on(signal).moverSessions(category, SESSIONS_BACK),
@@ -616,8 +629,8 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   const days = sessions.data?.sessions ?? []
   const at = session ? days.indexOf(session) : -1
   const q = useQuery({
-    queryKey: ["movers", category, floors?.min_price ?? "d", floors?.min_turnover ?? "d", session ?? "live"],
-    queryFn: ({ signal }) => on(signal).categoryMovers(category, MOVERS_TOP, floors, session),
+    queryKey: ["movers", category, floors?.min_price ?? "d", floors?.min_turnover ?? "d", session ?? "live", period],
+    queryFn: ({ signal }) => on(signal).categoryMovers(category, MOVERS_TOP, floors, spans ? null : session, period),
     staleTime: 20_000,
     // The server rebuilds behind a cached payload every 30s for stocks,
     // crypto and indices, so the tile asks on the same cycle; the listed
@@ -627,7 +640,10 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
     // seconds until the full lists arrive (2026-09-17).
     // A FINISHED SESSION DOES NOT CHANGE. Polling one every thirty seconds
     // would spend the reader's vendor calls re-reading a settled fact.
-    refetchInterval: query => session ? false
+    // A period list ending in a finished session is settled; one ending in
+    // the session still trading is rebuilt on the server every two minutes.
+    refetchInterval: query => (session && !spans) ? false
+      : spans ? (query.state.data?.live ? 120_000 : false)
       : query.state.data?.filling ? 3_000
       : category === "bonds" ? 900_000
       : category === "stocks" || category === "crypto" || category === "indices" ? 30_000 : 120_000,
@@ -641,7 +657,8 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   // NOT WHILE LOOKING BACK: the halts source reads TODAY's halted symbols
   // off a public page and has no history, so offering the tab under a past
   // session's heading would put today's halts on the 25th.
-  const tabs = category === "stocks" && !session
+  // Nor over a week or a month: a halt is today's.
+  const tabs = category === "stocks" && !session && !spans
     ? [...vendorTabs, { id: "halts", label: "Halts", rows: [] as CategoryMoverRow[] }]
     : vendorTabs
   const halted = tab === "halts" && category === "stocks"
@@ -657,7 +674,9 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   // the stream and re-derives its change from it — correct for today, and a
   // lie on a past session, where it would quietly replace the 24th's close
   // with this second's tick and leave the volume beside it untouched.
-  const streamable = (category === "stocks" || category === "etfs") && !session
+  // NOR OVER A PERIOD: the overlay re-derives a row's change from the close
+  // its DAILY change implies, which over a week is the wrong close entirely.
+  const streamable = (category === "stocks" || category === "etfs") && !session && !spans
   const symbols = useMemo(() => (streamable ? rows.map(r => r.symbol) : []), [rows, streamable])
   const live = useLiveQuotes(symbols)
   // The coins on screen, and none for any other category.
@@ -687,7 +706,14 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   // The subtitle carries the session when one is picked, because every
   // figure below changes meaning with it — and a tile that looks live while
   // showing Tuesday is the fault this repo has shipped four times.
-  const subtitle = session
+  const subtitle = spans
+    ? q.data?.unavailable
+      ? `${PERIOD_NAMES[period]} · vendor would not answer`
+      : q.data?.period_from
+      ? `${PERIOD_NAMES[period]} · ${q.data.live ? "now" : q.data.period_to} against the ${q.data.period_from} close${
+          q.data.source ? ` · ${SOURCE_LABELS[q.data.source] ?? q.data.source}` : ""}`
+      : q.isPending ? "loading" : isNeedsKey(q.error) ? "needs a data key" : "unavailable right now"
+    : session
     ? q.data?.unavailable
       // NOT "market closed". The vendor was asked and refused — usually its
       // rate limit — and calling that a closed market told the reader the
@@ -718,7 +744,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
           )}
         </Menu>
       ) : undefined}
-      toolbar={(tabs.length > 1 || canStep) ? (
+      toolbar={(tabs.length > 1 || canStep || canPeriod) ? (
         // w-full so the stepper's ml-auto has a right edge to reach, and the
         // stepper STICKS to it (2026-09-26, the reader: "put these in right
         // most, cause the options changes and its a hassle to move the
@@ -730,7 +756,22 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         // the tabs beside it change or scroll under it.
         <div className="flex w-full min-w-0 items-center gap-2">
           {tabs.length > 1 && <TabStrip tabs={tabs.map(t => ({ id: t.id, label: t.label }))} value={active?.id ?? ""} onChange={setTab} />}
-          {canStep && days.length > 0 && (
+          {canPeriod && (
+            // The period picker sits with the stepper on the right edge, before
+            // it, so neither moves when the tabs beside them change.
+            <div className={cn("flex shrink-0 items-center gap-0.5", (spans || !(canStep && days.length > 0)) && "sticky right-0 ml-auto bg-card pl-1.5")}
+                 role="group" aria-label="How far back the change is measured">
+              {(["1D", "1W", "1M"] as const).map(p => (
+                <button key={p} type="button" onClick={() => { setPeriod(p); if (p !== "1D") setSession(null) }}
+                        title={p === "1D" ? "Change over one session" : `Change over ${PERIOD_NAMES[p]}: the latest price against the close ${p === "1W" ? "5" : "21"} sessions earlier`}
+                        aria-pressed={period === p}
+                        className={btnCls({ variant: "ghost", size: "lg", active: period === p }, "min-w-[36px]")}>
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+          {canStep && !spans && days.length > 0 && (
             // THE LABEL SITS OUTSIDE THE ARROWS (2026-09-26, the reader:
             // "dont keep this middle of arrows, cause the center piece
             // changes troo"). It is the same fault one level down: "Live" is
