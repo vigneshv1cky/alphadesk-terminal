@@ -779,3 +779,129 @@ def test_the_live_build_runs_the_check(monkeypatch, _monday):
     monkeypatch.setattr(movers, "_enrich_stats", lambda *a, **k: None)
     movers._build(_Live(), "test|stocks", "stocks", 10, 0.0, (None, 0.0, 0.0))
     assert seen == [["gainers"]]
+
+
+# ── a week or a month (2026-11-10) ──
+
+def _weekdays_back(end: str, n: int) -> list[str]:
+    import datetime as dt
+    d, out = dt.date.fromisoformat(end), []
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d.isoformat())
+        d -= dt.timedelta(days=1)
+    return out
+
+
+class _Period:
+    """A vendor with a whole-market day for any session, SPY's bars as the
+    calendar, and per-symbol split-adjusted daily bars."""
+    owner, connected, answered_by = "t", ["alpaca"], "alpaca"
+
+    def __init__(self, days: dict, adjusted: dict, events=()):
+        self.days, self.adjusted, self.events, self.asked = days, adjusted, list(events), []
+
+    def vendor_for(self, *a, **k):
+        return "alpaca"
+
+    def ask(self, method, *args, **kwargs):
+        assert method == "market_day"
+        self.asked.append(args[0])
+        return self.days.get(args[0], {})
+
+    def get(self, method, *args, **kwargs):
+        if method == "daily_history":
+            out = {}
+            for s in args[0]:
+                if s == "SPY":
+                    out[s] = [_Bar(d, 500.0) for d in _weekdays_back("2026-11-09", 40)]
+                elif s in self.adjusted:
+                    out[s] = [_Bar(d, c) for d, c in self.adjusted[s].items()]
+            return out
+        if method == "corporate_action_events":
+            return self.events
+        return {}
+
+
+@pytest.fixture
+def _period_env(monkeypatch):
+    import datetime as dt
+    from alphadesk import config, providers
+    from alphadesk.desk import sessions as cal
+    from alphadesk.ingest import edgar
+    movers._cache.clear()
+    monkeypatch.setattr(config, "now_et", lambda: dt.datetime(2026, 11, 9, 17, 0, tzinfo=cal.NY))
+    monkeypatch.setattr(movers, "session_finished", lambda day: day < "2026-11-10")
+    monkeypatch.setattr(movers, "fund_list", lambda router: frozenset({"QQQ"}))
+    monkeypatch.setattr(movers, "_enrich_stats", lambda *a, **k: None)
+    monkeypatch.setattr(edgar, "company_title", lambda s: f"{s} Inc")
+
+    def use(router):
+        monkeypatch.setattr(providers, "get_prices", lambda: router)
+        return router
+    return use
+
+
+def _bar(close, volume=1_000_000):
+    return {"open": close, "high": close, "low": close, "close": close, "volume": volume}
+
+
+def test_a_week_is_one_change_from_the_close_five_sessions_back(_period_env):
+    # 2026-11-09 is a Monday; five sessions before it is Monday 2026-11-02.
+    now = {"AAA": _bar(110.0), "BBB": _bar(45.0), "CCC": _bar(30.0), "DDD": _bar(12.0), "EEE": _bar(9.0),
+           "QQQ": _bar(600.0), "ZVZZT": _bar(25.0), "PNY": _bar(2.0, 90_000_000)}
+    base = {"AAA": _bar(100.0), "BBB": _bar(50.0), "CCC": _bar(10.0), "DDD": _bar(1.0), "EEE": _bar(5.0),
+            "QQQ": _bar(590.0), "ZVZZT": _bar(10.0), "PNY": _bar(1.0, 90_000_000)}
+    router = _period_env(_Period({"2026-11-09": now, "2026-11-02": base},
+                                 {"CCC": {"2026-11-02": 10.0}, "DDD": {"2026-11-02": 12.5}},
+                                 [{"type": "reverse_splits", "symbols": ["DDD"], "dates": ["2026-11-05"], "detail": {}}]))
+    got = movers.period_movers("stocks", "1W")
+    tabs = {t["id"]: t["rows"] for t in got["tabs"]}
+    assert (got["period_from"], got["period_to"], got["change_label"], got["live"]) == ("2026-11-02", "2026-11-09", "1W", False)
+    # +200% confirmed by the adjusted bars; DDD's +1,100% was a reverse split
+    # (-4% from the adjusted 12.5) and leaves the gainers; EEE's +80% has no
+    # adjusted close and is dropped; a fund, a test ticker and a $2 stock are
+    # never on a stock list with the default floors.
+    assert [r["symbol"] for r in tabs["gainers"]] == ["CCC", "AAA"]
+    assert [r["symbol"] for r in tabs["losers"]] == ["BBB"]
+    ddd = next(r for r in tabs["most_active"] if r["symbol"] == "DDD")
+    assert ddd["change_pct"] == pytest.approx(-4.0) and ddd["corporate_action_type"] == "reverse split"
+    assert all(r["symbol"] not in ("EEE", "QQQ", "ZVZZT", "PNY") for rows in tabs.values() for r in rows)
+    aaa = tabs["gainers"][1]
+    assert aaa["change_pct"] == 10.0 and aaa["turnover"] == pytest.approx((110.0 + 100.0) / 2 * 1_000_000)
+    assert aaa["name"] == "AAA Inc"
+    assert "re-measured" in got["note"] and "left out" in got["note"]
+    # Both ends were read from the vendor: the base is never the recorded copy.
+    assert sorted(set(router.asked)) == ["2026-11-02", "2026-11-09"]
+
+
+def test_a_month_reaches_twenty_one_sessions_and_a_fund_list_is_its_own(_period_env):
+    now = {"QQQ": _bar(600.0), "SPY": _bar(510.0), "AAA": _bar(110.0)}
+    base_day = _weekdays_back("2026-11-06", 21)[-1]          # the 21st session before the 9th
+    router = _period_env(_Period({"2026-11-09": now, base_day: {"QQQ": _bar(500.0), "SPY": _bar(500.0), "AAA": _bar(100.0)}}, {}))
+    got = movers.period_movers("etfs", "1M")
+    assert got["period_from"] == base_day and got["change_label"] == "1M"
+    assert [r["symbol"] for r in {t["id"]: t["rows"] for t in got["tabs"]}["gainers"]] == ["QQQ"]
+    assert router.asked.count(base_day) == 1
+
+
+def test_a_period_is_refused_where_it_cannot_be_measured(_period_env):
+    _period_env(_Period({}, {}))
+    with pytest.raises(KeyError):
+        movers.period_movers("crypto", "1W")
+    with pytest.raises(ValueError):
+        movers.period_movers("stocks", "3D")
+    got = movers.period_movers("stocks", "1W")            # the vendor answered with no market
+    assert got["unavailable"] is True and got["period"] == "1W" and got["historical"] is False
+
+
+def test_the_agent_tool_takes_a_period_but_not_with_a_session(monkeypatch):
+    from alphadesk import mcp_server
+    seen = []
+    monkeypatch.setattr(movers, "period_movers", lambda cat, per, top=20: seen.append((cat, per)) or
+                        {"category": cat, "period": per, "tabs": [{"id": "gainers", "rows": [{"symbol": "AAA"}]}]})
+    got = mcp_server.movers("stocks", period="1w")
+    assert seen == [("stocks", "1W")] and got["gainers"] == [{"symbol": "AAA"}] and got["period"] == "1W"
+    assert "cannot be combined" in mcp_server.movers("stocks", session="2026-11-02", period="1M")["error"]
+    assert "only available" in mcp_server.movers("crypto", period="1W")["error"]
+    assert "must be one of" in mcp_server.movers("stocks", period="2W")["error"]

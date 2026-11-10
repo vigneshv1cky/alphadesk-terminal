@@ -1235,7 +1235,18 @@ export interface SectorBreadth {
   session_is_today: boolean
   as_of: string
 }
+/** How far back a movers list measures its change: one session, a week (5
+ * sessions) or a month (21). Stocks and ETFs only past one session. */
+export type MoverPeriod = "1D" | "1W" | "1M"
 export interface CategoryMovers {
+  /** Set on a 1W / 1M list: the latest price against the close of
+   * `period_from`, both split-adjusted, one point-to-point change. */
+  period?: MoverPeriod
+  period_label?: string
+  period_from?: string
+  period_to?: string
+  /** True while `period_to` is a session still trading. */
+  live?: boolean
   /** Set when this list is a PAST session rather than now. */
   session?: string
   previous_session?: string | null
@@ -1618,10 +1629,10 @@ export const api = {
   movers: (top = 20) => get<Movers>(`/api/movers?top=${top}`),
   sectors: () => get<Sectors>("/api/sectors"),
   sectorBreadth: () => get<SectorBreadth>("/api/sectors/breadth"),
-  categoryMovers: (category: MoverCategory, top = 20, floors?: { min_price: number; min_turnover: number; min_liquidity: number; min_volatility: number } | null, session?: string | null) =>
+  categoryMovers: (category: MoverCategory, top = 20, floors?: { min_price: number; min_turnover: number; min_liquidity: number; min_volatility: number } | null, session?: string | null, period?: MoverPeriod) =>
     get<CategoryMovers>(`/api/movers/${category}?top=${top}${floors
       ? `&min_price=${floors.min_price}&min_turnover=${floors.min_turnover}&min_liquidity=${floors.min_liquidity}&min_volatility=${floors.min_volatility}` : ""}${
-      session ? `&session=${session}` : ""}`),
+      session ? `&session=${session}` : ""}${period && period !== "1D" ? `&period=${period}` : ""}`),
   /** The last sessions that actually opened, newest first. A weekend or a
    * holiday is not a session, so the stepper needs the real list rather
    * than stepping back a calendar day at a time. */

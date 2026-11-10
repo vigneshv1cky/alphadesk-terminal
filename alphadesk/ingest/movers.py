@@ -916,36 +916,7 @@ def session_movers(category: str, day: str, top: int = 20,
     apply_floors(tabs, 0.0, 0.0, ml, mv)
     for t in tabs:
         t["rows"] = t["rows"][:top]
-    # Names only for the rows that survived — the SEC's ticker file is one
-    # cached lookup, so twenty of them cost nothing, and ten thousand would.
-    from alphadesk.ingest import edgar
-    for t in tabs:
-        for r in t["rows"]:
-            r["name"] = edgar.company_title(r["symbol"])
-    # THE SEC'S LIST DOES NOT CARRY MOST FUNDS. SOXS, HYG, QQQ and TQQQ all
-    # come back with nothing from it, so an ETF list showed a column of
-    # dashes where the names should be. A quote carries the fund's own name
-    # — one batched request for the twenty rows on screen, and a name does
-    # not change with the session being viewed.
-    nameless = sorted({r["symbol"] for t in tabs for r in t["rows"] if not r.get("name")})
-    quotes: dict = {}
-    # ASK FOR ALL OF THEM, IN CHUNKS — never a slice of a sorted list. The
-    # first version capped at 120 symbols taken from an ALPHABETICAL set, so
-    # with three tabs of fifty rows everything past the letter T was simply
-    # never asked about: TSLG, TSLL, USHY, VTEB, XLE, XLF and XLU all showed
-    # a dash while the vendor knew every one of them. A cap that silently
-    # drops the end of the alphabet is worse than no cap, because it looks
-    # like missing data rather than an unasked question.
-    for i in range(0, len(nameless), 100):
-        try:
-            quotes.update(router.get("quotes", nameless[i:i + 100]) or {})
-        except Exception as exc:
-            log.debug("session movers: no names from quotes (%s)", exc)
-            break
-        for t in tabs:
-            for r in t["rows"]:
-                if not r.get("name"):
-                    r["name"] = (quotes.get(r["symbol"]) or {}).get("name")
+    _fill_names(router, tabs)
 
     result = {"category": cat, "label": CATEGORIES[cat], "change_label": "1D",
               "session": day, "previous_session": prev_day, "historical": True,
@@ -969,6 +940,161 @@ def session_movers(category: str, day: str, top: int = 20,
             _cache.clear()
         _cache[key] = (time.time(), result)
     return result
+
+
+
+#: The periods a list can span, in sessions back from the latest one: the
+#: change is measured from the close that many sessions earlier.
+PERIODS: dict[str, int] = {"1W": 5, "1M": 21}
+PERIOD_LABELS = {"1W": "1 week", "1M": "1 month"}
+PERIOD_CATEGORIES = ("stocks", "etfs")
+#: A list ending in a session still trading is rebuilt this often; one
+#: ending in a finished session is settled until the next one opens.
+PERIOD_LIVE_TTL_S = 120
+
+
+def period_movers(category: str, period: str, top: int = 20,
+                  min_price: Optional[float] = None,
+                  min_turnover: Optional[float] = None,
+                  min_liquidity: Optional[float] = None,
+                  min_volatility: Optional[float] = None) -> dict:
+    """The gainers and losers over a WEEK or a MONTH (2026-11-10, the owner:
+    "we are able to only look at daily gainer or loosers").
+
+    ONE POINT-TO-POINT CHANGE, NEVER AN AVERAGE: the latest price (the
+    session still trading, or the last close) against the close `PERIODS`
+    sessions earlier — five for a week, twenty-one for a month — which is
+    the compounded daily changes, whatever path the price took between.
+
+    BOTH ENDS ARE READ FRESH from the vendor's whole-market day, never from
+    the recorded closes. Alpaca adjusts a past day for splits AS OF THE
+    MOMENT IT IS ASKED, and a close recorded a month ago was adjusted only to
+    that day, so pairing it with today would put every split of the month on
+    the list — CASK's false +2,861.67% (#158) once per split. Moves of
+    _SPLIT_CHECK_PCT or more are re-checked against each symbol's own
+    split-adjusted daily bars as well, the same check the live list runs.
+    A spin-off is not a split and adjusting for splits does not restate it,
+    so a parent shows the business it handed out as a loss; the feed names
+    it where it lists one.
+
+    The dollar-volume floor reads the AVERAGE dollar volume of the two
+    sessions read — reading every session between would cost a whole-market
+    read each. Volatility and liquidity are the usual twenty sessions ending
+    now. Stocks and ETFs only: no other category has a whole-market day."""
+    from alphadesk.config import now_et
+    from alphadesk.desk import sessions as cal
+    from alphadesk.providers import get_prices
+    from alphadesk.providers.alpaca import common_stock_symbol
+    cat = (category or "").strip().lower()
+    if cat not in PERIOD_CATEGORIES:
+        raise KeyError(cat)
+    per = (period or "").strip().upper()
+    if per not in PERIODS:
+        raise ValueError(f"period must be one of {', '.join(PERIODS)}")
+    router = get_prices()
+    top = max(1, min(int(top), 50))
+    d_price, d_turn = DEFAULT_FLOORS.get(cat, (0.0, 0.0))
+    mp = max(0.0, float(min_price)) if min_price is not None else d_price
+    mt = max(0.0, float(min_turnover)) if min_turnover is not None else d_turn
+    ml = max(0.0, float(min_liquidity or 0.0))
+    mv = max(0.0, float(min_volatility or 0.0))
+    end = cal.latest_session(now_et()).isoformat()
+    live = not session_finished(end)
+    key = (f"period|{router.owner}|{','.join(router.connected)}|"
+           f"{cat}:{per}:{end}:{top}:{mp:g}:{mt:g}:{ml:g}:{mv:g}")
+    with _lock:
+        hit = _cache.get(key)
+    if hit and time.time() - hit[0] < (PERIOD_LIVE_TTL_S if live else SESSION_TTL_S):
+        return hit[1]
+    if not router.vendor_for("market_day", "market_day"):
+        raise NeedsKey("market_day")
+    earlier = [d for d in trading_sessions(router, PERIODS[per] + 10) if d < end]
+    if len(earlier) < PERIODS[per]:
+        return _period_unavailable(cat, per, end, f"the session calendar does not reach {PERIODS[per]} sessions back")
+    base = earlier[PERIODS[per] - 1]
+    try:
+        now_bars = _fresh_market_day(router, end, PERIOD_LIVE_TTL_S if live else SESSION_TTL_S)
+        base_bars = _fresh_market_day(router, base, SESSION_TTL_S, as_of=end)
+    except VendorRefused as exc:
+        return _period_unavailable(cat, per, end, str(exc))
+    if not now_bars or not base_bars:
+        return _period_unavailable(cat, per, end, f"the vendor returned no market for {end if not now_bars else base}")
+
+    funds = fund_list(router) or frozenset()
+    rows: list[dict] = []
+    for sym, bar in now_bars.items():
+        if not common_stock_symbol(sym) or _TEST_SYMBOL.match(sym):
+            continue
+        if (cat == "etfs") != (sym in funds or bool(_FUND_NAME.search(sym))):
+            continue
+        was_bar = base_bars.get(sym) or {}
+        was, close = was_bar.get("close"), bar.get("close")
+        if not was or not close:
+            continue
+        r = _row(sym, close, (close - was) / was * 100.0, bar.get("volume") or 0)
+        r["turnover"] = (close * (bar.get("volume") or 0) + was * (was_bar.get("volume") or 0)) / 2.0
+        rows.append(r)
+    checked = _check_base_closes(router, rows, lambda r: base, end)
+    tabs = [t for t in tabs_from_list(rows) if t["id"] != "all"]
+    _apply_checked(tabs, checked)
+    apply_floors(tabs, mp, mt)
+    for t in tabs:
+        t["rows"] = t["rows"][:max(top, 50) if (ml > 0 or mv > 0) else top]
+    _enrich_stats(router, tabs, cat)
+    apply_floors(tabs, 0.0, 0.0, ml, mv)
+    for t in tabs:
+        t["rows"] = t["rows"][:top]
+    _fill_names(router, tabs)
+    corrected = sum(1 for r in checked.values() if r is not None)
+    dropped = sum(1 for r in checked.values() if r is None)
+    result = {"category": cat, "label": CATEGORIES[cat], "change_label": per,
+              "period": per, "period_label": PERIOD_LABELS[per], "period_from": base, "period_to": end,
+              "live": live, "historical": False, "extended": False, "session_label": None,
+              "official": True, "source": _day_vendor.get((router.owner, end), "unknown"), "filling": False,
+              "note": (f"{'Latest price' if live else f'{end} close'} against the {base} close, both adjusted "
+                       f"for splits. Dollar-volume floor on the average of those two sessions; volatility and "
+                       f"liquidity are the last twenty sessions."
+                       + (f" {corrected} large move{'s' if corrected != 1 else ''} re-measured from adjusted "
+                          f"closes." if corrected else "")
+                       + (f" {dropped} large move{'s' if dropped != 1 else ''} left out: no adjusted close to "
+                          f"check against." if dropped else "")),
+              "floors": {"min_price": mp, "min_turnover": mt, "min_liquidity": ml, "min_volatility": mv,
+                         "default_min_price": d_price, "default_min_turnover": d_turn},
+              "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tabs": tabs}
+    with _lock:
+        _cache[key] = (time.time(), result)
+    return result
+
+
+def _period_unavailable(cat: str, per: str, end: str, why: str) -> dict:
+    """The refusal payload, marked as the period list it was asked for
+    rather than a past session."""
+    return {**_unavailable(cat, end, why), "period": per, "period_label": PERIOD_LABELS[per],
+            "change_label": per, "historical": False, "session": None}
+
+
+def _fresh_market_day(router, day: str, ttl: float, as_of: str = "") -> dict:
+    """One session's whole market read FROM THE VENDOR, never the recorded
+    copy, so its split adjustment is as of now rather than as of the day it
+    was saved; kept `ttl` seconds per (reader, day, as_of). Raises
+    VendorRefused when asked and refused; a refusal is never cached."""
+    key = f"freshday|{router.owner}|{day}|{as_of}"
+    with _lock:
+        hit = _cache.get(key)
+    if hit and time.time() - hit[0] < ttl:
+        return hit[1]
+    try:
+        got = router.ask("market_day", day)
+    except NeedsKey as exc:
+        if getattr(exc, "failed", None):
+            raise VendorRefused("; ".join(exc.failed.values())) from exc
+        raise
+    got = got if isinstance(got, dict) else {}
+    _day_vendor[(router.owner, day)] = getattr(router, "answered_by", None) or "unknown"
+    if got:
+        with _lock:
+            _cache[key] = (time.time(), got)
+    return got
 
 
 def _closed(cat: str, day: str) -> dict:
@@ -1254,6 +1380,115 @@ def _bar_day(b: dict) -> str:
     return ts.date().isoformat() if hasattr(ts, "date") else str(ts or "")[:10]
 
 
+def _fill_names(router, tabs: list[dict]) -> None:
+    """Company and fund names for the rows on screen, in place: the SEC's
+    ticker file first, then one batched quote request for what it lacks."""
+    # Names only for the rows that survived — the SEC's ticker file is one
+    # cached lookup, so twenty of them cost nothing, and ten thousand would.
+    from alphadesk.ingest import edgar
+    for t in tabs:
+        for r in t["rows"]:
+            r["name"] = edgar.company_title(r["symbol"])
+    # THE SEC'S LIST DOES NOT CARRY MOST FUNDS. SOXS, HYG, QQQ and TQQQ all
+    # come back with nothing from it, so an ETF list showed a column of
+    # dashes where the names should be. A quote carries the fund's own name
+    # — one batched request for the twenty rows on screen, and a name does
+    # not change with the session being viewed.
+    nameless = sorted({r["symbol"] for t in tabs for r in t["rows"] if not r.get("name")})
+    quotes: dict = {}
+    # ASK FOR ALL OF THEM, IN CHUNKS — never a slice of a sorted list. The
+    # first version capped at 120 symbols taken from an ALPHABETICAL set, so
+    # with three tabs of fifty rows everything past the letter T was simply
+    # never asked about: TSLG, TSLL, USHY, VTEB, XLE, XLF and XLU all showed
+    # a dash while the vendor knew every one of them. A cap that silently
+    # drops the end of the alphabet is worse than no cap, because it looks
+    # like missing data rather than an unasked question.
+    for i in range(0, len(nameless), 100):
+        try:
+            quotes.update(router.get("quotes", nameless[i:i + 100]) or {})
+        except Exception as exc:
+            log.debug("movers: no names from quotes (%s)", exc)
+            break
+        for t in tabs:
+            for r in t["rows"]:
+                if not r.get("name"):
+                    r["name"] = (quotes.get(r["symbol"]) or {}).get("name")
+
+
+def _check_base_closes(router, rows: list[dict], base_day_of, end_day: str) -> dict[str, Optional[dict]]:
+    """For each row of _SPLIT_CHECK_PCT or more, the close its change was
+    measured from — backed out of the row's own price and change — against
+    the split-adjusted close of the session `base_day_of(row)` names.
+
+    Returns {symbol: corrected row, or None to drop}; a symbol absent from
+    the answer stands as it was. Over LIVE_BASE_GAP_PCT apart, the change is
+    re-measured from the adjusted close with the vendor's own figure kept
+    beside it and the feed's corporate action named; no adjusted close for a
+    symbol the vendor answered for, the row is dropped; no vendor carrying
+    daily bars at all, nothing changes. Only rows past the threshold are
+    looked up, so an ordinary list costs nothing."""
+    suspicious = {r["symbol"]: r for r in rows if abs(r.get("change_pct") or 0) >= _SPLIT_CHECK_PCT}
+    if not suspicious:
+        return {}
+    syms = sorted(suspicious)[:60]
+    bases = {s: base_day_of(suspicious[s]) for s in syms}
+    try:
+        back = (date.today() - date.fromisoformat(min(bases.values()))).days
+    except ValueError:
+        back = 0
+    try:
+        bars = router.get("daily_history", syms, max(10, int(back * 0.72) + 8))
+    except Exception as exc:                   # no second source is not a verdict
+        log.info("movers: cannot check %d large move(s) (%s)", len(syms), exc)
+        return {}
+    if bars is None:                           # no vendor carries daily bars: leave the list as it came
+        return {}
+    checked: dict[str, Optional[dict]] = {}
+    corrected: list[str] = []
+    for sym in syms:
+        r = suspicious[sym]
+        price, chg = r.get("price"), r.get("change_pct")
+        if not price or chg is None or chg <= -100:
+            continue
+        close = next((b.get("close") for b in bars.get(sym) or [] if _bar_day(b) == bases[sym]), None)
+        if not close:
+            checked[sym] = None
+            continue
+        quoted = price / (1 + chg / 100.0)
+        if abs(quoted / close - 1) * 100.0 <= LIVE_BASE_GAP_PCT:
+            continue
+        checked[sym] = {**r, "change_pct": round((price / close - 1) * 100.0, 2), "vendor_change_pct": chg,
+                        "previous_close": round(close, 4), "vendor_previous_close": round(quoted, 4),
+                        "change_corrected": True}
+        corrected.append(sym)
+    if corrected:
+        since = (date.fromisoformat(min(bases[s] for s in corrected)) - timedelta(days=7)).isoformat()
+        events = _feed_events(router, corrected, since, end_day)
+        for sym in corrected:
+            checked[sym] = _named_event(checked[sym], events, since, end_day, {})
+    dropped = sorted(s for s, r in checked.items() if r is None)
+    if checked:
+        log.info("movers: %d large move(s) re-measured %s, %d dropped as unverifiable %s",
+                 len(corrected), corrected, len(dropped), dropped)
+    return checked
+
+
+def _apply_checked(tabs: list[dict], checked: dict[str, Optional[dict]]) -> None:
+    """Swap corrected rows in and drop unverifiable ones, in place. Gainers
+    and losers keep only rows still on their side, re-sorted; a corrected row
+    is never ADDED to a list it was not on."""
+    if not checked:
+        return
+    for t in tabs:
+        rows = [checked[r["symbol"]] if r["symbol"] in checked else r for r in t["rows"]]
+        rows = [r for r in rows if r is not None]
+        if t["id"] == "gainers":
+            rows = sorted((r for r in rows if (r.get("change_pct") or 0) > 0), key=lambda r: -r["change_pct"])
+        elif t["id"] == "losers":
+            rows = sorted((r for r in rows if (r.get("change_pct") or 0) < 0), key=lambda r: r["change_pct"])
+        t["rows"] = rows
+
+
 def _verify_live_extremes(router, tabs: list[dict]) -> None:
     """THE LIVE LIST'S CHECK FOR A CLOSE THAT IS NOT THE SAME SHARE'S
     (2026-11-02), in place.
@@ -1280,57 +1515,12 @@ def _verify_live_extremes(router, tabs: list[dict]) -> None:
     so an ordinary minute costs nothing."""
     from alphadesk.config import now_et
     from alphadesk.desk import sessions as cal
-    suspicious = {r["symbol"]: r for t in tabs for r in t["rows"]
-                  if abs(r.get("change_pct") or 0) >= _SPLIT_CHECK_PCT}
-    if not suspicious:
-        return
     day = cal.latest_session(now_et())
     prev = cal.previous_session(day)
-    syms = sorted(suspicious)[:60]
-    try:
-        bars = router.get("daily_history", syms, 10)
-    except Exception as exc:                   # no second source is not a verdict
-        log.info("live movers: cannot check %d large move(s) (%s)", len(syms), exc)
-        return
-    if bars is None:                           # no vendor carries daily bars: leave the list as it came
-        return
-    checked: dict[str, Optional[dict]] = {}
-    corrected: list[str] = []
-    for sym in syms:
-        r = suspicious[sym]
-        price, chg = r.get("price"), r.get("change_pct")
-        if not price or chg is None or chg <= -100:
-            continue
-        base_day = (day if r.get("extended") else prev).isoformat()
-        close = next((b.get("close") for b in bars.get(sym) or [] if _bar_day(b) == base_day), None)
-        if not close:
-            checked[sym] = None
-            continue
-        quoted = price / (1 + chg / 100.0)
-        if abs(quoted / close - 1) * 100.0 <= LIVE_BASE_GAP_PCT:
-            continue
-        checked[sym] = {**r, "change_pct": round((price / close - 1) * 100.0, 2), "vendor_change_pct": chg,
-                        "previous_close": round(close, 4), "vendor_previous_close": round(quoted, 4),
-                        "change_corrected": True}
-        corrected.append(sym)
-    if corrected:
-        events = _feed_events(router, corrected, (prev - timedelta(days=7)).isoformat(), day.isoformat())
-        for sym in corrected:
-            checked[sym] = _named_event(checked[sym], events, (prev - timedelta(days=7)).isoformat(),
-                                        day.isoformat(), {})
-    if not checked:
-        return
-    dropped = sorted(s for s, r in checked.items() if r is None)
-    log.info("live movers: %d large move(s) re-measured %s, %d dropped as unverifiable %s",
-             len(corrected), corrected, len(dropped), dropped)
-    for t in tabs:
-        rows = [checked[r["symbol"]] if r["symbol"] in checked else r for r in t["rows"]]
-        rows = [r for r in rows if r is not None]
-        if t["id"] == "gainers":
-            rows = sorted((r for r in rows if (r.get("change_pct") or 0) > 0), key=lambda r: -r["change_pct"])
-        elif t["id"] == "losers":
-            rows = sorted((r for r in rows if (r.get("change_pct") or 0) < 0), key=lambda r: r["change_pct"])
-        t["rows"] = rows
+    rows = list({r["symbol"]: r for t in tabs for r in t["rows"]}.values())
+    checked = _check_base_closes(router, rows, lambda r: (day if r.get("extended") else prev).isoformat(),
+                                 day.isoformat())
+    _apply_checked(tabs, checked)
 
 
 def _unavailable(cat: str, day: str, why: str) -> dict:
