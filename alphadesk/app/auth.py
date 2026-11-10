@@ -370,7 +370,13 @@ def current_user(request: Request) -> dict | None:
     deleted account all read as signed out. Cookies from before the stamp
     existed carry an implicit version 1, so a deploy alone signs nobody
     out — rows start at 1 too."""
-    claims = read_session(request.cookies.get(SESSION_COOKIE))
+    return claims_for_cookie(request.cookies.get(SESSION_COOKIE))
+
+
+def claims_for_cookie(cookie: str | None) -> dict | None:
+    """current_user for a session cookie's value alone, so work handed to
+    another thread after the response need not hold on to the request."""
+    claims = read_session(cookie)
     if claims is None or not claims.get("uid"):
         return claims
     if not email_allowed(claims.get("email")):
