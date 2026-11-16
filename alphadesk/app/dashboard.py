@@ -42,8 +42,25 @@ _agent_tools_app, _agent_tools_lifetime = agent_tools.build()
 
 @asynccontextmanager
 async def _lifespan(_app):
-    async with _agent_tools_lifetime():
-        yield
+    import asyncio
+
+    from alphadesk import loopwatch
+    watch = loopwatch.start(asyncio.get_running_loop())
+    try:
+        async with _agent_tools_lifetime():
+            yield
+    finally:
+        if watch is not None:
+            watch.set()
+
+
+# NOTHING THAT CAN WAIT RUNS ON THE EVENT LOOP (2026-11-10). Every request
+# passes through the loop before it reaches a worker, so one store write or
+# network call made there stalls every request at once (alphadesk/loopwatch.py
+# has the measurement). The middleware's bookkeeping writes go to this one
+# thread, fire-and-forget; its reads and the stream's setup go to the worker
+# pool with an await, which waits without holding the loop.
+_off_loop = ThreadPoolExecutor(max_workers=2, thread_name_prefix="off-loop")
 
 
 app = FastAPI(title="AlphaDesk", lifespan=_lifespan)
@@ -106,14 +123,29 @@ async def _note_for_prewarm(request: Request, call_next):
     if (request.method == "GET" and response.status_code == 200
             and request.url.path.startswith("/api/") and not request.url.path.startswith(rest_data.PREFIX)
             and not request.headers.get("x-alphadesk-prewarm")):
+        path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        # Off the loop and not awaited: it reads the account row and writes
+        # the note under the store's lock, and the response does not wait on it.
+        _off_loop.submit(_note_read, request.cookies.get(_session_cookie()), path)
+    return response
+
+
+def _session_cookie() -> str:
+    from alphadesk.app import auth
+    return auth.SESSION_COOKIE
+
+
+def _note_read(cookie: str | None, path: str) -> None:
+    """prewarm.note for the reader the session cookie names; never raises."""
+    try:
         from alphadesk import prewarm
         from alphadesk.app import auth
-        claims = auth.current_user(request)
+        claims = auth.claims_for_cookie(cookie)
         uid = (claims or {}).get("uid") or (None if auth.auth_required() else _local_uid())
         if uid:
-            path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
             prewarm.note(uid, path)
-    return response
+    except Exception as exc:                    # warming is a convenience, never an error
+        log.debug("prewarm note off the loop: %s", exc)
 
 
 @app.middleware("http")
@@ -191,8 +223,11 @@ async def _login_gate(request: Request, call_next):
     set to `required`, every data route demands a signed session. Static
     files and SPA routes stay open — the shell is public code, and a deep
     link has to be able to load the page that shows the login screen."""
+    from starlette.concurrency import run_in_threadpool
+
     from alphadesk.app import auth
-    claims = auth.current_user(request)
+    # On a worker: past its 30-second cache this reads the account row.
+    claims = await run_in_threadpool(auth.current_user, request)
     if auth.gate_active() and auth.is_gated(request.url.path) and claims is None:
         return Response('{"detail": "sign in required"}', status_code=401,
                         media_type="application/json")
@@ -206,12 +241,14 @@ async def _login_gate(request: Request, call_next):
     if not uid and not auth.auth_required():
         # An open instance acts as its one local account, so keys and every
         # keyed surface work there as for a signed-in user.
-        uid = _local_uid()
+        # Its first call creates or adopts that account under the store's
+        # lock, so it too runs on a worker (the loop watchdog named it).
+        uid = _local_uid_value or await run_in_threadpool(_local_uid)
     # Only a person's own request counts as being seen: a prewarm replay or a
     # health probe stamping the account would keep it "active" for ever, and
     # the news poll, held socket and replays with it (2026-10-03).
     if uid and not request.headers.get("x-alphadesk-prewarm") and request.url.path.startswith("/api/"):
-        _touch_seen(uid)
+        _off_loop.submit(_touch_seen, uid)
     token = ai_llm.set_request_user(uid)
     try:
         return await call_next(request)
@@ -986,19 +1023,29 @@ async def api_stream(request: Request, trades: str = "", quotes: str = "", crypt
     def clean(raw: str, extra: str = "") -> list[str]:
         return stream_symbols(raw, extra=extra)[0]
 
-    stock = streams.for_current_user("stock") if (trades or quotes) else None
-    coins = streams.for_current_user("crypto") if (crypto or trades) else None
-    # The news channel (2026-09-15): the reader's Alpaca news key streams
-    # stories as they publish; each is stored as theirs and the tab is told to
-    # reread its list. Other feeds have no real-time stream and stay polled.
-    news_stream, news_owner = streams.news_for_current_user() if news else (None, None)
-    from alphadesk.ingest.news import stream_seq
-    mux = streams.LiveMux(stock, coins, clean(trades, "/"), clean(quotes), clean(crypto, "/"),
-                          panel_push_s=_PANEL_PUSH_S, coin_push_s=_CRYPTO_MIN_PUSH_S, pair_of=coin_pair,
-                          news=news_stream, news_owner=news_owner, news_seq=stream_seq)
+    from starlette.concurrency import run_in_threadpool
+
+    def setup():
+        # On a worker, never the loop: finding the reader's connections reads
+        # their keys from the store and probes the vendor's plan over the
+        # network (2026-11-10).
+        stock = streams.for_current_user("stock") if (trades or quotes) else None
+        coins = streams.for_current_user("crypto") if (crypto or trades) else None
+        # The news channel (2026-09-15): the reader's Alpaca news key streams
+        # stories as they publish; each is stored as theirs and the tab is told
+        # to reread its list. Other feeds have no real-time stream and stay polled.
+        news_stream, news_owner = streams.news_for_current_user() if news else (None, None)
+        from alphadesk.ingest.news import stream_seq
+        return streams.LiveMux(stock, coins, clean(trades, "/"), clean(quotes), clean(crypto, "/"),
+                               panel_push_s=_PANEL_PUSH_S, coin_push_s=_CRYPTO_MIN_PUSH_S, pair_of=coin_pair,
+                               news=news_stream, news_owner=news_owner, news_seq=stream_seq)
+
+    mux = await run_in_threadpool(setup)
 
     def release_later(market, upstream):
-        asyncio.get_running_loop().call_later(streams.RELEASE_GRACE_S, market.release, upstream)
+        # The release unsubscribes upstream — a network send — so it runs on
+        # the off-loop thread when its grace period is up, not on the loop.
+        asyncio.get_running_loop().call_later(streams.RELEASE_GRACE_S, _off_loop.submit, market.release, upstream)
 
     # One seat per stream (2026-10-15): a newer stream from the same tab, or a
     # reader past the cap, ends this one at its next pass. See StreamSeats.
@@ -1007,7 +1054,8 @@ async def api_stream(request: Request, trades: str = "", quotes: str = "", crypt
     seat = streams.SEATS.take(reader, (tab or "")[:40])
 
     async def events():
-        hello = mux.open()
+        # Subscribing upstream is a network send: on a worker.
+        hello = await run_in_threadpool(mux.open)
         try:
             yield f"event: hello\ndata: {json.dumps(hello)}\n\n"
             while True:
