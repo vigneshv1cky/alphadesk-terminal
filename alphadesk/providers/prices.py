@@ -126,37 +126,6 @@ def polygon_mover_row(symbol: str, price, change_pct, volume, name: str | None =
             "turnover": (p or 0) * v, "volatility": None, "liquidity": None, "spark": []}
 
 
-# COMMODITIES (2026-11-23, the owner: "do we not have gold etc?"). The
-# front-month futures FMP quotes (its `commodities-list`, 40 symbols on
-# Premium), cut to PHYSICAL commodities: the stock-index futures (ES, NQ, YM,
-# RTY), the Treasury and Fed-funds futures (ZN, ZB, ZF, ZT, ZQ) and the dollar
-# index (DX) are other asset classes with their own lists, and the micro gold
-# and silver contracts (MGC, SIL) repeat the full-size ones. Each row is
-# (FMP symbol, the exchange's contract root, name, group, unit). The unit is
-# the contract's own quoting unit from the exchange's specifications — FMP
-# names only a currency, and "USX" is US cents — checked against the prices
-# FMP returned that day (gold 3,611 an ounce, corn 450.5 cents a bushel,
-# cocoa 5,270 a tonne, live cattle 227.7 cents a pound). The order is the
-# list's own: by group, then as a trading desk lists them. It is not a rank.
-COMMODITIES: tuple[tuple[str, str, str, str, str], ...] = (
-    ("GCUSD", "GC", "Gold", "Metals", "$/troy oz"), ("SIUSD", "SI", "Silver", "Metals", "$/troy oz"),
-    ("PLUSD", "PL", "Platinum", "Metals", "$/troy oz"), ("PAUSD", "PA", "Palladium", "Metals", "$/troy oz"),
-    ("HGUSD", "HG", "Copper", "Metals", "$/lb"), ("ALIUSD", "ALI", "Aluminum", "Metals", "$/tonne"),
-    ("CLUSD", "CL", "WTI crude oil", "Energy", "$/barrel"), ("BZUSD", "BZ", "Brent crude oil", "Energy", "$/barrel"),
-    ("NGUSD", "NG", "Natural gas", "Energy", "$/MMBtu"), ("HOUSD", "HO", "Heating oil", "Energy", "$/gallon"),
-    ("RBUSD", "RB", "Gasoline (RBOB)", "Energy", "$/gallon"),
-    ("ZCUSX", "ZC", "Corn", "Grains", "¢/bushel"), ("KEUSX", "KE", "Wheat (hard red winter)", "Grains", "¢/bushel"),
-    ("ZSUSX", "ZS", "Soybeans", "Grains", "¢/bushel"), ("ZMUSD", "ZM", "Soybean meal", "Grains", "$/short ton"),
-    ("ZLUSX", "ZL", "Soybean oil", "Grains", "¢/lb"), ("ZOUSX", "ZO", "Oats", "Grains", "¢/bushel"),
-    ("ZRUSD", "ZR", "Rough rice", "Grains", "$/cwt"),
-    ("KCUSX", "KC", "Coffee", "Softs", "¢/lb"), ("SBUSX", "SB", "Sugar", "Softs", "¢/lb"),
-    ("CCUSD", "CC", "Cocoa", "Softs", "$/tonne"), ("CTUSX", "CT", "Cotton", "Softs", "¢/lb"),
-    ("OJUSX", "OJ", "Orange juice", "Softs", "¢/lb"), ("LBUSD", "LBR", "Lumber", "Softs", "$/1,000 board ft"),
-    ("LEUSX", "LE", "Live cattle", "Livestock", "¢/lb"), ("GFUSX", "GF", "Feeder cattle", "Livestock", "¢/lb"),
-    ("HEUSX", "HE", "Lean hogs", "Livestock", "¢/lb"), ("DCUSD", "DC", "Class III milk", "Livestock", "$/cwt"),
-)
-
-
 CURRENCY_PAIRS: tuple[tuple[str, str], ...] = (
     # The dollar against the majors.
     ("EURUSD=X", "Euro"), ("JPY=X", "Japanese yen"), ("GBPUSD=X", "British pound"), ("AUDUSD=X", "Australian dollar"),

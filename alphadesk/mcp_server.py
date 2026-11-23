@@ -85,7 +85,7 @@ mcp = FastMCP(
         "came from (today alpaca). Read it before acting on a price: it is that "
         "broker's market, not every broker's.\n"
         "* Another asset class: movers takes a category — stocks, etfs, "
-        "indices, crypto, currencies, commodities (gold, oil, grains: futures), "
+        "indices, crypto, currencies, commodities (gold, oil, grains: tradable funds), "
         "options, bonds. Do not reach for a "
         "per-class tool; there is one.\n"
         "* A PAST session's movers: movers(session=...) for stocks, ETFs, "
@@ -267,16 +267,13 @@ def movers(category: str = "stocks", top: int = 20, session: str = "", period: s
     `category` is one of: stocks, etfs, indices, crypto, currencies,
     commodities, options, bonds.
 
-    COMMODITIES are front-month FUTURES for 28 physical commodities (metals,
-    energy, grains, softs, livestock), on the reader's FMP key. `display` is
-    the exchange's contract root (GC is gold), the name carries the quoting
-    unit — "¢" is US cents, so corn at 450.5 is $4.505 a bushel — and the
-    change runs from the previous settlement. Contracts trade different hours:
-    a row with `earlier_session` last traded in an earlier session than the
-    newest row, so its change is THAT session's; it is left out of gainers and
-    losers. No volume or liquidity (contract counts of different sizes are not
-    one unit); volatility only where the plan carries the contract's daily
-    history, and it is the front month's, so a contract roll counts as a move.
+    COMMODITIES are the commodity FUNDS the reader's Alpaca account can trade
+    (gold, silver, platinum, palladium, copper, oil, natural gas, gasoline,
+    grains, sugar, broad commodity indices) — never the commodity's own price.
+    `name` says what the fund holds and `group` its kind; most hold FUTURES,
+    so a fund such as USO can drift from the spot price over weeks. Funds
+    Alpaca does not trade are left out, and `note` says how many. Priced like
+    any fund: change since the last close, volume, volatility and liquidity.
 
     CRYPTO IS A CATEGORY HERE, not a separate tool (2026-09-30). A
     `crypto_movers` tool answered the same question from the same provider

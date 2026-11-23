@@ -340,83 +340,63 @@ def test_inside_the_session_no_list_claims_one(vendors, monkeypatch):
     assert out["extended"] is False and out["session_label"] is None
 
 
-# ── commodities (2026-11-23) ───────────────────────────────────────────────
+# ── commodities: the funds an Alpaca account can trade (2026-11-23) ───────
 
-def _commodity_quotes(now_ts: int, friday_ts: int) -> list[dict]:
-    return [
-        {"symbol": "GCUSD", "price": 3611.1, "previousClose": 3515.4, "changePercentage": 9.9, "timestamp": now_ts},
-        {"symbol": "CLUSD", "price": 82.64, "previousClose": 83.41, "timestamp": now_ts},
-        {"symbol": "KCUSX", "price": 268.5, "previousClose": 276.0, "timestamp": friday_ts},
-        # A Sunday-evening trade belongs to Monday's session.
-        {"symbol": "ZRUSD", "price": 18.56, "previousClose": 18.565, "timestamp": now_ts - 7 * 3600},
-    ]
+class _Asset:
+    def __init__(self, tradable):
+        self.tradable = tradable
 
 
-def test_commodities_measure_from_the_settlement_and_set_aside_an_earlier_session(monkeypatch):
-    from datetime import datetime, timezone
-    from alphadesk.providers.company_vendors import FmpPrices
-    monday = int(datetime(2026, 11, 23, 9, 0, tzinfo=timezone.utc).timestamp())    # 04:00 New York
-    friday = int(datetime(2026, 11, 20, 21, 0, tzinfo=timezone.utc).timestamp())
-    f = FmpPrices(api_key="k")
-    monkeypatch.setattr(f, "_get", lambda path, **q: _commodity_quotes(monday, friday) if path == "batch-quote" else [])
-    got = f.category_movers("commodities")
-    tabs = {t["id"]: t["rows"] for t in got["tabs"]}
-    rows = {r["symbol"]: r for r in tabs["all"]}
-    assert [r["symbol"] for r in tabs["all"]] == ["GCUSD", "CLUSD", "ZRUSD", "KCUSX"]   # the list's order, not a rank
-    assert rows["GCUSD"]["change_pct"] == round(100 * (3611.1 / 3515.4 - 1), 3)          # not FMP's own 9.9
-    assert rows["GCUSD"]["display"] == "GC" and rows["GCUSD"]["name"] == "Gold ($/troy oz)"
-    assert rows["KCUSX"]["earlier_session"] is True                                      # Friday's move on a Monday
-    assert "earlier_session" not in rows["ZRUSD"]                                        # Sunday evening is Monday
-    assert [r["symbol"] for r in tabs["gainers"]] == ["GCUSD"]
-    assert [r["symbol"] for r in tabs["losers"]] == ["CLUSD", "ZRUSD"]                   # coffee's -2.7% is Friday's
-    assert all(r["volume"] == 0 for r in tabs["all"])                                    # no volume is claimed
-    assert "settlement" in got["note"]
+def _alpaca_with(monkeypatch, tradable: dict):
+    from alphadesk.providers.alpaca import AlpacaPrices
+    a = AlpacaPrices.__new__(AlpacaPrices)
+    monkeypatch.setattr(a, "asset", lambda s: None if tradable.get(s) is None else _Asset(tradable[s]), raising=False)
+    monkeypatch.setattr(a, "listed_quotes", lambda universe: [
+        {"symbol": s, "name": name, "price": 10.0 + i, "change_pct": (1.5 if i % 2 else -0.5), "volume": 1000 * (i + 1)}
+        for i, (s, name) in enumerate(universe)], raising=False)
+    return a
 
 
-def test_on_a_weekend_no_commodity_is_marked(monkeypatch):
-    from alphadesk.providers.company_vendors import FmpPrices
-    f = FmpPrices(api_key="k")
-    friday = 1795381200
-    monkeypatch.setattr(f, "_get", lambda path, **q: _commodity_quotes(friday, friday - 3600))
-    got = f.category_movers("commodities")
-    assert not any(r.get("earlier_session") for r in got["tabs"][0]["rows"])
+def test_commodities_list_only_what_the_alpaca_account_can_trade(monkeypatch):
+    from alphadesk.providers.alpaca import COMMODITY_FUNDS
+    syms = [s for s, _, _ in COMMODITY_FUNDS]
+    tradable = {s: True for s in syms}
+    tradable["PALL"] = False          # Alpaca says not tradable
+    tradable["CANE"] = None           # the record could not be read
+    a = _alpaca_with(monkeypatch, tradable)
+    got = a.category_movers("commodities")
+    all_rows = {t["id"]: t["rows"] for t in got["tabs"]}["all"]
+    shown = [r["symbol"] for r in all_rows]
+    assert "PALL" not in shown and "CANE" not in shown                       # neither is promised
+    assert shown == [s for s in syms if s not in ("PALL", "CANE")]           # the list's order, not a rank
+    gld = next(r for r in all_rows if r["symbol"] == "GLD")
+    assert gld["name"] == "Gold" and gld["group"] == "Precious metals"
+    assert got["source"] == "alpaca"
+    assert "2 left out: 1 not tradable, 1 could not be checked" in got["note"]
+    assert {t["id"] for t in got["tabs"]} == {"all", "most_active", "gainers", "losers"}
 
 
-def test_a_commodity_the_plan_refuses_is_not_asked_again(monkeypatch):
-    from alphadesk.providers.base import ProviderError
-    from alphadesk.providers.company_vendors import FmpPrices
-    f = FmpPrices(api_key="k")
-    asked: list[str] = []
-
-    def get(path, **q):
-        asked.append(q["symbol"])
-        if q["symbol"] != "GCUSD":
-            raise ProviderError("HTTP 402")
-        return [{"date": f"2026-11-{d:02d}", "price": 3500 + d} for d in range(1, 22)]
-    monkeypatch.setattr(f, "_get", get)
-    first = f.commodity_daily_history(["GCUSD", "CLUSD", "KCUSX"])
-    assert list(first) == ["GCUSD"] and len(first["GCUSD"]) == 21
-    again = f.commodity_daily_history(["GCUSD", "CLUSD", "KCUSX"])
-    assert again == first and sorted(asked) == ["CLUSD", "GCUSD", "KCUSX"]               # kept, and refusals not re-asked
+def test_no_futures_and_no_leveraged_fund_is_on_the_commodity_list():
+    """Alpaca trades no futures, and a fund that resets daily at 2x or -1x
+    is a different instrument from the commodity it names."""
+    from alphadesk.providers.alpaca import COMMODITY_FUNDS
+    syms = {s for s, _, _ in COMMODITY_FUNDS}
+    assert not any(s.endswith(("USD", "USX")) or "=" in s for s in syms)
+    assert not syms & {"UCO", "SCO", "BOIL", "KOLD", "AGQ", "ZSL", "UGL", "GLL", "NUGT", "DUST"}
 
 
-def test_commodities_is_a_category_with_no_liquidity(monkeypatch):
+def test_commodities_is_an_alpaca_category_with_real_liquidity():
     from alphadesk.ingest import movers
-    from alphadesk.providers.catalogue import MOVER_SURFACE, METHOD_SURFACE, SURFACES
+    from alphadesk.providers.catalogue import MOVER_SURFACE, SURFACES
     assert movers.CATEGORIES["commodities"] == "Commodities"
     assert MOVER_SURFACE["commodities"] == "commodities"
-    assert METHOD_SURFACE["commodity_daily_history"] == "commodities"
-    assert [v for v, _ in SURFACES["commodities"].vendors] == ["fmp"]
+    assert [v for v, _ in SURFACES["commodities"].vendors] == ["alpaca"]
     assert "commodities" not in movers.SESSION_CATEGORIES and "commodities" not in movers.PERIOD_CATEGORIES
 
     class R:
         def get(self, method, syms, n):
-            assert method == "commodity_daily_history"
-            return {"GCUSD": [{"date": f"2026-11-{d:02d}", "close": 3500 + (d % 3) * 20} for d in range(1, 22)]}
-    tabs = [{"id": "all", "label": "All", "rows": [
-        {"symbol": "GCUSD", "volatility": None, "liquidity": None},
-        {"symbol": "CLUSD", "volatility": None, "liquidity": None}]}]
+            assert method == "daily_history"
+            return {"GLD": [{"close": 300 + (d % 3) * 3, "volume": 1_000_000, "ts": None} for d in range(21)]}
+    tabs = [{"id": "all", "label": "All", "rows": [{"symbol": "GLD", "volatility": None, "liquidity": None}]}]
     movers._enrich_stats(R(), tabs, "commodities")
-    gc, cl = tabs[0]["rows"]
-    assert gc["volatility"] and gc["liquidity"] is None
-    assert cl["volatility"] is None                                                      # refused: a dash
+    assert tabs[0]["rows"][0]["volatility"] and tabs[0]["rows"][0]["liquidity"]

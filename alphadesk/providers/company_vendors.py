@@ -607,10 +607,6 @@ class FmpPrices:
         self._etfs: tuple[float, dict[str, str]] | None = None
         # (the rollover it belongs to, {pair: close at that rollover})
         self._fx_bases: tuple[Any, dict[str, float]] | None = None
-        # A commodity's daily closes, kept an hour, and the contracts the plan
-        # refused, not asked again for six (commodity_daily_history).
-        self._cmd_hist: dict[str, tuple[float, list[dict]]] = {}
-        self._cmd_refused: dict[str, float] = {}
 
     def _need_key(self) -> None:
         if not self.api_key:
@@ -987,8 +983,6 @@ class FmpPrices:
         afternoon for EUR/USD and USD/JPY. So the base is each pair's own
         close at the rollover, read from its 5-minute bars once a trading
         day."""
-        if category == "commodities":
-            return self._commodity_movers()
         if category != "currencies":
             return None
         from alphadesk.providers.prices import CURRENCY_PAIRS, polygon_forex_symbol
@@ -1018,109 +1012,6 @@ class FmpPrices:
             {"id": "gainers", "label": "Gainers", "rows": sorted([r for r in changed if r["change_pct"] > 0], key=lambda r: -r["change_pct"])},
             {"id": "losers", "label": "Losers", "rows": sorted([r for r in changed if r["change_pct"] < 0], key=lambda r: r["change_pct"])},
         ], "source": "fmp", "note": "change since the 5pm New York rollover"}
-
-    def _commodity_movers(self) -> dict | None:
-        """Front-month futures for 28 physical commodities (providers/prices
-        COMMODITIES), in ONE request (2026-11-23).
-
-        The change is measured from FMP's `previousClose`, which is the
-        previous session's SETTLEMENT: checked that day, gold's 3,515.4 was
-        the same figure as its 20 November daily bar. The currency list could
-        not do this because FMP's previous close for a pair is no single
-        moment; for a future it is the exchange's own settle.
-
-        THE CONTRACTS DO NOT TRADE THE SAME HOURS. At 04:00 New York on a
-        Monday gold and crude had traded that morning while coffee, orange
-        juice, lumber and the livestock contracts had last traded on Friday,
-        so their change was FRIDAY's. A row whose last trade falls on an
-        earlier New York day than the newest row's is marked
-        `earlier_session` and kept out of Gainers and Losers, so one list
-        never ranks two days' moves against each other; it stays in All,
-        marked. On a weekend every row is Friday's and none is marked.
-
-        No volume is claimed: FMP's is the front month's contract count, and a
-        gold contract (100 ounces) and a corn contract (5,000 bushels) are not
-        units one column can rank, so there is no Active tab and no
-        Liquidity."""
-        from datetime import datetime, timedelta, timezone
-        from alphadesk.config import ET
-        from alphadesk.providers.prices import COMMODITIES
-        rows = self._get("batch-quote", symbols=",".join(c[0] for c in COMMODITIES))
-        if not isinstance(rows, list):
-            return None
-        quotes = {str(r.get("symbol", "")).upper(): r for r in rows if isinstance(r, dict)}
-        out = []
-        for sym, root, name, group, unit in COMMODITIES:
-            q = quotes.get(sym)
-            price = _f(q.get("price")) if q else None
-            if not price:
-                continue
-            prev = _f(q.get("previousClose"))
-            ts = q.get("timestamp")
-            traded = (datetime.fromtimestamp(ts, timezone.utc) if isinstance(ts, (int, float)) and ts > 0 else None)
-            # A futures TRADING DAY opens at 6pm New York the evening before
-            # (rough rice's Sunday 20:57 trade is Monday's session), so the
-            # day is read six hours on.
-            out.append({"symbol": sym, "display": root, "name": f"{name} ({unit})", "group": group, "unit": unit,
-                        "price": price, "change_pct": round(100 * (price / prev - 1), 3) if prev else None,
-                        "volume": 0, "traded_at": traded.isoformat(timespec="seconds") if traded else None,
-                        "_day": (traded.astimezone(ET) + timedelta(hours=6)).date().isoformat() if traded else None})
-        if not out:
-            return None
-        latest = max((r["_day"] for r in out if r["_day"]), default=None)
-        for r in out:
-            day = r.pop("_day")
-            if latest and day and day < latest:
-                r["earlier_session"] = True
-        live = [r for r in out if r["change_pct"] is not None and not r.get("earlier_session")]
-        return {"tabs": [
-            {"id": "all", "label": "All", "rows": out},
-            {"id": "gainers", "label": "Gainers", "rows": sorted([r for r in live if r["change_pct"] > 0], key=lambda r: -r["change_pct"])},
-            {"id": "losers", "label": "Losers", "rows": sorted([r for r in live if r["change_pct"] < 0], key=lambda r: r["change_pct"])},
-        ], "source": "fmp", "note": "front-month futures · change since the previous settlement"}
-
-    def commodity_daily_history(self, symbols: list[str], days: int = 21) -> dict[str, list[dict]]:
-        """A commodity's last `days` daily closes — the same FMP route as a
-        currency pair's, kept as its own method so the catalogue can say
-        which surface it serves. The series is the FRONT MONTH, so a day the
-        quote rolls to the next contract can show as a move."""
-        import time
-        from concurrent.futures import ThreadPoolExecutor
-        from datetime import date, timedelta
-        now = time.monotonic()
-        since = (date.today() - timedelta(days=int(days * 1.6) + 7)).isoformat()
-        want = [s for s in symbols if now - self._cmd_refused.get(s, float("-inf")) > self.CMD_REFUSED_KEEP_S]
-
-        def one(sym: str) -> tuple[str, list[dict] | None]:
-            hit = self._cmd_hist.get(sym)
-            if hit and now - hit[0] < self.CMD_HISTORY_KEEP_S:
-                return sym, hit[1]
-            try:
-                got = self._get("historical-price-eod/light", symbol=sym, **{"from": since})
-            except ProviderError as exc:
-                # MEASURED ON PREMIUM, 2026-11-23: the plan QUOTES all 28 but
-                # gives daily history for three — gold, silver and Brent —
-                # and answers 402 for the rest. Remembered, so a list that
-                # refreshes every two minutes does not ask 25 refusals again.
-                if "402" in str(exc) or isinstance(exc, EntitlementError):
-                    return sym, None
-                return sym, []
-            rows = [{"date": r["date"], "close": _f(r.get("price"))} for r in got or []
-                    if isinstance(r, dict) and r.get("date") and _f(r.get("price"))]
-            return sym, sorted(rows, key=lambda r: r["date"])[-days:]
-
-        out: dict[str, list[dict]] = {}
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            for sym, rows in pool.map(one, want):
-                if rows is None:
-                    self._cmd_refused[sym] = now
-                elif rows:
-                    self._cmd_hist[sym] = (now, rows)
-                    out[sym] = rows
-        return out
-
-    CMD_HISTORY_KEEP_S = 3600.0
-    CMD_REFUSED_KEEP_S = 6 * 3600.0
 
     def fx_daily_history(self, pairs: list[str], days: int = 21) -> dict[str, list[dict]]:
         """Each pair's last `days` daily closing rates, oldest first, as
