@@ -436,7 +436,9 @@ export function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkabl
                 {r.price != null ? <Flash value={r.price}>{bonds ? `${num(r.price, 2)}%` : num(r.price, decimals)}</Flash> : "—"}
               </TD>
               <TD align="right" mono className={`font-semibold ${up ? "text-gain" : "text-loss"}`}
-                  title={r.corporate_action
+                  title={r.change_basis === "utc_day"
+                    ? "A token on Alpaca's crypto venue: change since its daily close at 00:00 UTC (8pm New York). It trades every day, so its change covers a different window from the funds beside it, and it is listed here on All only"
+                    : r.corporate_action
                     ? (r.price_change_pct != null && r.price_change_pct !== r.change_pct
                       ? `Corporate action that day${r.corporate_action_type ? ` (${r.corporate_action_type})` : ""}: the price moved ${moveText(r.price_change_pct)} on the chart; a holder's move, counting what was handed out, was ${moveText(r.change_pct ?? 0)}${r.spin_off ? ` — ${r.spin_off.shares_per_share} ${r.spin_off.new_symbol} per share, closing at ${r.spin_off.new_close}` : ""}`
                       : `Corporate action that day${r.corporate_action_type ? `: ${r.corporate_action_type}` : ""}. The move is the price chart's and may not be what a holder made`)
@@ -684,13 +686,20 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   // NOR OVER A PERIOD: the overlay re-derives a row's change from the close
   // its DAILY change implies, which over a week is the wrong close entirely.
   const streamable = (category === "stocks" || category === "etfs" || category === "commodities") && !session && !spans
-  const symbols = useMemo(() => (streamable ? rows.map(r => r.symbol) : []), [rows, streamable])
+  // A gold token on the commodity list streams on the crypto feed, never the
+  // equity one (2026-11-23).
+  const isToken = (r: CategoryMoverRow) => category === "commodities" && r.change_basis === "utc_day"
+  const symbols = useMemo(() => (streamable ? rows.filter(r => !isToken(r)).map(r => r.symbol) : []), [rows, streamable])
   const live = useLiveQuotes(symbols)
   // The coins on screen, and none for any other category.
-  const coins = useMemo(() => (category === "crypto" && !session ? rows.map(r => r.symbol) : []), [rows, category, session])
+  const coins = useMemo(() => (session ? []
+    : category === "crypto" ? rows.map(r => r.symbol)
+    : category === "commodities" ? rows.filter(isToken).map(r => r.symbol) : []), [rows, category, session])
   const cryptoTicks = useCryptoTicks(coins)
   const priced = useMemo(() => rows.map(r => {
-    const livePrice = streamable
+    const livePrice = isToken(r)
+      ? (cryptoTicks[r.symbol] && !cryptoTicks[r.symbol].stale ? cryptoTicks[r.symbol].price : null)
+      : streamable
       ? (live[r.symbol] && !live[r.symbol].stale ? live[r.symbol].price : null)
       : category === "crypto" ? (cryptoTicks[r.symbol] && !cryptoTicks[r.symbol].stale ? cryptoTicks[r.symbol].price : null)
       : null

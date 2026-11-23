@@ -347,10 +347,12 @@ class _Asset:
         self.tradable = tradable
 
 
-def _alpaca_with(monkeypatch, tradable: dict):
+def _alpaca_with(monkeypatch, tradable: dict, pairs=("PAXG/USD", "BTC/USD")):
     from alphadesk.providers.alpaca import AlpacaPrices
     a = AlpacaPrices.__new__(AlpacaPrices)
     monkeypatch.setattr(a, "asset", lambda s: None if tradable.get(s) is None else _Asset(tradable[s]), raising=False)
+    monkeypatch.setattr(a, "crypto_pairs", lambda: list(pairs), raising=False)
+    monkeypatch.setattr(a, "quotes", lambda syms: {s: {"price": 3627.37, "change_pct": 1.51} for s in syms}, raising=False)
     monkeypatch.setattr(a, "listed_quotes", lambda universe: [
         {"symbol": s, "name": name, "price": 10.0 + i, "change_pct": (1.5 if i % 2 else -0.5), "volume": 1000 * (i + 1)}
         for i, (s, name) in enumerate(universe)], raising=False)
@@ -368,11 +370,12 @@ def test_commodities_list_only_what_the_alpaca_account_can_trade(monkeypatch):
     all_rows = {t["id"]: t["rows"] for t in got["tabs"]}["all"]
     shown = [r["symbol"] for r in all_rows]
     assert "PALL" not in shown and "CANE" not in shown                       # neither is promised
-    assert shown == [s for s in syms if s not in ("PALL", "CANE")]           # the list's order, not a rank
+    funds = [s for s in syms if s not in ("PALL", "CANE")]
+    assert shown == funds[:2] + ["PAXG-USD"] + funds[2:]                     # the list's order, not a rank
     gld = next(r for r in all_rows if r["symbol"] == "GLD")
     assert gld["name"] == "Gold" and gld["group"] == "Precious metals"
     assert got["source"] == "alpaca"
-    assert "2 left out: 1 not tradable, 1 could not be checked" in got["note"]
+    assert "2 left out: 1 not tradable, 1 could not be checked" in got["note"]   # the token is tradable here
     assert {t["id"] for t in got["tabs"]} == {"all", "most_active", "gainers", "losers"}
 
 
@@ -400,3 +403,45 @@ def test_commodities_is_an_alpaca_category_with_real_liquidity():
     tabs = [{"id": "all", "label": "All", "rows": [{"symbol": "GLD", "volatility": None, "liquidity": None}]}]
     movers._enrich_stats(R(), tabs, "commodities")
     assert tabs[0]["rows"][0]["volatility"] and tabs[0]["rows"][0]["liquidity"]
+
+
+def test_the_gold_token_is_listed_after_the_gold_funds_on_all_only(monkeypatch):
+    """PAXG's change runs from its 00:00 UTC daily close and it trades every
+    day, so it is not ranked against funds measured from the 4pm close."""
+    from alphadesk.providers.alpaca import COMMODITY_FUNDS
+    a = _alpaca_with(monkeypatch, {s: True for s, _, _ in COMMODITY_FUNDS})
+    got = a.category_movers("commodities")
+    tabs = {t["id"]: t["rows"] for t in got["tabs"]}
+    order = [r["symbol"] for r in tabs["all"]]
+    assert order[:4] == ["GLD", "IAU", "PAXG-USD", "SLV"]
+    paxg = tabs["all"][2]
+    assert paxg["display"] == "PAXG" and paxg["change_basis"] == "utc_day" and paxg["group"] == "Precious metals"
+    for tab in ("most_active", "gainers", "losers"):
+        assert "PAXG-USD" not in [r["symbol"] for r in tabs[tab]]
+    assert "left out" not in got["note"]
+
+
+def test_the_gold_token_is_left_out_when_the_account_cannot_trade_it(monkeypatch):
+    from alphadesk.providers.alpaca import COMMODITY_FUNDS
+    a = _alpaca_with(monkeypatch, {s: True for s, _, _ in COMMODITY_FUNDS}, pairs=("BTC/USD",))
+    got = a.category_movers("commodities")
+    assert "PAXG-USD" not in [r["symbol"] for r in got["tabs"][0]["rows"]]
+    assert "1 left out: not tradable here" in got["note"]
+
+
+def test_a_token_on_the_commodity_list_is_measured_on_coin_bars():
+    from alphadesk.ingest import movers
+    asked = []
+
+    class R:
+        def get(self, method, syms, n):
+            asked.append((method, tuple(syms)))
+            if method == "crypto_daily_history":
+                return {"PAXG-USD": [{"close": 3600 + (d % 3) * 20, "volume": 10} for d in range(21)]}
+            return {"GLD": [{"close": 300 + (d % 3) * 3, "volume": 1_000_000, "ts": None} for d in range(21)]}
+    tabs = [{"id": "all", "label": "All", "rows": [{"symbol": "GLD", "volatility": None, "liquidity": None},
+                                                    {"symbol": "PAXG-USD", "volatility": None, "liquidity": None}]}]
+    movers._enrich_stats(R(), tabs, "commodities")
+    assert asked == [("crypto_daily_history", ("PAXG-USD",)), ("daily_history", ("GLD",))]   # never a coin in stock bars
+    gld, paxg = tabs[0]["rows"]
+    assert gld["volatility"] and gld["liquidity"] and paxg["volatility"] and paxg["liquidity"] is None
