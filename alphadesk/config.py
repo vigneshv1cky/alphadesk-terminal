@@ -441,6 +441,13 @@ def _sec_key(symbol: str) -> str:
     return sec_ticker(symbol)
 
 
+def universe_size() -> int:
+    """How many symbols the list holds: the SEC's, the coin pairs, and any
+    broker listing registered beside them. 0 when no list could be loaded."""
+    _load_names()
+    return len(_names or {})
+
+
 def in_universe(symbol: str) -> bool:
     """Whether a symbol is on the SEC's ticker list or a listed coin pair."""
     _load_names()
