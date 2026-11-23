@@ -72,13 +72,20 @@ export type ReplayState = {
 }
 
 
-export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: number } = {}) {
+export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: number; range?: ChartRange } = {}) {
   const slot = opts.slot ?? 0
+  /** A range the PAGE sets (the period page opens on the period's range,
+   * 2026-11-23). It is followed while given and never saved: the reader's
+   * saved range is the Markets chart's too, and a page choosing one for its
+   * own subject must not move it. The reader may still pick another range on
+   * the toolbar; that, too, stays on this page. */
+  const pageRange = opts.range ?? null
   // The view settings survive navigation: seeded from the persisted prefs,
   // written back per gesture below. The SYMBOL deliberately does not live
   // here — the strip owns it (slot 0) or the workspace's layout (slots 1–3).
   const [prefs] = useState(() => loadChartPrefs(slot))
-  const [range, setRange] = useState<ChartRange>(prefs.range)
+  const [range, setRange] = useState<ChartRange>(pageRange ?? prefs.range)
+  useEffect(() => { if (pageRange) setRange(pageRange) }, [pageRange])
   const [type, setType] = useState<SeriesKind>(prefs.type)
   const [scale, setScale] = useState<ScaleMode>(prefs.scale)
   const [timeZone, setTimeZone] = useState(prefs.timeZone)
@@ -175,7 +182,8 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
   /** Put a whole prefs record in place — a saved layout being opened, the
    * account's copy arriving. Everything the prefs carry, in one go. */
   const applyPrefs = (p: ChartPrefs) => {
-    setRange(p.range); setType(p.type); setScale(p.scale)
+    if (!pageRange) setRange(p.range)
+    setType(p.type); setScale(p.scale)
     setTimeZone(p.timeZone); setPriceLine(p.priceLine)
     setInterval(p.interval); setIntervalByRange(p.intervalByRange)
     setIndicators(p.indicators); setPaneHeights(p.paneHeights)
@@ -206,7 +214,8 @@ export function useChartEngine(symbol: string, size: ChartSize, opts: { slot?: n
     if (firstSave.current) { firstSave.current = false; return }
     const updatedAt = Date.now()
     stamp.current = updatedAt
-    const next: ChartPrefs = { range, type, scale, interval, intervalPinned, intervalByRange, pinsReset: 1, indicators, paneHeights, timeZone, priceLine, updatedAt }
+    const savedRange = pageRange ? loadChartPrefs(slot).range : range
+    const next: ChartPrefs = { range: savedRange, type, scale, interval, intervalPinned, intervalByRange, pinsReset: 1, indicators, paneHeights, timeZone, priceLine, updatedAt }
     saveChartPrefs(next, slot)
     if (!me?.user) return
     pending.current = next

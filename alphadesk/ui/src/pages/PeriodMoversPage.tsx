@@ -6,7 +6,8 @@ import { Menu } from "@/components/ChartToolbar"
 import { isNeedsKey, on, type MoverCategory, type MoverPeriod } from "@/lib/api"
 import { useKeptState } from "@/lib/keptState"
 import { cn } from "@/lib/utils"
-import { PeriodChart } from "@/components/PeriodChart"
+import { MarketChart } from "@/widgets/chart"
+import { rangeReaching } from "@/lib/periodChart"
 import { FloorsPopover, MoversTable, SOURCE_LABELS, TabStrip, readFloors, writeFloors, type Floors } from "@/widgets/market"
 
 /** GAINERS AND LOSERS OVER ANY PERIOD (2026-11-23, the owner: "I need a
@@ -104,8 +105,15 @@ export default function PeriodMoversPage() {
         <h1 className="mb-2 text-emph font-bold tracking-tight">Period movers</h1>
       </div>
       <div className="collage !pt-0">
+        {/* THE MARKETS BOARD'S OWN CHART PANEL (2026-11-23, the owner: "i
+            mentioned chart panel"), scoped to the picked row and opened on
+            the shortest range that covers the period — toolbar, intervals,
+            candles and indicators as on every board. A purpose-built line
+            chart shipped first (#172) and was replaced. */}
+        <MarketChart span={6} symbol={picked?.symbol ?? ""}
+                     range={d?.period_from ? rangeReaching(d.period_from) : undefined} />
         <Widget
-          span={12}
+          span={6}
           title="Gainers and losers over a period"
           subtitle={subtitle}
           actions={d && !d.unavailable ? (
@@ -170,10 +178,6 @@ export default function PeriodMoversPage() {
             : q.isError ? <QueryFailure error={q.error}>the period list is unavailable right now</QueryFailure>
             : d?.unavailable ? <Empty>{d.note ?? "unavailable right now"}</Empty>
             : <>
-              {picked && d?.period_from && d.period_to && (
-                <PeriodChart symbol={picked.symbol} label={picked.name} from={d.period_from} to={d.period_to}
-                             live={!!d.live} listChange={picked.change_pct ?? null} />
-              )}
               <MoversTable rows={rows} onPick={r => setPicked(r.symbol)} picked={picked?.symbol ?? null} changeHead={d?.change_label ?? "Change"} changeTip={changeTip}
                            nameHead={category === "stocks" ? "Company" : "Name"}
                            volTip={`Annualised volatility of daily returns over the last twenty sessions${statsTip}`}
