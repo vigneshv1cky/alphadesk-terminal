@@ -110,10 +110,13 @@ export default function PeriodMoversPage() {
             the shortest range that covers the period — toolbar, intervals,
             candles and indicators as on every board. A purpose-built line
             chart shipped first (#172) and was replaced. */}
-        <MarketChart span={6} symbol={picked?.symbol ?? ""}
+        {/* STACKED ON EVERY WIDTH (2026-11-23, the owner: "make it top bottom
+            sections"): the chart panel full width on top at its usual height,
+            the list full width below it, as a phone already showed them. */}
+        <MarketChart span={12} symbol={picked?.symbol ?? ""}
                      range={d?.period_from ? rangeReaching(d.period_from) : undefined} />
         <Widget
-          span={6}
+          span={12}
           title="Gainers and losers over a period"
           subtitle={subtitle}
           actions={d && !d.unavailable ? (
