@@ -105,7 +105,7 @@ function Legend({ e }: { e: ChartEngine }) {
         <div className="flex items-baseline gap-2">
           <span className="tnum text-figure font-bold text-foreground">{price.toFixed(2)}</span>
           {chg != null && (
-            <span className={`tnum text-body font-semibold ${up ? "text-gain" : "text-loss"}`}>
+            <span className={`tnum text-body font-semibold ${up ? "text-chart-up" : "text-chart-down"}`}>
               {up ? "+" : ""}{chg.toFixed(2)}{pct != null ? ` (${up ? "+" : ""}${pct.toFixed(2)}%)` : ""}
             </span>
           )}

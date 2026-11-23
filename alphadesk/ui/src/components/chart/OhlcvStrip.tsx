@@ -20,7 +20,7 @@ export function OhlcvStrip({ bar, live, symbol, first, at, timeZone = "America/N
     () => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }), [])
   if (!bar) return null
   const up = bar.c >= bar.o
-  const tone = up ? "text-gain" : "text-loss"
+  const tone = up ? "text-chart-up" : "text-chart-down"
   const stamp = new Date(bar.t).toLocaleString("en-US", {
     timeZone, month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit",
@@ -83,7 +83,7 @@ export function OhlcvStrip({ bar, live, symbol, first, at, timeZone = "America/N
           <div className="flex items-center gap-1.5 text-caption">
             <span className="h-1.5 w-1.5" style={{ background: "var(--accent)" }} />
             <span className="font-medium">{symbol}</span>
-            <span className={`tnum ${pct == null ? "text-muted-foreground" : pct >= 0 ? "text-gain" : "text-loss"}`}>
+            <span className={`tnum ${pct == null ? "text-muted-foreground" : pct >= 0 ? "text-chart-up" : "text-chart-down"}`}>
               {pct == null ? "—" : `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`}
             </span>
           </div>

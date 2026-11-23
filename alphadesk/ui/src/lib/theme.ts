@@ -76,8 +76,11 @@ export function useChartTheme() {
       return v || fallback
     }
     return {
-      gain: read("--gain", "#12703c"),
-      loss: read("--loss", "#ec3013"),
+      // The chart's own up/down pair, not the app's gain/loss: candles,
+      // wicks, volume, the MACD histogram and the live price tag all paint
+      // with these, so they move together and leave tables and pills alone.
+      gain: read("--chart-up", "#089981"),
+      loss: read("--chart-down", "#f23645"),
       accent: read("--accent", "#ec3013"),
       grid: read("--chart-grid", "rgba(32,30,29,0.08)"),
       text: read("--muted-foreground", "#605d5d"),

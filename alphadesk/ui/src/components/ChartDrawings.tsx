@@ -763,7 +763,7 @@ export function ChartDrawings({
     const delta = to - from
     const pct = from === 0 ? 0 : (delta / Math.abs(from)) * 100
     const up = delta >= 0
-    const tone = up ? "var(--gain)" : "var(--loss)"
+    const tone = up ? "var(--chart-up)" : "var(--chart-down)"
     const n = bA ? barsBetween(d.a, bA) : null
     const span = bA ? spanLabel(d.a, bA) : ""
     const priceText = `${up ? "+" : ""}${fmt(delta)} (${up ? "+" : ""}${pct.toFixed(2)}%)`
