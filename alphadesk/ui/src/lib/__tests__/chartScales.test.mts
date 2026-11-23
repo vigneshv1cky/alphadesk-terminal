@@ -258,3 +258,18 @@ test("inside the series the bar under the cursor still stays put", () => {
   const held = zoomAt(s, 3_500, 2, 4_000)
   assert.ok(Math.abs((3_500 - held.from) / (held.to - held.from) - 0.45) < 0.01)
 })
+
+test("a vertical drag moves the price range with the hand, keeping its width", async () => {
+  const { shiftedRange } = await import("../chartScales.ts")
+  // Down 100px on a 400px pane over 100–200: a quarter of the range, up the axis.
+  assert.deepEqual(shiftedRange({ min: 100, max: 200 }, 100, 400), { min: 125, max: 225 })
+  assert.deepEqual(shiftedRange({ min: 100, max: 200 }, -100, 400), { min: 75, max: 175 })
+  assert.deepEqual(shiftedRange({ min: 100, max: 200 }, 0, 400), { min: 100, max: 200 })
+  // Log: the same proportion at every price — the ratio max/min is kept.
+  const log = shiftedRange({ min: 10, max: 1000 }, 200, 400, true)
+  assert.ok(Math.abs(log.max / log.min - 100) < 1e-9)
+  assert.ok(Math.abs(log.min - 100) < 1e-9)                    // half the pane: one decade of two
+  // Nothing to move: a broken range or a pane with no height comes back as given.
+  assert.deepEqual(shiftedRange({ min: 5, max: 5 }, 50, 400), { min: 5, max: 5 })
+  assert.deepEqual(shiftedRange({ min: 1, max: 2 }, 50, 0), { min: 1, max: 2 })
+})
