@@ -79,14 +79,14 @@ export function NewsReader({ article: listed, onBack }: {
           // Sticky at the top of the panel's scroll, so the way back stays in
           // reach through a long story (2026-10-10, the owner). Opaque, or the
           // story's text would show through it as it scrolls under.
-          className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-row-rule bg-card px-3 py-2 text-left text-label uppercase tracking-caps text-muted-foreground hover:bg-surface hover:text-foreground"
+          className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-row-rule bg-card px-3 py-2 text-left text-label text-muted-foreground hover:bg-surface hover:text-foreground"
         >
           <ArrowLeft className="h-[12px] w-[12px] shrink-0" aria-hidden="true" />
           Back to the headlines
         </button>
       )}
       <div className="px-4 py-3">
-        <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
+        <div className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium">
           <span className="text-accent-700">{article.source}</span>
           {viaFeeds(article.feeds) && (
             <span className="normal-case tracking-normal text-muted-foreground" title="The news feeds you connected that delivered this story">
@@ -94,7 +94,7 @@ export function NewsReader({ article: listed, onBack }: {
             </span>
           )}
         </div>
-        <h3 className="text-figure font-extrabold leading-[1.2] tracking-tight">
+        <h3 className="text-figure font-bold leading-[1.2] tracking-tight">
           {article.title}
         </h3>
         <div className="mt-1 text-caption text-muted-foreground">

@@ -75,7 +75,7 @@ export function KeysExportDialog({ onClose }: { onClose: () => void }) {
           <div className="flex justify-end gap-2">
             <button type="button" onClick={onClose} className={btnCls({ size: "lg" }, "rounded-md")}>Cancel</button>
             <button type="submit" disabled={busy}
-                    className={btnCls({ variant: "accent", size: "lg" }, "rounded-md px-3 uppercase tracking-caps")}>
+                    className={btnCls({ variant: "accent", size: "lg" }, "rounded-md px-3")}>
               {busy ? "Preparing…" : "Download keys"}
             </button>
           </div>

@@ -281,7 +281,7 @@ export function ChartToolbar({
                     // reader's plan said no within the hour.
                     <button key={i.id} type="button" disabled title="Not included in your plan"
                       className={`${menuItemCls} text-muted-foreground opacity-45 hover:bg-transparent`}>
-                      <span className="w-3 shrink-0" />{i.label}<span className="ml-auto text-label uppercase tracking-caps">plan</span>
+                      <span className="w-3 shrink-0" />{i.label}<span className="ml-auto text-label">Plan</span>
                     </button>
                   ) : (
                     <Item key={i.id} selected={i.id === interval} onClick={() => { onInterval(i.id); close() }}>

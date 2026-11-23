@@ -176,7 +176,7 @@ export function InsiderTradesPanel({ symbol, span = 12, scroll = 420, limit = 40
                     <span className="font-medium">{t.owner_name}</span>
                     {t.owner_title ? <span className="text-muted-foreground"> · {t.owner_title}</span> : null}
                   </TD>
-                  <TD className={`text-label font-extrabold uppercase ${buy ? "text-gain" : "text-loss"}`}>{buy ? "bought" : "sold"}</TD>
+                  <TD className={`text-label font-bold capitalize ${buy ? "text-gain" : "text-loss"}`}>{buy ? "bought" : "sold"}</TD>
                   <TD align="right" mono>{compact(t.securities_transacted)}</TD>
                   <TD align="right" mono className="text-muted-foreground">{t.transaction_price == null ? dash : t.transaction_price.toFixed(2)}</TD>
                   <TD align="right" mono className="text-muted-foreground">{t.transaction_value == null ? dash : `$${compact(t.transaction_value)}`}</TD>

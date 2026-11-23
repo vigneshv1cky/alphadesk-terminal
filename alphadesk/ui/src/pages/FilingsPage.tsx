@@ -64,7 +64,7 @@ export default function FilingsPage() {
           inset as the board heading, without the Customize control — there is
           no board here to compose. */}
       <div className="px-4 pt-2">
-        <h1 className="mb-2 text-emph font-extrabold tracking-tight">Filings</h1>
+        <h1 className="mb-2 text-emph font-bold tracking-tight">Filings</h1>
       </div>
       {/* THE PANEL SITS IN THE SAME FRAME AS EVERY OTHER PAGE'S TILES
           (2026-09-29, the owner: "the gap between left sidebar and tiles is

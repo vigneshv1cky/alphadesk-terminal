@@ -88,7 +88,7 @@ function SectionHeader({ label, open, onToggle, className, children }: {
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-label font-medium uppercase tracking-caps text-muted-foreground hover:text-foreground"
+        className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-label font-medium text-muted-foreground hover:text-foreground"
       >
         <ChevronDown
           className={`h-[10px] w-[10px] shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
@@ -169,7 +169,7 @@ export function Sidebar() {
   const rowCls = (isActive: boolean, h: string) =>
     `mx-1.5 flex ${h} items-center gap-2 rounded-md px-1.5 text-body ${
       isActive
-        ? "bg-accent font-extrabold text-white [&_*]:!text-white"
+        ? "bg-accent font-bold text-white [&_*]:!text-white"
         : "font-semibold text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
     }`
 
@@ -254,7 +254,7 @@ export function Sidebar() {
               <Icon className={`h-[15px] w-[15px] shrink-0 ${isActive ? "text-accent" : "text-muted-foreground"}`} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{label}</span>
               {to === "/news" && boardNews > 0 ? (
-                <span className="num shrink-0 rounded-sm bg-accent px-1 text-label font-extrabold text-accent-foreground"
+                <span className="num shrink-0 rounded-sm bg-accent px-1 text-label font-bold text-accent-foreground"
                       title={`${boardNews} new ${boardNews === 1 ? "story" : "stories"} about stocks on your board since you last opened News`}>
                   {boardNews} new
                 </span>
@@ -365,7 +365,7 @@ export function Sidebar() {
             to="/account"
             className={({ isActive }) =>
               `flex h-[32px] shrink-0 items-center gap-2 px-3 text-body ${
-                isActive ? "font-extrabold text-foreground" : "font-semibold text-muted-foreground hover:text-foreground"
+                isActive ? "font-bold text-foreground" : "font-semibold text-muted-foreground hover:text-foreground"
               }`
             }
           >
@@ -378,7 +378,7 @@ export function Sidebar() {
             to="/agent-access"
             className={({ isActive }) =>
               `flex h-[32px] shrink-0 items-center gap-2 px-3 text-body ${
-                isActive ? "font-extrabold text-foreground" : "font-semibold text-muted-foreground hover:text-foreground"
+                isActive ? "font-bold text-foreground" : "font-semibold text-muted-foreground hover:text-foreground"
               }`
             }
           >

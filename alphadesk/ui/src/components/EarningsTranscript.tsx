@@ -137,7 +137,7 @@ export function EarningsTranscriptPanel({ symbol, span = 6, scroll }: { symbol: 
               order, never ranked: which sentence matters is the reader's. */}
           {(doc.data?.guidance?.length ?? 0) > 0 && (
             <div className="border-b border-row-rule bg-panel/60 px-3 py-2.5">
-              <p className="text-label font-medium uppercase tracking-caps text-muted-foreground">
+              <p className="text-label font-medium text-muted-foreground">
                 Guidance · the company's own words
               </p>
               <ul className="mt-1.5 space-y-1.5">

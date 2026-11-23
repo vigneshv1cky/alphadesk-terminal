@@ -31,7 +31,7 @@ export function Row({ label, children, actions }: {
 }) {
   return (
     <div className="row-rule grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 px-4 py-3.5">
-      <span className="min-w-0 text-body font-extrabold">{label}</span>
+      <span className="min-w-0 text-body font-bold">{label}</span>
       <span className="col-span-2 min-w-0 text-caption leading-[1.45] text-muted-foreground">
         {children}
       </span>
@@ -75,7 +75,7 @@ export function Pill({ tone, children }: { tone: "gain" | "warn" | "info" | "mut
     muted: "bg-surface text-muted-foreground",
   }[tone]
   return (
-    <span className={`inline-flex h-[20px] items-center whitespace-nowrap rounded-xs px-2 text-label font-bold uppercase tracking-caps ${cls}`}>
+    <span className={`inline-flex h-[20px] items-center whitespace-nowrap rounded-xs px-2 text-label font-semibold ${cls}`}>
       {children}
     </span>
   )
@@ -93,7 +93,7 @@ export function SubLabel({ children, right }: { children: React.ReactNode; right
     // wrapped onto their own line they start at the left rather than hang
     // off the right edge.
     <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 border-b border-row-rule bg-card px-4 pb-2 pt-4">
-      <span className="whitespace-nowrap text-label font-bold uppercase tracking-caps text-muted-foreground">{children}</span>
+      <span className="whitespace-nowrap text-label font-semibold text-muted-foreground">{children}</span>
       {right && <span>{right}</span>}
     </div>
   )

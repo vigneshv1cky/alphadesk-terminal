@@ -139,7 +139,7 @@ export default function ThemePage() {
         )}
         <table className="w-full border-collapse text-body">
           <thead>
-            <tr className="text-label font-medium uppercase tracking-caps text-muted-foreground">
+            <tr className="text-label font-medium text-muted-foreground">
               <th className="px-3 py-2.5 text-left font-medium" data-tip="The ticker. Click a row to scope the chart and news to it" aria-description="The ticker. Click a row to scope the chart and news to it">Symbol</th>
               <th className="px-3 py-2.5 text-left font-medium" data-tip="The company or fund name" aria-description="The company or fund name">Name</th>
               <th className="px-3 py-2.5 text-right font-medium" data-tip="The latest price" aria-description="The latest price">Price</th>

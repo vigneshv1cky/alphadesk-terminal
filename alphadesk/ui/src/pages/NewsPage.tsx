@@ -463,9 +463,9 @@ export default function NewsPage() {
                     aria-current={on ? "true" : undefined}
                     className={`block w-full px-3 py-3 text-left`}
                   >
-                    <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
+                    <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium">
                       {board.fresh.has(a.article_id) && (
-                        <span className="bg-accent px-1 text-label font-extrabold tracking-caps text-accent-foreground"
+                        <span className="bg-accent px-1 text-label font-bold text-accent-foreground"
                               title="New since your last visit, about a stock on your board">New</span>
                       )}
                       <HeadlineTickers symbols={a.tickers} />

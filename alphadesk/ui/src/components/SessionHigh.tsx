@@ -19,7 +19,7 @@ type Cell = [string, string, string?]   // label, value, tooltip
 function Column({ title, cells, note }: { title: string; cells: Cell[]; note?: string }) {
   return (
     <div className="min-w-0">
-      <div className="mb-1 text-label uppercase tracking-caps text-muted-foreground">{title}</div>
+      <div className="mb-1 text-label text-muted-foreground">{title}</div>
       {note ? <div className="py-1 text-caption text-muted-foreground">{note}</div> : cells.map(([l, v, tip]) => (
         <div key={l} className="flex items-baseline justify-between gap-2 border-b border-row-rule py-1 text-body" title={tip}>
           <span className="truncate text-muted-foreground">{l}</span>

@@ -123,7 +123,7 @@ export function SymbolSuggest({ value, onChange, onPick, placeholder, width = "w
              style={{ top: anchor.top, left: anchor.left }}
              className="pop-in fixed z-[80] w-[400px] overflow-hidden border border-card-border bg-card shadow-card max-sm:w-[min(400px,86vw)]">
           {trending && hits.length > 0 && (
-            <div className="px-3.5 pb-1.5 pt-3 text-label font-medium uppercase tracking-caps text-muted-foreground">
+            <div className="px-3.5 pb-1.5 pt-3 text-label font-medium text-muted-foreground">
               Trending tickers
             </div>
           )}
@@ -151,7 +151,7 @@ export function SymbolSuggest({ value, onChange, onPick, placeholder, width = "w
                   i === active ? "bg-accent text-accent-foreground" : "hover:bg-muted"
                 }`}
               >
-                <span className="w-[52px] shrink-0 text-body font-extrabold tracking-ticker">{h.symbol}</span>
+                <span className="w-[52px] shrink-0 text-body font-bold tracking-ticker">{h.symbol}</span>
                 <span className={`min-w-0 flex-1 truncate text-body ${
                   i === active ? "opacity-90" : "text-muted-foreground"}`}>
                   {h.name ?? ""}

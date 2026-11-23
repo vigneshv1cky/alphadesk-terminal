@@ -64,7 +64,7 @@ function Row({ f }: { f: RelatedFund }) {
       <TD className="font-semibold">{f.symbol}</TD>
       <TD className="truncate text-muted-foreground" title={f.name}>{f.name}</TD>
       <TD>
-        <span className="text-label uppercase tracking-caps text-muted-foreground" data-tip={kind.tip}>
+        <span className="text-label text-muted-foreground" data-tip={kind.tip}>
           {/* The side is the label, so the multiple needs no sign: "Short 2×". */}
           {kind.label}{f.leverage != null ? ` ${Math.abs(f.leverage)}×` : ""}
         </span>

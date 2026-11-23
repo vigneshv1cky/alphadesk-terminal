@@ -71,7 +71,7 @@ function FilterPopover({ filter, onChange, countries }: {
   const chip = (on: boolean) => btnCls({ active: on }, "flex-1 px-1.5")
   return (
     <div className="w-[272px]">
-      <div className="px-3 pb-1 pt-1.5 text-label font-medium uppercase tracking-caps text-muted-foreground">Impact · at least</div>
+      <div className="px-3 pb-1 pt-1.5 text-label font-medium text-muted-foreground">Impact · at least</div>
       <div className="flex gap-1 px-3 pb-2">
         {IMPACT_FLOORS.map(o => (
           <button key={o.id} type="button" title={o.hint} aria-pressed={filter.impact === o.id}
@@ -81,7 +81,7 @@ function FilterPopover({ filter, onChange, countries }: {
         ))}
       </div>
       <div className="flex items-center gap-2 border-t border-row-rule px-3 pb-1 pt-2">
-        <span className="mr-auto text-label font-medium uppercase tracking-caps text-muted-foreground">Countries</span>
+        <span className="mr-auto text-label font-medium text-muted-foreground">Countries</span>
         <button type="button" onClick={() => onChange({ ...filter, countries: [] })}
                 className={`text-caption font-semibold ${filter.countries.length ? "text-muted-foreground hover:text-foreground" : "text-accent-700"}`}>All</button>
         <button type="button" onClick={() => onChange({ ...filter, countries: ["US"] })}
@@ -195,7 +195,7 @@ export function EconomicCalendarPanel({ span = 12 }: { span?: number }) {
             {groups.map(([day, evs]) => (
               <Fragment key={day}>
                 <tr>
-                  <TD colSpan={7} className="bg-card pt-4 text-caption font-extrabold uppercase tracking-caps text-foreground">{day}</TD>
+                  <TD colSpan={7} className="bg-card pt-4 text-caption font-bold text-foreground">{day}</TD>
                 </tr>
                 {evs.map((r, i) => {
                   const beat = r.actual != null && r.estimate != null ? r.actual > r.estimate : null

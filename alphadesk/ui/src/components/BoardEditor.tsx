@@ -123,7 +123,7 @@ export function BoardEditor({
   if (!open) {
     return (
       <div className="mb-2 flex items-center justify-between gap-3">
-        {title ? <h1 className="text-emph font-extrabold tracking-tight">{title}</h1> : <span />}
+        {title ? <h1 className="text-emph font-bold tracking-tight">{title}</h1> : <span />}
         <Btn variant="ghost" onClick={() => setOpen(true)} aria-expanded={false}>
           Customize board{isCustom ? " · custom" : ""}
         </Btn>
@@ -142,7 +142,7 @@ export function BoardEditor({
       {/* Wrapping, not fixed-height: on a phone the title plus three buttons
           exceed the panel and would bleed past its border. */}
       <div className="flex min-h-[40px] flex-wrap items-center gap-2 border-b border-row-rule px-2.5 py-2.5">
-        <span className="text-label font-medium uppercase tracking-caps">Board layout</span>
+        <span className="text-label font-medium">Board layout</span>
         <span className="min-w-0 flex-1" />
         {(showReset ?? isCustom) && <Btn variant="ghost" onClick={onReset ?? reset}>{resetLabel}</Btn>}
         {onSetDefault && (
@@ -182,7 +182,7 @@ export function BoardEditor({
           position. */}
       {/* 32px, the height the system gives a TABLE ROW — this is one, and at
           23px it sat squashed against the bar above it. */}
-      <div className="hidden min-h-[32px] items-center gap-2 border-b border-row-rule px-2.5 text-label uppercase tracking-caps text-muted-foreground md:flex">
+      <div className="hidden min-h-[32px] items-center gap-2 border-b border-row-rule px-2.5 text-label text-muted-foreground md:flex">
         <span className="min-w-[120px] flex-1">Tile</span>
         <span className="w-[64px]">Order</span>
         <span className="w-[92px]">Width</span>

@@ -72,13 +72,13 @@ export function FilingsReader({ rows, unavailable, groups, unlistedHidden, filte
             {off.map(([g, why]) => `${groups?.[g] ?? g}: ${why}`).join(" · ")}
           </p>
         )}
-        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-row-rule bg-surface px-3 text-label font-semibold uppercase tracking-caps text-muted-foreground">
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-row-rule bg-surface px-3 text-label font-semibold text-muted-foreground">
           <span className="w-[64px]">Filed</span><span className="w-[56px]">Ticker</span><span>Company</span>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto" onKeyDown={onKeyDown}>
           {day.map(g => (
             <div key={g.label}>
-              <div className="px-3 pb-1 pt-3 text-label font-semibold uppercase tracking-caps text-muted-foreground">{g.label}</div>
+              <div className="px-3 pb-1 pt-3 text-label font-semibold text-muted-foreground">{g.label}</div>
               <ul>
                 {g.rows.map(f => {
                   const key = filingKey(f)
@@ -94,7 +94,7 @@ export function FilingsReader({ rows, unavailable, groups, unlistedHidden, filte
                         className={cn("flex min-h-[44px] w-full items-center gap-2 border-b border-row-rule px-3 text-left hover:bg-foreground/5", on && "bg-row-selected")}
                       >
                         <span className="num w-[64px] shrink-0 text-caption text-muted-foreground">{timeLabel(f.filed_at)}</span>
-                        <span className={cn("w-[56px] shrink-0 truncate text-body font-extrabold tracking-ticker", on && "text-accent-700")}>{f.symbols?.[0] ?? "—"}</span>
+                        <span className={cn("w-[56px] shrink-0 truncate text-body font-bold tracking-ticker", on && "text-accent-700")}>{f.symbols?.[0] ?? "—"}</span>
                         <span className="min-w-0 flex-1 truncate text-caption">{f.company}</span>
                         <span className="shrink-0 text-label text-muted-foreground">{f.form.replace("SCHEDULE ", "")}</span>
                       </button>
@@ -120,7 +120,7 @@ export function FilingsReader({ rows, unavailable, groups, unlistedHidden, filte
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-y-auto p-6 max-sm:p-4">
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-display font-extrabold tracking-tight">{ticker ?? "—"}</span>
+            <span className="text-display font-bold tracking-tight">{ticker ?? "—"}</span>
             <span className="text-emph">{sel.company}</span>
           </div>
           <p className="text-caption text-muted-foreground">
@@ -130,7 +130,7 @@ export function FilingsReader({ rows, unavailable, groups, unlistedHidden, filte
           </p>
         </div>
         <div>
-          <h3 className="pb-2 text-label font-semibold uppercase tracking-caps text-muted-foreground">
+          <h3 className="pb-2 text-label font-semibold text-muted-foreground">
             {info.declared ? `What the company declared (${info.lines.length})` : "What this filing is"}
           </h3>
           <ul>

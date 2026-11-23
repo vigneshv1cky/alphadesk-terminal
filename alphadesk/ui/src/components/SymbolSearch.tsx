@@ -145,7 +145,7 @@ export function SymbolSearch() {
             className="w-full rounded-none border-b border-row-rule bg-transparent px-4 py-3 text-body text-foreground outline-none placeholder:text-muted-foreground"
           />
           {trending && hits.length > 0 && (
-            <div className="px-4 pb-1 pt-3 text-label font-medium uppercase tracking-caps text-muted-foreground">Trending tickers</div>
+            <div className="px-4 pb-1 pt-3 text-label font-medium text-muted-foreground">Trending tickers</div>
           )}
           <div className="max-h-[320px] overflow-y-auto">
             {hits.length === 0 ? (
@@ -187,7 +187,7 @@ export function SymbolSearch() {
                 }`}
               >
                 <span className="flex items-baseline justify-between gap-3">
-                  <span className="text-body font-extrabold tracking-ticker">
+                  <span className="text-body font-bold tracking-ticker">
                     {h.symbol}
                   </span>
                   <span className={`text-caption ${i === active ? "opacity-90" : "text-muted-foreground"}`}>

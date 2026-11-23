@@ -151,7 +151,7 @@ export default function PortfolioPage() {
         ) : (
           <table className="w-full min-w-[760px] border-separate border-spacing-0">
             <thead>
-              <tr className="text-label font-medium uppercase tracking-caps text-muted-foreground">
+              <tr className="text-label font-medium text-muted-foreground">
                 <th className={`${TH} text-left`} data-tip="A symbol on the board. Click a row to scope the chart and news below to it" aria-description="A symbol on the board. Click a row to scope the chart and news below to it">Symbol</th>
                 <th className={`${TH} text-left`} data-tip="The company or fund name" aria-description="The company or fund name">Name</th>
                 <th className={`${TH} text-right`} data-tip="The latest price" aria-description="The latest price">Price</th>

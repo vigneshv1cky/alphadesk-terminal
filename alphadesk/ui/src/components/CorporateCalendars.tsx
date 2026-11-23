@@ -80,7 +80,7 @@ function subtitle(start: string, end: string, n: number | undefined, noun: strin
 function DayRow({ day, cols }: { day: string; cols: number }) {
   return (
     <tr>
-      <TD colSpan={cols} className="bg-card pt-4 text-caption font-extrabold uppercase tracking-caps text-foreground">{dayLabel(day)}</TD>
+      <TD colSpan={cols} className="bg-card pt-4 text-caption font-bold text-foreground">{dayLabel(day)}</TD>
     </tr>
   )
 }
@@ -195,13 +195,13 @@ export function SplitCalendarPanel({ span = 6 }: { span?: number }) {
                     <TD className="truncate text-muted-foreground" title={r.company_name ?? undefined}>{r.company_name ?? dash}</TD>
                     <TD mono>
                       {ratio(r)}
-                      {r.reverse && <span className="ml-1.5 text-label font-medium uppercase tracking-caps text-warn">reverse</span>}
+                      {r.reverse && <span className="ml-1.5 text-label font-medium text-warn">Reverse</span>}
                       {r.corroborated === false && (
-                        <span className="ml-1.5 text-label font-medium uppercase tracking-caps text-muted-foreground"
+                        <span className="ml-1.5 text-label font-medium text-muted-foreground"
                               title={singleSourceTitle(r, vendors)}>1 src</span>
                       )}
                       {r.vendor_dates && (
-                        <span className="ml-1.5 text-label font-medium uppercase tracking-caps text-muted-foreground"
+                        <span className="ml-1.5 text-label font-medium text-muted-foreground"
                               title={`The vendors date it days apart; shown on Alpaca's date. ${Object.entries(r.vendor_dates).map(([v, d]) => `${vendorLabel(v) ?? v}: ${shortDay(d)}`).join(" · ")}`}>±date</span>
                       )}
                     </TD>
@@ -281,7 +281,7 @@ export function IpoCalendarPanel({ span = 6 }: { span?: number }) {
                     <TD className="font-semibold">{r.symbol ?? dash}</TD>
                     <TD className="truncate text-muted-foreground" title={r.company ?? undefined}>
                       {r.kind && r.kind !== "company" && (
-                        <span className="mr-1.5 text-label font-medium uppercase tracking-caps">{KIND_TAG[r.kind]}</span>
+                        <span className="mr-1.5 text-label font-medium">{KIND_TAG[r.kind]}</span>
                       )}
                       {r.company ?? dash}
                     </TD>

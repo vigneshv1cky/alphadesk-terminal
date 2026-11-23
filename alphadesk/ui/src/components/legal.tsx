@@ -116,7 +116,7 @@ function Contents({ of }: { of: React.RefObject<HTMLElement | null> }) {
   return (
     <nav aria-label="On this page" className="hidden xl:block">
       <div className="sticky top-8">
-        <p className="mb-2 text-label font-semibold uppercase tracking-caps text-muted-foreground">On this page</p>
+        <p className="mb-2 text-label font-semibold text-muted-foreground">On this page</p>
         <ul className="space-y-0.5 border-l border-row-rule">
           {items.map(it => (
             <li key={it.id}>
@@ -149,7 +149,7 @@ export function PublicPage({ title, subtitle, updated, draft, children }: {
                  className="min-w-0 rounded-lg border border-card-border bg-card px-5 py-7 shadow-card sm:px-10 sm:py-10">
           {/* A documentation page leads with what it is, then the set it
               belongs to, then the text — not with a row of tabs. */}
-          <h1 className="text-display font-extrabold tracking-tight">{title}</h1>
+          <h1 className="text-display font-bold tracking-tight">{title}</h1>
           {subtitle && <p className="mt-2 max-w-[62ch] text-body leading-[1.6] text-muted-foreground">{subtitle}</p>}
           {updated && <p className="mt-2 text-caption text-muted-foreground">Last updated {updated}</p>}
           <Siblings />
