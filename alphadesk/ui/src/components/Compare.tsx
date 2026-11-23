@@ -428,7 +428,7 @@ export function ComparisonMetricsPanel({ symbols, active, peers, showPeers, onTo
                   <TD title={[r.name, r.industry].filter(Boolean).join(" · ") || undefined}>
                     <span className="font-semibold text-foreground">{r.symbol}</span>
                     {r.name && <span className="ml-1.5 hidden text-caption text-muted-foreground md:inline">{r.name}</span>}
-                    {peer && <span className="ml-1.5 text-label uppercase tracking-caps text-muted-foreground/80">peer</span>}
+                    {peer && <span className="ml-1.5 text-label text-muted-foreground/80">Peer</span>}
                   </TD>
                   <TD align="right" mono>{r.market_cap == null ? dash : `$${compact(r.market_cap)}`}</TD>
                   {group.cols.map(c => <TD key={c.key} align="right" mono>{cell(r[c.key], c)}</TD>)}

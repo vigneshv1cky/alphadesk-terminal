@@ -6,7 +6,7 @@ import { newBasketId } from "@/lib/basketId"
 import { keys } from "@/lib/queries"
 import { btnCls, Dialog, fieldCls } from "@/components/terminal"
 
-const LABEL = "mb-1 block text-label font-medium uppercase tracking-caps text-muted-foreground"
+const LABEL = "mb-1 block text-label font-medium text-muted-foreground"
 
 /** Make or edit one of the reader's own baskets (2026-09-18): a name, a line
  * on what moves it, and its tickers typed as one list. The server cleans the
@@ -65,7 +65,7 @@ export function BasketDialog({ basket, onClose }: { basket?: Theme; onClose: () 
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <span role="status" className="min-w-0 text-caption text-loss">{error}</span>
           <button type="submit" disabled={saving || !label.trim() || !symbols.trim()}
-                  className={btnCls({ variant: "accent", size: "lg" }, "px-4 font-extrabold uppercase tracking-caps")}>
+                  className={btnCls({ variant: "accent", size: "lg" }, "px-4 font-bold")}>
             {saving ? "Saving…" : basket ? "Save" : "Create"}
           </button>
         </div>

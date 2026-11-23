@@ -301,7 +301,7 @@ function Locations({ c }: { c: CompanyProfile }) {
     <Widget span={5} title={`Where the ${kindOf(c).noun} is`}
             subtitle={`headquarters on record, and the ${c.tenk?.form ?? "10-K"}'s properties`}>
       <div className="border-b border-row-rule px-3 py-3 text-body">
-        <div className="text-label font-medium uppercase tracking-caps text-muted-foreground">Headquarters</div>
+        <div className="text-label font-medium text-muted-foreground">Headquarters</div>
         <div className="mt-0.5 font-semibold">{hq ?? "—"}</div>
         {mail && mail !== hq && (
           <div className="mt-1 text-caption text-muted-foreground">Mailing: {mail}</div>

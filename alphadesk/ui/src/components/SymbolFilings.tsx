@@ -80,7 +80,7 @@ export function SymbolFilings({ symbol: requested }: { symbol: string }) {
                     aria-selected={on}
                     className={`cursor-pointer ${on ? "bg-row-selected" : "hover:bg-foreground/5"}`}
                   >
-                    <TD className={f.readable ? "font-extrabold" : "font-medium text-muted-foreground"}>{f.form}</TD>
+                    <TD className={f.readable ? "font-bold" : "font-medium text-muted-foreground"}>{f.form}</TD>
                     <TD mono className="text-muted-foreground">{f.cik}</TD>
                     <TD mono className="hidden text-caption text-muted-foreground @[400px]:table-cell" title={f.accession}>{f.accession}</TD>
                     <TD align="right" mono className="text-muted-foreground">{f.filing_date}</TD>

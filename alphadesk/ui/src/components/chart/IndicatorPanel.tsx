@@ -84,7 +84,7 @@ export function IndicatorSettings({ e }: { e: ChartEngine }) {
       <div className="px-4 py-3">
         {def.params.length > 0 && (
           <>
-            <div className="mb-1.5 text-label font-medium uppercase tracking-caps text-muted-foreground">Inputs</div>
+            <div className="mb-1.5 text-label font-medium text-muted-foreground">Inputs</div>
             <div className="mb-3 flex flex-col gap-1.5">
               {def.params.map(p => (
                 <label key={p.key} className="flex items-center justify-between gap-3 text-body">
@@ -95,7 +95,7 @@ export function IndicatorSettings({ e }: { e: ChartEngine }) {
             </div>
           </>
         )}
-        <div className="mb-1.5 text-label font-medium uppercase tracking-caps text-muted-foreground">Style</div>
+        <div className="mb-1.5 text-label font-medium text-muted-foreground">Style</div>
         <div className="mb-2 flex items-center justify-between gap-3 text-body">
           <span>Colour</span>
           <span className="flex items-center gap-1">

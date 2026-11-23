@@ -96,7 +96,7 @@ export default function PeriodMoversPage() {
   return (
     <>
       <div className="px-4 pt-2">
-        <h1 className="mb-2 text-emph font-extrabold tracking-tight">Period movers</h1>
+        <h1 className="mb-2 text-emph font-bold tracking-tight">Period movers</h1>
       </div>
       <div className="collage !pt-0">
         <Widget

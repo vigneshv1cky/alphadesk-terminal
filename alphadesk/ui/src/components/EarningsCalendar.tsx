@@ -100,8 +100,8 @@ function DayCell({
           on a phone the date had broken over two lines in some cells and
           not others (2026-09-19). */}
       <span className="flex flex-wrap items-baseline gap-x-1.5">
-        <span className={`text-label font-medium uppercase tracking-caps ${
-          isToday ? "font-extrabold text-warn" : "text-muted-foreground"
+        <span className={`text-label font-medium ${
+          isToday ? "font-bold text-warn" : "text-muted-foreground"
         }`}>
           {day.weekday}
         </span>
@@ -264,7 +264,7 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
           the heading was a 375px strip sitting at x=0 — it left the screen
           entirely when scrolled, and the text inside it had only 80px of room
           to slide before hitting its own edge. Same floor as the table. */}
-      <h3 className="sticky top-0 z-10 min-w-[724px] border-b border-card-rule bg-card px-3 pb-2 pt-4 text-body font-extrabold uppercase tracking-caps">
+      <h3 className="sticky top-0 z-10 min-w-[724px] border-b border-card-rule bg-card px-3 pb-2 pt-4 text-body font-bold">
         <span className="sticky left-3 inline-block">
           {longDay(day.date)}
           <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground">
@@ -288,21 +288,21 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
       <table className="w-full table-fixed border-separate border-spacing-0 text-body">
           <thead>
             <tr>
-              <th className="w-[112px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="The ticker. Click a row to add it to the board and read the report in the insights box" aria-description="The ticker. Click a row to add it to the board and read the report in the insights box">Symbol</th>
+              <th className="w-[112px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium text-muted-foreground" data-tip="The ticker. Click a row to add it to the board and read the report in the insights box" aria-description="The ticker. Click a row to add it to the board and read the report in the insights box">Symbol</th>
               {/* The name needs room: at a narrow tile it was left with a
                   few pixels and read as one letter. It hides below md; the
                   columns that matter less at that width hide below lg. */}
-              <th className="hidden sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground md:table-cell" />
-              <th className="w-[104px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip={estimates
+              <th className="hidden sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium text-muted-foreground md:table-cell" />
+              <th className="w-[104px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-left text-label font-medium text-muted-foreground" data-tip={estimates
                     ? "When the company reports: BMO before the open, AMC after the close, or the release time once it is out. Green: released. Amber: the date is not confirmed by the company. Hover a row for how the time is known"
                     : "When EDGAR accepted the filing, New York time. That is at or after the moment the results went out, never before it, so it is an upper bound on the release. A filing accepted on a later day shows that day instead, because no release time can be claimed for it."}>When</th>
               {estimates && <>
-              <th className="w-[70px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="The analyst consensus for earnings per share, adjusted for any split since it was quoted" aria-description="The analyst consensus for earnings per share, adjusted for any split since it was quoted">Est EPS</th>
-              <th className="hidden w-[90px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground lg:table-cell" data-tip="Earnings per share as reported, once released" aria-description="Earnings per share as reported, once released">Actual EPS</th>
-              <th className="w-[76px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground" data-tip="How far reported earnings per share came in above or below the estimate, in percent" aria-description="How far reported earnings per share came in above or below the estimate, in percent">Surprise</th>
+              <th className="w-[70px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground" data-tip="The analyst consensus for earnings per share, adjusted for any split since it was quoted" aria-description="The analyst consensus for earnings per share, adjusted for any split since it was quoted">Est EPS</th>
+              <th className="hidden w-[90px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground lg:table-cell" data-tip="Earnings per share as reported, once released" aria-description="Earnings per share as reported, once released">Actual EPS</th>
+              <th className="w-[76px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground" data-tip="How far reported earnings per share came in above or below the estimate, in percent" aria-description="How far reported earnings per share came in above or below the estimate, in percent">Surprise</th>
               </>}
               {!estimates && (
-                <th className="w-[76px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+                <th className="w-[76px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground"
                     data-tip="How far the price has moved since the report. Measured from the last close before the results could be read — the prior session for a morning report, the report day\u2019s own close for one after the bell. Live while that session is still trading, and fixed at its close once it ends.">Move</th>
               )}
               {/* The range of the SAME window Move measures, off the same
@@ -313,16 +313,16 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                   screen reaches these by scrolling rather than losing them.
                   Hiding a column is for one that cannot be reached at all. */}
               {!estimates && <>
-              <th className="w-[76px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+              <th className="w-[76px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground"
                   data-tip="The highest the price reached in the same window Move measures, against the same baseline. Not floored at zero: a stock that gapped down and never traded back above the baseline shows a negative best, which says the reaction only ran one way.">Max up</th>
-              <th className="w-[84px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+              <th className="w-[84px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground"
                   data-tip="The lowest the price reached in the same window Move measures, against the same baseline. Regular-session figures, so an after-hours reaction to a release after the bell is not in them until the next session opens.">Max down</th>
               </>}
-              <th className="w-[80px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+              <th className="w-[80px] whitespace-nowrap sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground"
                   data-tip="Market capitalisation today, from your company data vendor. Each day lists the largest companies first" aria-description="Market capitalisation today, from your company data vendor. Each day lists the largest companies first">Mkt cap</th>
-              <th className="w-[74px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+              <th className="w-[74px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground"
                   data-tip="Annualised volatility of daily returns over the last twenty sessions, from your chart vendor" aria-description="Annualised volatility of daily returns over the last twenty sessions, from your chart vendor">Volatility</th>
-              <th className="w-[78px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground"
+              <th className="w-[78px] sticky top-[44px] z-10 border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground"
                   data-tip="Average dollar volume a day over the last twenty sessions, from your chart vendor" aria-description="Average dollar volume a day over the last twenty sessions, from your chart vendor">Liquidity</th>
             </tr>
           </thead>
@@ -444,7 +444,7 @@ function DayTable({ day, picked, pickedRow, onPick, found, estimates = true }: {
                       className="hidden overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-2 py-1.5 text-muted-foreground md:table-cell">
                     {r.company_name ?? ""}
                   </td>
-                  <td className={`overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-2 py-1.5 text-label font-medium uppercase tracking-caps ${out ? "text-gain" : sure || past ? "text-muted-foreground" : "text-warn"}`}
+                  <td className={`overflow-hidden text-ellipsis whitespace-nowrap border-b border-row-rule px-2 py-1.5 text-label font-medium first-letter:uppercase ${out ? "text-gain" : sure || past ? "text-muted-foreground" : "text-warn"}`}
                       title={estimates ? whenTitle
                         : r.released_at ? `EDGAR accepted the filing ${etClock(r.released_at, r.report_date, true)} ET — at or after the moment the results went out`
                         : `The company filed on ${r.filed_on ?? "a later day"}, after the results were released, so EDGAR times the filing and not the release. The day is the company's own; the hour is not in the record.`}>
@@ -678,7 +678,7 @@ export function EarningsCalendar({ picked, pickedRow, onPick }: {
             ›
           </button>
         </span>
-        <span className="num text-emph font-extrabold tracking-tight">{rangeLabel(first, last)}</span>
+        <span className="num text-emph font-bold tracking-tight">{rangeLabel(first, last)}</span>
         <span className="text-caption text-muted-foreground">
           {!isPlaceholderData && (week.pending?.timing || week.pending?.announcements) ? (
             <span className="mr-2 text-accent-700"
@@ -745,7 +745,7 @@ export function EarningsCalendar({ picked, pickedRow, onPick }: {
             placeholder="Find a symbol"
             aria-label="Find a company's report in the calendar"
             spellCheck={false}
-            className="h-[28px] min-w-0 flex-1 rounded-sm border border-border bg-transparent px-2 text-caption uppercase tracking-caps outline-none placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground focus:border-accent sm:h-[24px] sm:w-[120px] sm:flex-none"
+            className="h-[28px] min-w-0 flex-1 rounded-sm border border-border bg-transparent px-2 text-caption uppercase outline-none placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground focus:border-accent sm:h-[24px] sm:w-[120px] sm:flex-none"
           />
         </form>
       </div>

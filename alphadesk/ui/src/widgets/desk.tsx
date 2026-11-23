@@ -40,8 +40,8 @@ function NeedsSymbol({ title, span = 4 }: { title: string; span?: number }) {
 function MetricCell({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 px-3 py-3">
-      <div className="truncate text-label font-medium uppercase tracking-caps text-muted-foreground">{label}</div>
-      <div className="num truncate text-emph font-extrabold leading-tight">{value}</div>
+      <div className="truncate text-label font-medium text-muted-foreground">{label}</div>
+      <div className="num truncate text-emph font-bold leading-tight">{value}</div>
     </div>
   )
 }
@@ -172,7 +172,7 @@ export function ReportingSoonTile({ span = 4, height = TILE_BODY_HEIGHT }: { spa
         <div className={isPlaceholderData ? "opacity-50 transition-opacity" : undefined}>
           {days.map(g => (
             <section key={g.day}>
-              <div className="row-rule bg-card px-3 pb-1 pt-2.5 text-label font-medium uppercase tracking-caps text-muted-foreground">
+              <div className="row-rule bg-card px-3 pb-1 pt-2.5 text-label font-medium text-muted-foreground">
                 {soonDay(g.day)} <span className="normal-case tracking-normal">· {g.rows.length}</span>
               </div>
               <ul>
@@ -180,7 +180,7 @@ export function ReportingSoonTile({ span = 4, height = TILE_BODY_HEIGHT }: { spa
                   <li key={`${r.symbol}:${r.report_date}`} className="row-rule">
                     <Link to={`/analysis?symbol=${encodeURIComponent(r.symbol)}`}
                           className="flex items-center gap-2 px-3 py-2.5 hover:bg-foreground/5">
-                      <span className="num w-[64px] shrink-0 text-body font-extrabold">{r.symbol}</span>
+                      <span className="num w-[64px] shrink-0 text-body font-bold">{r.symbol}</span>
                       <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
                         {r.company_name ?? ""}
                       </span>
@@ -290,7 +290,7 @@ function FundamentalsTile() {
               </div>
             ))}
           </div>
-          {spec && <div className="shrink-0 px-4 pb-2 text-label uppercase tracking-caps text-muted-foreground">{spec.label}</div>}
+          {spec && <div className="shrink-0 px-4 pb-2 text-label text-muted-foreground">{spec.label}</div>}
         </div>
       )}
     </Widget>
@@ -349,7 +349,7 @@ export function MarketFilings({ onlyItem }: { onlyItem?: string } = {}) {
                     {Number.isNaN(at.getTime()) ? "—"
                       : at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
-                  <span className="w-[56px] shrink-0 truncate text-body font-extrabold"
+                  <span className="w-[56px] shrink-0 truncate text-body font-bold"
                         title={symbol ? undefined : "the SEC lists no ticker for this registrant"}>
                     {symbol
                       ? <button type="button" className="hover:text-accent-700"
@@ -374,7 +374,7 @@ export function MarketFilings({ onlyItem }: { onlyItem?: string } = {}) {
                       </span>
                     )}
                   </span>
-                  <span className="shrink-0 text-label uppercase tracking-caps text-muted-foreground">edgar →</span>
+                  <span className="shrink-0 text-label text-muted-foreground">EDGAR →</span>
                 </a>
               </li>
             )
@@ -431,11 +431,11 @@ function FilingsTile() {
               {f.readable ? (
                 <Link to={`/analysis?symbol=${encodeURIComponent(active)}&accession=${encodeURIComponent(f.accession)}`}
                       className="flex items-center gap-2 px-3 py-2.5 hover:bg-foreground/5">
-                  <span className="w-[64px] shrink-0 text-body font-extrabold">{f.form}</span>
+                  <span className="w-[64px] shrink-0 text-body font-bold">{f.form}</span>
                   <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
                     filed {f.filing_date}
                   </span>
-                  <span className="shrink-0 text-label uppercase tracking-caps text-accent-700">read →</span>
+                  <span className="shrink-0 text-label text-accent-700">Read →</span>
                 </Link>
               ) : (
                 // An ownership form is a table, not a document to read: it
@@ -447,7 +447,7 @@ function FilingsTile() {
                   <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
                     filed {f.filing_date}
                   </span>
-                  <span className="shrink-0 text-label uppercase tracking-caps text-muted-foreground">edgar →</span>
+                  <span className="shrink-0 text-label text-muted-foreground">EDGAR →</span>
                 </a>
               )}
             </li>
@@ -579,7 +579,7 @@ function BasketTile() {
               <li key={s} className="row-rule">
                 <Link to={`/themes/${theme.id}?symbol=${encodeURIComponent(s)}`}
                       className="flex items-center gap-2 px-3 py-2.5 hover:bg-foreground/5">
-                  <span className="num w-[64px] shrink-0 text-body font-extrabold">{s}</span>
+                  <span className="num w-[64px] shrink-0 text-body font-bold">{s}</span>
                   <span className="num min-w-0 flex-1 text-right text-body">
                     {q?.price == null ? dash : q.price.toFixed(2)}
                   </span>

@@ -37,8 +37,8 @@ function StatCell({ label, value, to }: { label: string; value: string; to?: str
                     @[640px]:border-r @[640px]:py-6 @[640px]:last:border-r-0`
   const body = (
     <>
-      <div className="shrink-0 truncate text-label font-medium uppercase tracking-caps text-muted-foreground">{label}</div>
-      <div className="num min-w-0 truncate text-body font-bold leading-[1.2] @[640px]:text-figure @[640px]:font-extrabold">{value}</div>
+      <div className="shrink-0 truncate text-label font-medium text-muted-foreground">{label}</div>
+      <div className="num min-w-0 truncate text-body font-semibold leading-[1.2] @[640px]:text-figure @[640px]:font-bold">{value}</div>
     </>
   )
   // A cell with somewhere to go (2026-10-02: agent access has its own page)
@@ -48,7 +48,7 @@ function StatCell({ label, value, to }: { label: string; value: string; to?: str
     : <div className={cls}>{body}</div>
 }
 
-const labelCls = "mb-1 block text-label font-medium uppercase tracking-caps text-muted-foreground"
+const labelCls = "mb-1 block text-label font-medium text-muted-foreground"
 
 type Seam = "news" | "prices" | "transcripts"
 
@@ -230,7 +230,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                       : undefined
                     return (
                       <TR key={v.name}>
-                        <TD className="font-extrabold">{v.label}</TD>
+                        <TD className="font-bold">{v.label}</TD>
                         <TD mono className="text-muted-foreground">
                           {scraped ? <span className="font-sans text-label">no key</span>
                             : row ? <>····{row.key_hint}{!row.last_used_at && <span className="block text-label font-sans">not used yet</span>}</> : "—"}
@@ -439,7 +439,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
               <tbody>
                 {newsRows.map(row => (
                   <TR key={row.provider}>
-                    <TD className="font-extrabold">{vendorLabel(row.provider)}</TD>
+                    <TD className="font-bold">{vendorLabel(row.provider)}</TD>
                     <TD mono className="text-muted-foreground">····{row.key_hint}</TD>
                     <TD align="right" mono className={row.stories_24h ? "" : "text-warn"}>
                       {row.stories_24h == null ? "—" : row.stories_24h.toLocaleString()}
@@ -465,7 +465,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                     publisher in the news list (2026-09-22). */}
                 {orphanFeeds.map(o => (
                   <TR key={`orphan-${o.provider}`}>
-                    <TD className="font-extrabold text-muted-foreground">{vendorLabel(o.provider)}</TD>
+                    <TD className="font-bold text-muted-foreground">{vendorLabel(o.provider)}</TD>
                     <TD mono className="text-muted-foreground">no key</TD>
                     <TD align="right" mono className="text-muted-foreground">{o.stories.toLocaleString()}</TD>
                     <TD className="text-caption text-muted-foreground">
@@ -479,13 +479,13 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
                 ))}
                 {!newsRows.length && !orphanFeeds.length && (
                   <TR>
-                    <TD className="font-extrabold">News</TD>
+                    <TD className="font-bold">News</TD>
                     <TD className="text-muted-foreground" colSpan={3}>none — news needs your feed key</TD>
                     <TD align="right"><button type="button" onClick={() => open("news")} className={BTN_PRIMARY}>Add key</button></TD>
                   </TR>
                 )}
                 <TR>
-                  <TD className="font-extrabold">Transcripts</TD>
+                  <TD className="font-bold">Transcripts</TD>
                   <TD mono className="text-muted-foreground">{transcript ? `····${transcript.key_hint}` : "—"}</TD>
                   <TD align="right" className="text-muted-foreground">—</TD>
                   <TD className="text-caption text-muted-foreground">
@@ -584,7 +584,7 @@ function KeysPanel({ newsProviders, transcriptProviders }: {
           )}
           {error && <p className="text-caption text-loss">{error}</p>}
           <button type="submit" disabled={busy}
-                  className={btnCls({ variant: "accent", size: "lg" }, "mt-1 h-[32px] w-full rounded-md font-extrabold uppercase tracking-caps")}>
+                  className={btnCls({ variant: "accent", size: "lg" }, "mt-1 h-[32px] w-full rounded-md font-bold")}>
             {busy ? "sealing…" : "Save key"}
           </button>
         </form>
@@ -702,11 +702,11 @@ export default function AccountPage() {
         <section className="flex min-w-0 items-center gap-3 rounded-lg border border-card-border bg-card px-4 py-3 shadow-card"
                  style={{ gridColumn: "span 12 / span 12" }}>
           <span aria-hidden="true"
-                className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-sm bg-info text-figure font-extrabold uppercase text-background">
+                className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-sm bg-info text-figure font-bold uppercase text-background">
             {email[0]}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-body font-extrabold sm:text-emph">{email}</div>
+            <div className="truncate text-body font-bold sm:text-emph">{email}</div>
             <div className="mt-0.5 truncate text-caption text-muted-foreground">
               <span className="sm:hidden">14-day session</span>
               <span className="max-sm:hidden">14-day signed session</span>
@@ -734,10 +734,10 @@ export default function AccountPage() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-row-rule px-1 pt-3.5 text-label text-muted-foreground">
           <span className="flex items-center gap-2">
             <span aria-hidden="true" className="h-[8px] w-[8px] rounded-[2px] bg-accent" />
-            <span className="font-extrabold uppercase tracking-caps text-foreground">AlphaDesk</span>
+            <span className="font-extrabold uppercase text-foreground">AlphaDesk</span>
             <span>Research workspace — no order routing</span>
           </span>
-          <nav aria-label="About AlphaDesk" className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 font-semibold uppercase tracking-caps">
+          <nav aria-label="About AlphaDesk" className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 font-semibold">
             <a href="/about" className="hover:text-foreground hover:underline hover:underline-offset-4">About</a>
             <a href="/terms" className="hover:text-foreground hover:underline hover:underline-offset-4">Terms of Service</a>
             <a href="/privacy" className="hover:text-foreground hover:underline hover:underline-offset-4">Privacy Policy</a>

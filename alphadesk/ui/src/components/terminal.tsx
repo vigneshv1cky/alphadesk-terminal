@@ -419,7 +419,7 @@ export function Widget({
       {(title || actions) && (
         <header data-slot="widget-header" className="flex h-[40px] shrink-0 items-center gap-2 border-b border-card-rule bg-card px-3">
           {symbol && (
-            <span className="shrink-0 text-body font-bold tracking-ticker text-accent">{symbol}</span>
+            <span className="shrink-0 text-body font-semibold tracking-ticker text-accent">{symbol}</span>
           )}
           {title && (
             // flex: none, because the panel's NAME is the one thing in this
@@ -431,7 +431,7 @@ export function Widget({
             // On phones the name may truncate after all: with the subtitle
             // gone its only competitor is the tile's own controls, and a
             // clipped button is worse than a clipped word.
-            <h2 className="shrink-0 whitespace-nowrap text-body font-bold uppercase tracking-caps text-foreground max-sm:min-w-0 max-sm:shrink max-sm:truncate">
+            <h2 className="shrink-0 whitespace-nowrap text-body font-semibold text-foreground max-sm:min-w-0 max-sm:shrink max-sm:truncate">
               {title}
             </h2>
           )}
@@ -580,7 +580,7 @@ export function Dialog({ title, onClose, maxWidth = "max-w-[420px]", children }:
     <ModalShell label={title} onDismiss={onClose}>
       <section data-slot="dialog" className={`relative w-full ${maxWidth} border border-card-border bg-card shadow-card`}>
         <header className="flex h-[40px] shrink-0 items-center gap-2 border-b border-card-rule bg-card px-3">
-          <h2 className="min-w-0 flex-1 truncate text-body font-bold uppercase tracking-caps text-foreground">
+          <h2 className="min-w-0 flex-1 truncate text-body font-semibold text-foreground">
             {title}
           </h2>
           <button
@@ -635,7 +635,7 @@ export function OverflowMenu({ label = "More actions", items }: {
         aria-label={label}
         className={btnCls({ icon: true })}
       >
-        <span aria-hidden="true" className="text-body leading-none tracking-caps">⋯</span>
+        <span aria-hidden="true" className="text-body leading-none">⋯</span>
       </button>
       {open && (
         <div role="menu" ref={panel}
@@ -682,7 +682,7 @@ export type BtnStyle = {
 export function btnCls({ variant = "default", size = "md", icon, active }: BtnStyle = {}, className?: string) {
   return cn(
     "inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-xs font-semibold leading-none transition-colors disabled:pointer-events-none disabled:opacity-45",
-    size === "sm" && "h-[20px] px-1.5 text-label uppercase tracking-caps",
+    size === "sm" && "h-[20px] px-1.5 text-label",
     size === "md" && "h-[24px] px-2 text-caption tracking-ticker",
     size === "lg" && "h-[28px] px-2.5 text-caption tracking-ticker",
     icon && "px-0",
@@ -779,7 +779,7 @@ export function TH({
       data-tip={title}
       aria-description={title}
       className={cn(
-        "whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-label font-medium uppercase tracking-caps text-muted-foreground",
+        "whitespace-nowrap border-b border-row-rule bg-panel px-2 py-2 text-label font-medium text-muted-foreground",
         align === "left" && "text-left",
         align === "right" && "text-right",
         align === "center" && "text-center",
@@ -944,10 +944,10 @@ export function Stat({
 }) {
   return (
     <div className="min-w-0 border-r border-row-rule px-2 py-1.5 last:border-r-0">
-      <div className="truncate text-label font-medium uppercase tracking-caps text-muted-foreground">{label}</div>
+      <div className="truncate text-label font-medium text-muted-foreground">{label}</div>
       <div
         className={cn(
-          "num text-emph font-extrabold leading-tight",
+          "num text-emph font-bold leading-tight",
           wrap ? "break-words" : "truncate",
           tone === "gain" && "text-gain",
           tone === "loss" && "text-loss",

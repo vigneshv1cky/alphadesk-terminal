@@ -45,7 +45,7 @@ export function HeadlineTickers({ symbols, max = 4 }: { symbols: string[]; max?:
           title={`Put ${s} on the board and scope it`}
           onClick={pick(s)}
           onKeyDown={e => { if (e.key === "Enter" || e.key === " ") pick(s)(e) }}
-          className="cursor-pointer select-none border border-border px-1 text-label font-semibold leading-[17px] tracking-ticker text-foreground hover:border-accent hover:text-accent-700"
+          className="cursor-pointer select-none rounded-xs bg-muted px-1 text-label font-semibold leading-[17px] tracking-ticker text-foreground hover:text-accent-700"
         >
           {s}
         </span>

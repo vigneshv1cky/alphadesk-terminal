@@ -138,7 +138,7 @@ export function AnalystPanel({ symbol, span = 5, scroll = 420 }: PanelProps) {
               {d.recommendation.mean != null && <span className="ml-1.5 font-normal text-muted-foreground tnum">{d.recommendation.mean.toFixed(2)} / 5</span>}
             </span>
           </div>
-          <div className="mt-2 text-label uppercase tracking-caps text-muted-foreground">
+          <div className="mt-2 text-label text-muted-foreground">
             Price targets{t?.analysts ? ` · ${t.analysts} analysts publish one`
               : t?.published_month ? ` · ${t.published_month} set in the last month`
               : t?.published_quarter ? ` · ${t.published_quarter} set in the last three months` : ""}
@@ -151,7 +151,7 @@ export function AnalystPanel({ symbol, span = 5, scroll = 420 }: PanelProps) {
           <div className="grid grid-cols-4 gap-2 tnum">
             {([["Low", t?.low], ["Mean", t?.mean], ["Median", t?.median], ["High", t?.high]] as [string, number | null | undefined][]).map(([l, v]) => (
               <div key={l}>
-                <div className="text-label uppercase tracking-caps text-muted-foreground">{l}</div>
+                <div className="text-label text-muted-foreground">{l}</div>
                 <div className="font-medium">{money(v)}</div>
               </div>
             ))}
@@ -175,7 +175,7 @@ export function AnalystPanel({ symbol, span = 5, scroll = 420 }: PanelProps) {
           </>)}
           {d.distribution.length > 0 && (
             <div className="mt-3">
-              <div className="mb-1 text-label uppercase tracking-caps text-muted-foreground">Ratings{ratedCount ? ` · ${ratedCount} analysts publish one` : ""} · by month{from("analyst_ratings")}</div>
+              <div className="mb-1 text-label text-muted-foreground">Ratings{ratedCount ? ` · ${ratedCount} analysts publish one` : ""} · by month{from("analyst_ratings")}</div>
               {d.distribution.slice(0, 6).map(m => (
                 <div key={m.period} className="mb-1 flex items-center gap-2">
                   <span className="w-[50px] shrink-0 whitespace-nowrap text-right tnum text-muted-foreground"
@@ -196,13 +196,13 @@ export function AnalystPanel({ symbol, span = 5, scroll = 420 }: PanelProps) {
           )}
           {d.needs?.short_interest && (si?.shares_short == null) && (
             <div className="mt-3">
-              <div className="mb-1 text-label uppercase tracking-caps text-muted-foreground">Short interest</div>
+              <div className="mb-1 text-label text-muted-foreground">Short interest</div>
               <div className="-mx-3"><KeyPrompt prompt={d.needs.short_interest} compact /></div>
             </div>
           )}
           {si && si.shares_short != null && (
             <div className="mt-3">
-              <div className="mb-1 text-label uppercase tracking-caps text-muted-foreground">Short interest{si.as_of ? ` · as of ${si.as_of}` : ""}{from("short_interest")}</div>
+              <div className="mb-1 text-label text-muted-foreground">Short interest{si.as_of ? ` · as of ${si.as_of}` : ""}{from("short_interest")}</div>
               <div className="grid grid-cols-3 gap-2 tnum">
                 <div><div className="text-label text-muted-foreground">Shares short</div><div className="font-medium">{compact(si.shares_short)}</div></div>
                 <div><div className="text-label text-muted-foreground">Of float</div><div className="font-medium">{si.pct_float == null ? dash : `${si.pct_float.toFixed(2)}%`}</div></div>
@@ -248,7 +248,7 @@ export function RatingChangesPanel({ symbol, span = 7, scroll = 420 }: PanelProp
                 <tr key={`${r.date}:${r.firm}:${i}`}>
                   <TD mono className="text-muted-foreground">{r.date ?? dash}</TD>
                   <TD className="font-medium">{r.firm ?? dash}</TD>
-                  <TD className={`text-label font-extrabold uppercase ${tone(r.action)}`}>{r.action ?? dash}</TD>
+                  <TD className={`text-label font-bold capitalize ${tone(r.action)}`}>{r.action ?? dash}</TD>
                   <TD>
                     {r.from_grade && r.from_grade !== r.to_grade ? <span className="text-muted-foreground">{r.from_grade} → </span> : null}
                     {r.to_grade ?? dash}

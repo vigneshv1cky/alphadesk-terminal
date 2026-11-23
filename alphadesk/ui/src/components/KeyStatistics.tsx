@@ -33,7 +33,7 @@ type Cell = [string, string, string?]   // label, value, tooltip
 function Column({ title, cells }: { title: string; cells: Cell[] }) {
   return (
     <div className="min-w-0">
-      <div className="mb-1 text-label uppercase tracking-caps text-muted-foreground">{title}</div>
+      <div className="mb-1 text-label text-muted-foreground">{title}</div>
       {cells.map(([l, v, tip]) => (
         <div key={l} className="flex items-baseline justify-between gap-2 border-b border-row-rule py-1 text-body" title={tip}>
           <span className="truncate text-muted-foreground">{l}</span>
@@ -125,7 +125,7 @@ export function KeyStatisticsPanel({ symbol, span = 12, scroll = 420 }: { symbol
                 ["200-day average", n2(s.avg_200d)],
                 ["Beta", n2(s.beta), "Sensitivity to the market over five years: 1 moves with it, 2 twice as much"],
               ]} />
-              <div className="mt-2 text-label uppercase tracking-caps text-muted-foreground">52-week range</div>
+              <div className="mt-2 text-label text-muted-foreground">52-week range</div>
               <RangeBar s={s} />
             </div>
             <Column title="Size and trading" cells={[

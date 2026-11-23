@@ -66,7 +66,7 @@ export function SymbolNews({ symbol, span = 4, scroll = 300, framed = true }: {
             >
               {/* Same row anatomy as the market tape (widgets/builtin), so
                   the two news surfaces read as one product. */}
-              <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
+              <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium">
                 <span className="text-accent-700">{h.source}</span>
                 {h.why && <span className="text-muted-foreground">{h.why}</span>}
                 {h.published_at && (

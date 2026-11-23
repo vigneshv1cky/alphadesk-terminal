@@ -89,7 +89,7 @@ function Legend({ e }: { e: ChartEngine }) {
   return (
     <div className="pointer-events-none absolute left-2 top-1.5 z-20 max-w-[70%]">
       <div className="flex flex-wrap items-baseline gap-x-2 text-body">
-        <span className="font-extrabold text-foreground">{q?.name ?? e.symbol}</span>
+        <span className="font-bold text-foreground">{q?.name ?? e.symbol}</span>
         <span className="text-muted-foreground">· {iv}{q?.exchange ? ` · ${q.exchange}` : ""}</span>
         {/* A soft pill with a pulsing dot (2026-09-18: the bordered caps
             box read as awkward). The pulse stops under reduced motion,
@@ -103,7 +103,7 @@ function Legend({ e }: { e: ChartEngine }) {
       </div>
       {price != null && (
         <div className="flex items-baseline gap-2">
-          <span className="tnum text-figure font-extrabold text-foreground">{price.toFixed(2)}</span>
+          <span className="tnum text-figure font-bold text-foreground">{price.toFixed(2)}</span>
           {chg != null && (
             <span className={`tnum text-body font-semibold ${up ? "text-chart-up" : "text-chart-down"}`}>
               {up ? "+" : ""}{chg.toFixed(2)}{pct != null ? ` (${up ? "+" : ""}${pct.toFixed(2)}%)` : ""}
@@ -189,7 +189,7 @@ function BoardRail({ current, onPick }: { current: string; onPick: (s: string) =
             <div key={s}
               className={`${panelRow(s === current)} cursor-pointer`}
               onClick={() => onPick(s)}>
-              <span className="shrink-0 whitespace-nowrap font-bold tracking-ticker">{s}</span>
+              <span className="shrink-0 whitespace-nowrap font-semibold tracking-ticker">{s}</span>
               <span className="tnum min-w-0 flex-1 text-right">{q ? q.price.toFixed(2) : "…"}</span>
               <span className={`tnum w-[58px] shrink-0 text-right ${pct == null ? "text-muted-foreground" : up ? "text-gain" : "text-loss"}`}>
                 {pct == null ? "—" : `${up ? "+" : ""}${pct.toFixed(2)}%`}
@@ -251,7 +251,7 @@ function ReplayBar({ e }: { e: ChartEngine }) {
   const idle = at == null
   return (
     <div className="flex items-center gap-1 border-t border-row-rule bg-info-tint px-2.5 py-1.5">
-      <span className="mr-1 text-label font-medium uppercase tracking-caps text-info">Replay</span>
+      <span className="mr-1 text-label font-medium text-info">Replay</span>
       <button type="button" className={b} title="To the start" aria-label="Replay to start" disabled={idle} onClick={() => e.seekReplay("start")}><SkipBack className="h-[12px] w-[12px]" /></button>
       <button type="button" className={b} title="Back one bar (←)" aria-label="Replay back one bar" disabled={idle || at === 0} onClick={() => e.stepReplay(-1)}><StepBack className="h-[12px] w-[12px]" /></button>
       <button type="button" className={`${b} ${replay.playing ? "bg-info text-background hover:bg-info hover:text-background" : ""}`}
@@ -271,7 +271,7 @@ function ReplayBar({ e }: { e: ChartEngine }) {
       </span>
       <div className="flex-1" />
       <button type="button" onClick={e.exitReplay} aria-label="Exit replay"
-        className={btnCls({}, "uppercase tracking-caps")}>
+        className={btnCls({})}>
         <X className="h-[11px] w-[11px]" /> Exit
       </button>
     </div>
@@ -301,7 +301,7 @@ function NameEntry({ placeholder, onSave }: { placeholder: string; onSave: (name
         aria-label={placeholder}
         className="h-[28px] min-w-0 flex-1 border border-input bg-card px-2 text-body text-foreground outline-none focus:border-accent" />
       <button type="button" disabled={!name.trim()} onClick={() => { onSave(name); setName("") }}
-        className={btnCls({ variant: "accent", size: "lg" }, "font-extrabold")}>Save</button>
+        className={btnCls({ variant: "accent", size: "lg" }, "font-bold")}>Save</button>
     </div>
   )
 }
