@@ -60,7 +60,7 @@ function SortTH({ k, label, title, cycle, mark, className }: {
 }) {
   return (
     <TH align="right" title={`${title} · click to sort`} className={className}>
-      <button type="button" onClick={() => cycle(k)} className="uppercase tracking-caps hover:text-foreground">
+      <button type="button" onClick={() => cycle(k)} className="hover:text-foreground">
         {label}{mark(k)}
       </button>
     </TH>

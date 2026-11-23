@@ -50,26 +50,26 @@ function NameBar({ id, name, mine, onEditWidgets, saveState }: {
             if (e.key === "Enter") commit()
             if (e.key === "Escape") setEditing(false)
           }}
-          className="h-[28px] border border-border bg-card px-2 text-emph font-extrabold focus:border-accent focus:outline-none"
+          className="h-[28px] border border-border bg-card px-2 text-emph font-bold focus:border-accent focus:outline-none"
         />
       ) : (
         <button
           type="button"
           onClick={() => { setDraft(name); setEditing(true) }}
           title="Rename this view"
-          className="text-emph font-extrabold tracking-ticker hover:text-accent"
+          className="text-emph font-bold tracking-ticker hover:text-accent"
         >
           {name}
         </button>
       )}
-      <span className="text-label font-medium uppercase tracking-caps text-muted-foreground">
+      <span className="text-label font-medium text-muted-foreground">
         {saveState}
       </span>
       <div className="min-w-0 flex-1" />
       <button
         type="button"
         onClick={onEditWidgets}
-        className={btnCls({}, "uppercase tracking-caps")}
+        className={btnCls({})}
       >
         Widgets
       </button>

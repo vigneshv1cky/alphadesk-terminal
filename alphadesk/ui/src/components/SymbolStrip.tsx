@@ -24,8 +24,8 @@ export function SymbolStrip() {
     // Only the CHIP ROW scrolls sideways — an overflow on the whole strip
     // would clip the search dropdown, which hangs below the strip from an
     // absolutely positioned panel.
-    <div className="flex shrink-0 items-center gap-2 border-b-2 border-border bg-surface px-3 py-2 sm:px-4">
-      <span className="mr-1 hidden shrink-0 text-label font-medium uppercase tracking-caps text-muted-foreground sm:inline">
+    <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-2 sm:px-4">
+      <span className="mr-1 hidden shrink-0 text-label font-medium text-muted-foreground sm:inline">
         On the board
       </span>
       <div className="scrollbar-none flex min-w-0 shrink items-center gap-2 overflow-x-auto">
@@ -34,7 +34,7 @@ export function SymbolStrip() {
         return (
           <span
             key={symbol}
-            className={`inline-flex h-[28px] shrink-0 items-center gap-2 rounded-sm px-2.5 text-caption font-extrabold tracking-caps ${
+            className={`inline-flex h-[28px] shrink-0 items-center gap-2 rounded-sm px-2.5 text-caption font-bold ${
               on
                 ? "border border-transparent border-b-[3px] border-b-accent bg-panel text-foreground"
                 : "border border-border text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
@@ -74,7 +74,7 @@ export function SymbolStrip() {
           onClick={clear}
           title={`Clear the board — back to ${DEFAULT_SYMBOL} alone`}
           aria-label="Clear the board"
-          className={btnCls({ variant: "danger", size: "lg" }, "ml-1 text-label uppercase tracking-caps")}
+          className={btnCls({ variant: "danger", size: "lg" }, "ml-1 text-label")}
         >
           Clear
         </button>

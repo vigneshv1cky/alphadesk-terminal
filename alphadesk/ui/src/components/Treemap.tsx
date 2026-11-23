@@ -188,7 +188,7 @@ export function Treemap({ symbols, priced, metric, picked, onPick, fmt, labels }
               backgroundColor: `color-mix(in srgb, var(--${up ? "gain" : "loss"}) ${mix}%, var(--surface))`,
             }}
           >
-            {!cramped && <span className="num max-w-full truncate text-body font-extrabold">{s}</span>}
+            {!cramped && <span className="num max-w-full truncate text-body font-bold">{s}</span>}
             {!cramped && (
               <span className="tnum max-w-full truncate text-caption">
                 {chg == null ? "—" : `${up ? "+" : ""}${chg.toFixed(2)}%`}

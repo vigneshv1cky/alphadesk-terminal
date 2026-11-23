@@ -125,18 +125,18 @@ export function FiledQuarterPanel({ symbol, reportDate }: { symbol: string; repo
       <table className="w-full table-fixed border-separate border-spacing-0 text-body">
         <thead>
           <tr>
-            <th className="border-b border-row-rule bg-panel px-3 py-2 text-left text-label font-medium uppercase tracking-caps text-muted-foreground">Figure</th>
+            <th className="border-b border-row-rule bg-panel px-3 py-2 text-left text-label font-medium text-muted-foreground">Figure</th>
             {/* The column says the same thing the header does — an annual filer's
                 figures are a YEAR's, and "This quarter" over them is the same
                 misstatement one level down. */}
-            <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">
+            <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground">
               This {grainWord(data.period).toLowerCase()}
               {data.currency && data.currency !== "USD" ? ` (${data.currency})` : ""}
             </th>
-            <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">
+            <th className="w-[104px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground">
               Year ago{data.currency && data.currency !== "USD" ? ` (${data.currency})` : ""}
             </th>
-            <th className="w-[86px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium uppercase tracking-caps text-muted-foreground">Change</th>
+            <th className="w-[86px] border-b border-row-rule bg-panel px-2 py-2 text-right text-label font-medium text-muted-foreground">Change</th>
           </tr>
         </thead>
         <tbody>

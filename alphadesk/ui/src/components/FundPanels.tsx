@@ -100,7 +100,7 @@ export function FundBreakdownPanel({ symbol, span = 6, scroll = 420 }: PanelProp
           </div>
           {d.assets.length > 0 && (
             <div className="mt-3">
-              <div className="mb-1 text-label uppercase tracking-caps text-muted-foreground">Asset classes</div>
+              <div className="mb-1 text-label text-muted-foreground">Asset classes</div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 tnum">
                 {d.assets.map(a => <span key={a.key}><span className="text-muted-foreground">{a.label}</span> {pct(a.weight)}</span>)}
               </div>
@@ -108,7 +108,7 @@ export function FundBreakdownPanel({ symbol, span = 6, scroll = 420 }: PanelProp
           )}
           {d.sectors.length > 0 && (
             <div className="mt-3">
-              <div className="mb-1 text-label uppercase tracking-caps text-muted-foreground">Sectors</div>
+              <div className="mb-1 text-label text-muted-foreground">Sectors</div>
               {d.sectors.map(s => (
                 <div key={s.key} className="mb-1 flex items-center gap-2">
                   <span className="w-[150px] shrink-0 truncate text-muted-foreground">{s.label}</span>

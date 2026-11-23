@@ -68,7 +68,7 @@ export default function PostsPage() {
       <div className="mx-auto w-full max-w-[760px]">
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <div className="min-w-0">
-            <h1 className="text-emph font-extrabold tracking-tight">Posts</h1>
+            <h1 className="text-emph font-bold tracking-tight">Posts</h1>
             <p className="mt-0.5 text-caption text-muted-foreground">never read for tickers</p>
           </div>
           <div className="flex items-center gap-2">
@@ -104,7 +104,7 @@ export default function PostsPage() {
                      title={post.trust ?? undefined}
                      className="group block rounded-lg border border-card-border bg-card px-5 py-4 shadow-card transition-colors hover:border-border">
                     <div className="flex items-baseline justify-between gap-3">
-                      <span className="min-w-0 truncate text-body font-bold text-foreground">
+                      <span className="min-w-0 truncate text-body font-semibold text-foreground">
                         {post.account ? `@${post.account}` : post.platform ?? "social"}
                         {post.account && post.platform && (
                           <span className="ml-2 text-caption font-normal text-muted-foreground">{post.platform}</span>

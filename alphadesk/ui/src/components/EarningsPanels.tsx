@@ -254,7 +254,7 @@ export function RevenueEarningsPanel({ symbol }: { symbol: string }) {
             </div>
           )
         })()}
-        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-label font-medium uppercase tracking-caps text-muted-foreground">
+        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-label font-medium text-muted-foreground">
           <span className="flex items-center gap-1.5 whitespace-nowrap"><span className="h-[9px] w-[9px] bg-n500" /> Revenue</span>
           <span className="flex items-center gap-1.5 whitespace-nowrap"><span className="h-[9px] w-[9px] bg-n300" /> Net income</span>
           <span className="flex items-center gap-1.5 whitespace-nowrap"><span className="h-[2px] w-[14px] bg-foreground" /> Margin</span>
