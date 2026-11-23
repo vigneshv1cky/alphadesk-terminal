@@ -77,6 +77,88 @@ def _memoized_user_fetch(user_id: str, provider_name: str, provider,
     return batch, True
 
 
+# ── US-listed tags only (2026-11-23) ──────────────────────────────────────
+#
+# Alpaca's feed has carried fiscal.ai alone since about 19 November 2026
+# (Benzinga's last stored story is from the 15th), and fiscal.ai covers
+# markets worldwide, tagging each story with its own exchange's code: Maybank
+# as 1155 (Bursa Malaysia), SoftBank as 9984, Siemens as SIE, Mercedes-Benz as
+# MBG. Measured over 600 stored stories that day: 397 carried only US-listed
+# tickers, 9 a mix, and 194 none at all. A code no US exchange lists names no
+# chart, quote or filing here, so a tag that is not a US listing is dropped,
+# and a story left with no tag is not stored — the rule that already drops a
+# story arriving with no ticker (providers/news.alpaca_article). The owner's
+# call: "leave out stories with no US ticker".
+#
+# THE LIST IS THE SEC's tickers, the coin pairs, AND the funds the reader's
+# broker lists (the SEC file leaves out most exchange-traded funds: QQQ, TLT,
+# VOO), loaded under that reader an hour at a time. Until the broker listing
+# is in, nothing is dropped: cutting SPY off a story is worse than keeping a
+# foreign code. NOT CAUGHT: a foreign code that is also a US ticker (an
+# exchange elsewhere may reuse "T" or "M"); nothing in the record tells them
+# apart.
+
+#: A loaded broker listing is read again after this long; a failed one sooner.
+LISTING_KEEP_S = 3600.0
+LISTING_RETRY_S = 600.0
+#: Below this many symbols the list is taken as not loaded.
+UNIVERSE_MIN = 5000
+_listing_state = {"at": float("-inf"), "ok": False}
+_listing_lock = threading.Lock()
+
+
+def _listing_loaded(user_id: str) -> bool:
+    """Whether the symbol list holds the broker's funds, loading them under
+    `user_id` when due. Never raises."""
+    import time
+    from alphadesk.config import register_equity_listing, universe_size
+    with _listing_lock:
+        wait = LISTING_KEEP_S if _listing_state["ok"] else LISTING_RETRY_S
+        if time.monotonic() - _listing_state["at"] < wait:
+            return _listing_state["ok"] and universe_size() >= UNIVERSE_MIN
+        _listing_state["at"] = time.monotonic()
+    ok = False
+    try:
+        from alphadesk.identity import reset_request_user, set_request_user
+        from alphadesk.providers import get_prices
+        token = set_request_user(user_id)
+        try:
+            listing = get_prices().get("asset_listing")
+        finally:
+            reset_request_user(token)
+        if listing:
+            register_equity_listing(listing)
+            ok = True
+    except Exception as exc:
+        log.info("news: broker listing unavailable, tags kept as sent (%s)", exc)
+    with _listing_lock:
+        _listing_state["ok"] = ok
+    return ok and universe_size() >= UNIVERSE_MIN
+
+
+def us_listed_only(rows: list[dict], user_id: str) -> list[dict]:
+    """`rows` with every tag that is not a US listing (or a coin pair) removed,
+    and the rows left with none dropped. Unchanged when the list is not
+    loaded. Pure given the list."""
+    if not rows or not _listing_loaded(user_id):
+        return rows
+    from alphadesk.config import in_universe
+    out = []
+    for r in rows:
+        tags = [t for t in (r.get("tickers") or []) if t and in_universe(str(t))]
+        if tags:
+            out.append(r if len(tags) == len(r.get("tickers") or []) else {**r, "tickers": tags})
+    return out
+
+
+def _save(rows: list[dict], user_id: str, owner: str | None = None) -> list[dict]:
+    """Store `rows` for the reader, US-listed tags only; returns what was kept."""
+    rows = us_listed_only(rows, user_id)
+    if rows:
+        store.save_articles(rows, owner=owner if owner is not None else user_id)
+    return rows
+
+
 def news_owner(user_id: str | None) -> str:
     """Whose window a reader sees: their own, always (2026-09-13 — the
     server's shared feed is gone). An anonymous caller owns nothing and
@@ -269,10 +351,9 @@ def poll_user(user_id: str, since: datetime, limit: int | None = None) -> int:
         if batch and live:
             served.append(row["provider"])
         batches.append(batch)
-    articles = _merge_feeds(batches)
+    articles = _save(_merge_feeds(batches), user_id)
     if not articles:
         return 0
-    store.save_articles(articles, owner=user_id)
     try:
         from alphadesk.ingest import earnings_announcements
         earnings_announcements.record_from_articles(user_id, articles)
@@ -325,8 +406,9 @@ def ingest_streamed(user_id: str, article) -> bool:
     rows = fetch_articles_from([article], owner=user_id)
     if not rows:
         return False
-    rows = [{**r, "feeds": ["alpaca"]} for r in rows]
-    store.save_articles(rows, owner=user_id)
+    rows = _save([{**r, "feeds": ["alpaca"]} for r in rows], user_id)
+    if not rows:
+        return False
     if not rows[0].get("body"):
         # A story can stream before Benzinga attaches its text (one did at
         # 18:56 UTC on 2026-09-15, and the feed had no text for it minutes
@@ -412,9 +494,8 @@ def older_articles(user_id: str, before: str, limit: int = 100, query: str = "")
             log.info("older news from %s: %s", row["provider"], exc)
             continue
         batches.append(_article_dicts(got, row["provider"]))
-    merged = _merge_feeds(batches)
+    merged = _save(_merge_feeds(batches), user_id, owner)
     if merged:
-        store.save_articles(merged, owner=owner)
         rows = store.articles_before(owner, before, limit, query, body=False)
     return rows
 
@@ -481,9 +562,8 @@ def symbol_articles(user_id: str, symbol: str, before: str | None, limit: int) -
         batches.append(dicts)
     if not batches:
         log.info("%s news: no feed answered the symbol ask", symbol)
-    merged = _merge_feeds(batches)
+    merged = _save(_merge_feeds(batches), user_id, owner)
     if merged:
-        store.save_articles(merged, owner=owner)
         rows = store.articles_for_symbol(owner, symbol, before, limit, body=False)
     return rows
 
@@ -563,10 +643,8 @@ def backfill_user(user_id: str, provider_name: str, days: float | None = None) -
             except Exception as exc:
                 log.info("backfill %s for %s: %s", provider_name, user_id[:8], exc)
                 return stored
-            batch = _merge_feeds([_article_dicts(got, provider_name)])
-            if batch:
-                store.save_articles(batch, owner=news_owner(user_id))
-                stored += len(batch)
+            batch = _save(_merge_feeds([_article_dicts(got, provider_name)]), user_id, news_owner(user_id))
+            stored += len(batch)
             if len(got) < BACKFILL_PAGE:
                 break
             try:
@@ -576,6 +654,65 @@ def backfill_user(user_id: str, provider_name: str, days: float | None = None) -
             if oldest >= cursor or oldest <= since:
                 break
             cursor = oldest
+    return stored
+
+
+# ── the days a reader was away (2026-11-23) ───────────────────────────────
+#
+# A reader not seen for NEWS_USER_ACTIVE_HOURS is released and nothing is
+# fetched for them — invariant 4, an idle terminal spends nothing. But the
+# poll that resumes on their return asks for the NEWEST stories only
+# (NEWS_USER_LIMIT, 100), so on a feed carrying hundreds a day the days away
+# were never filled: nothing at all was stored for 16-18 November 2026 (away
+# 15-19 November), and the 18-25 October gap was the same thing. When the
+# cursor is further back than GAP_FILL_AFTER, the days in between are walked
+# the way a newly saved key's are (backfill_user), on the reader's own keys,
+# once, at their return.
+
+#: A cursor further back than this is a gap, not a cycle.
+GAP_FILL_AFTER = timedelta(minutes=30)
+
+
+def resume_point(user_id: str, now: datetime) -> datetime | None:
+    """Where the reader's last poll that delivered stories ended, from the
+    news keys' last-used stamps (kept in the store, so a restart does not
+    forget it). None when no key was ever used."""
+    stamps = []
+    for row in store.get_user_keys(user_id, "news"):
+        raw = row.get("last_used_at")
+        try:
+            at = datetime.fromisoformat(str(raw).replace("Z", "+00:00")) if raw else None
+        except ValueError:
+            at = None
+        if at is not None:
+            stamps.append(at if at.tzinfo else at.replace(tzinfo=timezone.utc))
+    return min(max(stamps), now) if stamps else None
+
+
+def gap_days(since: datetime, now: datetime) -> float:
+    """How many days back a fill must walk to cover from `since` to `now`,
+    capped at the window a backfill may reach; 0 when it is not a gap. Pure."""
+    from alphadesk.config import NEWS_BACKFILL_DAYS
+    gap = now - since
+    if gap <= GAP_FILL_AFTER:
+        return 0.0
+    return min(NEWS_BACKFILL_DAYS, gap.total_seconds() / 86400 + 1 / 24)
+
+
+def fill_gap(user_id: str, since: datetime, now: datetime | None = None) -> int:
+    """Walk every news feed of the reader's back over the gap since `since`.
+    Returns the stories stored; 0 when it is not a gap. Never raises."""
+    now = now or datetime.now(timezone.utc)
+    days = gap_days(since, now)
+    if not days:
+        return 0
+    stored = 0
+    for row in store.get_user_keys(user_id, "news"):
+        try:
+            stored += backfill_user(user_id, row["provider"], days=days)
+        except Exception as exc:
+            log.info("gap fill %s for %s: %s", row["provider"], user_id[:8], exc)
+    log.info("news gap of %.1f days for reader %s filled: %d stories", days, user_id[:8], stored)
     return stored
 
 
