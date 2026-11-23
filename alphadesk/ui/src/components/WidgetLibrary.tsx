@@ -51,8 +51,12 @@ export function WidgetLibraryDialog({ title, submitLabel, initialIds, withName, 
           <span className="mb-1 block text-label font-medium uppercase tracking-caps text-muted-foreground">
             Name
           </span>
+          {/* No autoFocus (2026-11-23): it focused this field before the
+              modal shell recorded what opened it, so the shell took the
+              field for the opener and Escape left focus on the page body
+              instead of the rail's +. The shell focuses the first text
+              field itself, which is this one. */}
           <input
-            autoFocus
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="e.g. Energy Desk"
