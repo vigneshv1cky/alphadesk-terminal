@@ -144,7 +144,17 @@ async def _serve() -> None:
                 except Exception as exc:
                     log.warning("news stream holds: %s", exc)
                 for uid in active:
-                    u_since = user_last.get(uid) or (now_et() - timedelta(hours=NEWS_LOOKBACK_HOURS))
+                    # After a restart the cursor is read from the store (the
+                    # keys' last-used stamp), so a deploy does not forget it.
+                    u_since = (user_last.get(uid)
+                               or await loop.run_in_executor(None, news.resume_point, uid, now_et())
+                               or (now_et() - timedelta(hours=NEWS_LOOKBACK_HOURS)))
+                    # A reader back after days away: the poll below asks for
+                    # the newest stories only, so walk the days in between
+                    # first (news.fill_gap; nothing was stored for 16-18
+                    # November 2026 without it).
+                    if news.gap_days(u_since, now_et()):
+                        await loop.run_in_executor(None, news.fill_gap, uid, u_since, now_et())
                     asked_at = now_et()
                     un = await loop.run_in_executor(None, news.poll_user, uid, u_since)
                     # The cursor moves on only when the feeds answered: after a

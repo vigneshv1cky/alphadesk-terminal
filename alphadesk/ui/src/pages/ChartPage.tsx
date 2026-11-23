@@ -8,7 +8,7 @@ import { ChartSurface } from "@/components/chart/ChartSurface"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { resetChartPrefs } from "@/lib/chartPrefs"
 import { OhlcvStrip } from "@/components/chart/OhlcvStrip"
-import { BAR, BAR_ICON, ChartToolbar, Divider, Item, Menu, RANGES, intervalLabel, rangeLabel } from "@/components/ChartToolbar"
+import { BAR, BAR_ICON, CHROME, ChartToolbar, Divider, Item, Menu, RANGES, intervalLabel, rangeCls, rangeLabel } from "@/components/ChartToolbar"
 import { TIME_ZONES, offsetLabel } from "@/lib/chartTime"
 import { useChartState } from "@/lib/chartState"
 import {
@@ -429,7 +429,7 @@ export default function ChartPage() {
 
   return (
     <div ref={root} data-slot="widget"
-      className="flex h-full min-h-0 flex-col border border-card-border bg-card shadow-card">
+      className={`${CHROME} flex h-full min-h-0 flex-col border border-card-border bg-card shadow-card`}>
       <ChartToolbar
         leading={
           <div className="mr-1 flex items-center">
@@ -494,8 +494,7 @@ export default function ChartPage() {
                     {GRIDS.map(g => (
                       <button key={g.id} type="button" title={g.label} aria-label={g.label} aria-pressed={layout.grid === g.id}
                         onClick={() => setLayout(l => ({ ...l, grid: g.id, openId: null }))}
-                        className={`flex h-[28px] w-[28px] items-center justify-center rounded-sm ${
-                          layout.grid === g.id ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
+                        className={btnCls({ variant: "ghost", size: "lg", icon: true, active: layout.grid === g.id }, "rounded-sm")}>
                         <GridGlyph id={g.id} />
                       </button>
                     ))}
@@ -578,7 +577,7 @@ export default function ChartPage() {
             {RANGES.map(r => (
               <button key={r} type="button"
                 onClick={() => engines.slice(0, cells).forEach(x => x.pickRange(r))}
-                className={btnCls({ variant: "ghost", active: e.range === r })}>
+                className={rangeCls(e.range === r)}>
                 {rangeLabel(r)}
               </button>
             ))}
