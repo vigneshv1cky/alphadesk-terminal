@@ -41,6 +41,9 @@ export type Projection = {
 }
 
 const AXIS_W = 62      // right price gutter
+/** Corner radius of the axis chips (last price, crosshair, countdown): a
+ * square chip read as hard-edged beside the softer type (2026-11-23). */
+const TAG_RX = 3
 /** How much history the cushion fetches ahead of the reader: a pan's worth,
  * not a screenful. A screenful was 1,500 bars and 170KB per chart. */
 const CUSHION_BARS = 600
@@ -81,7 +84,7 @@ function BarCountdown({ live, lastT, interval, x, y, w, cx, ty, fill, textFill }
   if (left == null) return null
   return (
     <>
-      <rect x={x} y={y} width={w} height={14} fill={fill} fillOpacity={0.75} />
+      <rect x={x} y={y} width={w} height={14} rx={TAG_RX} fill={fill} fillOpacity={0.75} />
       <text x={cx} y={ty} fill={textFill} fontSize={10} textAnchor="middle"
             className="tnum">{countdownLabel(left)}</text>
     </>
@@ -1072,7 +1075,7 @@ export function ChartCanvas({
                 cut to its tail ("p 2"); the tick still marks the instant. */}
             {t.x >= 20 && (
               <text x={t.x} y={priceH + panesH + 16} fill={t.major ? (ink ?? text) : text} fontSize={11}
-                fontWeight={t.major ? 600 : 400} textAnchor="middle" className="tnum">
+                fontWeight={t.major ? 500 : 400} textAnchor="middle" className="tnum">
                 {t.label}
               </text>
             )}
@@ -1132,7 +1135,7 @@ export function ChartCanvas({
           return (
             <g pointerEvents="none">
               <line x1={x} y1={0} x2={x} y2={priceH} stroke={text} strokeWidth={1} strokeDasharray="4 3" opacity={0.75} />
-              <text x={flip ? x - 4 : x + 4} y={topInset + 12} fill={text} fontSize={11} fontWeight={600}
+              <text x={flip ? x - 4 : x + 4} y={topInset + 12} fill={text} fontSize={11} fontWeight={500}
                     textAnchor={flip ? "end" : "start"} className="tnum">0%</text>
             </g>
           )
@@ -1393,9 +1396,9 @@ export function ChartCanvas({
             })()}
             {priceLine && lastOnPane && (
               <line x1={0} y1={lastY} x2={plotW} y2={lastY}
-                stroke={trend} strokeWidth={1} strokeDasharray="3 3" />
+                stroke={trend} strokeWidth={1} strokeDasharray="2 3" strokeOpacity={0.7} />
             )}
-            <rect x={plotW + 2} y={tagY - 8} width={AXIS_W - 4} height={16} fill={trend} fillOpacity={provLast ? 0.6 : 1} />
+            <rect x={plotW + 2} y={tagY - 8} width={AXIS_W - 4} height={16} rx={TAG_RX} fill={trend} fillOpacity={provLast ? 0.6 : 1} />
             <text x={plotW + 6} y={tagY + 3.5} fill={bg} fontSize={11} className="tnum">
               {lastOnPane ? "" : lastY < 0 ? "▲ " : "▼ "}
               {(scaleMode === "percent" ? toDisplay(price) : price).toFixed(decimals)}
@@ -1416,10 +1419,12 @@ export function ChartCanvas({
         {/* crosshair */}
         {cursor && (
           <g pointerEvents="none">
+            {/* Softer than full ink: a guide to read against, not a rule
+                drawn over the bars (2026-11-23, "the chart looks sharp"). */}
             <line x1={cursor.x} y1={0} x2={cursor.x} y2={priceH + panesH}
-              stroke={text} strokeWidth={1} strokeDasharray="3 3" />
+              stroke={text} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.55} />
             <line x1={0} y1={cursor.y} x2={plotW} y2={cursor.y}
-              stroke={text} strokeWidth={1} strokeDasharray="3 3" />
+              stroke={text} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.55} />
             {/* The bar being read, marked ON the series.
                 The vertical rule says which COLUMN the cursor is in, which is
                 not the same as which point the OHLCV strip is quoting — at a
@@ -1443,14 +1448,14 @@ export function ChartCanvas({
                 </g>
               )
             })()}
-            <rect x={plotW + 2} y={cursor.y - 8} width={AXIS_W - 4} height={16}
+            <rect x={plotW + 2} y={cursor.y - 8} width={AXIS_W - 4} height={16} rx={TAG_RX}
               fill={tagBg} stroke={tagBorder} strokeWidth={1} />
             <text x={plotW + 6} y={cursor.y + 3.5} fill={tagFg} fontSize={11} className="tnum">
               {yToPrice(s, cursor.y, log).toFixed(decimals)}
             </text>
             {hovered && (
               <>
-                <rect x={cursor.x - 42} y={priceH + panesH + 3} width={84} height={16}
+                <rect x={cursor.x - 42} y={priceH + panesH + 3} width={84} height={16} rx={TAG_RX}
                   fill={tagBg} stroke={tagBorder} strokeWidth={1} />
                 <text x={cursor.x} y={priceH + panesH + 14.5} fill={tagFg} fontSize={11}
                   textAnchor="middle" className="tnum">
