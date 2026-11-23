@@ -473,6 +473,10 @@ def test_a_vendor_at_its_floor_is_not_asked_five_times(monkeypatch):
     a = AlpacaPrices(api_key="k", api_secret="s")
     cursor = datetime(2026, 9, 15, 13, 0, tzinfo=timezone.utc)
     t0 = datetime(2026, 9, 12, 13, 0, tzinfo=timezone.utc)
+    # "Today" pinned beside the cursor, as in the test above: a minute bar
+    # reaches back 60 days from today, so from 2026-11-14 a real clock put
+    # this cursor past the floor and the vendor was never asked at all.
+    monkeypatch.setattr("alphadesk.config.now_et", lambda: cursor + timedelta(hours=2))
     tries = []
 
     def floored(symbols, spec, start, end=None, feed="sip"):
