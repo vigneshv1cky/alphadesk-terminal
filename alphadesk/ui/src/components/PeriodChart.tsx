@@ -99,6 +99,9 @@ export function PeriodChart({ symbol, from, to, live, listChange, label }: {
               live={false}
               focusFrom={0}
               {...theme}
+              // The line takes the move's own colour: the app's red accent on
+              // a rise read as a fall.
+              accent={(change ?? 0) >= 0 ? theme.gain : theme.loss}
             />
           )}
       </div>
