@@ -1147,7 +1147,7 @@ export interface CompareMetrics { rows: CompareRow[]; missing: string[] }
 export interface Peers { symbol: string; peers: string[]; source: string | null }
 
 /** Movers by category — ingest/movers. One shape for nine categories. */
-export type MoverCategory = "stocks" | "crypto" | "etfs" | "options" | "indices" | "bonds" | "currencies"
+export type MoverCategory = "stocks" | "crypto" | "etfs" | "options" | "indices" | "bonds" | "currencies" | "commodities"
 export interface CategoryMoverRow {
   symbol: string
   /** Option contracts only: where a click opens the chain. */
@@ -1187,6 +1187,13 @@ export interface CategoryMoverRow {
   regular_pct?: number | null
   /** When the extended-hours price was struck, New York time. */
   extended_at?: string | null
+  /** A commodity future (2026-11-23): its group and quoting unit, when it
+   * last traded, and whether that was an earlier session than the newest
+   * row's — its change is then that session's, and it is on no ranked tab. */
+  group?: string | null
+  unit?: string | null
+  traded_at?: string | null
+  earlier_session?: boolean
   spark: number[]
 }
 /** One fund on the Sectors page (/api/sectors). Returns are percent. */
