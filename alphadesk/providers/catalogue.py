@@ -116,6 +116,10 @@ SURFACES: dict[str, Surface] = {
         # FMP first: its quotes answer on Premium (2026-09-15, 12 pairs in
         # 0.09s); Polygon's forex snapshot has not been run on a paid key.
         Surface("currencies", "Currencies", (("fmp", PAID), ("polygon", PAID))),
+        # Front-month futures (2026-11-23): FMP is the one vendor here that
+        # quotes them. Alpaca carries no futures; Yahoo's (CL=F, GC=F) went
+        # with the operator sources on 2026-09-13.
+        Surface("commodities", "Commodities", (("fmp", PAID),)),
         Surface("options", "Options", (("alpaca", FREE),)),
         # FMP first where its record is the fuller one (measured 2026-09-14 on
         # a Premium key against the free vendors it overlaps): a vendor a
@@ -206,7 +210,7 @@ METHOD_SURFACE: dict[str, str] = {
     "quote": "quote", "quotes": "quote", "context": "quote", "asset_info": "quote", "asset_listing": "quote",
     "movers": "stock_movers", "market_day": "market_day",
     "market_tape": "index_board", "index_board": "index_board",
-    "crypto_movers": "crypto", "crypto_bars": "crypto", "crypto_daily_history": "crypto", "crypto_market_day": "crypto", "crypto_symbols": "crypto", "crypto_pairs": "crypto", "crypto_rows": "crypto", "fx_daily_history": "currencies",
+    "crypto_movers": "crypto", "crypto_bars": "crypto", "crypto_daily_history": "crypto", "crypto_market_day": "crypto", "crypto_symbols": "crypto", "crypto_pairs": "crypto", "crypto_rows": "crypto", "fx_daily_history": "currencies", "commodity_daily_history": "commodities",
     "option_expirations": "options", "option_chain": "options", "option_active_contracts": "options",
     "option_trades": "options", "option_latest_quotes": "options", "option_movers": "option_movers",
     "fundamentals": "key_stats", "key_stats": "key_stats", "compare_metrics": "compare",
@@ -227,7 +231,7 @@ METHOD_SURFACE: dict[str, str] = {
 # Category movers route to their own surface.
 MOVER_SURFACE: dict[str, str] = {
     "stocks": "stock_movers", "etfs": "etf_movers", "indices": "index_board", "crypto": "crypto",
-    "currencies": "currencies", "options": "option_movers", "bonds": "",   # bonds: US Treasury, keyless
+    "currencies": "currencies", "commodities": "commodities", "options": "option_movers", "bonds": "",   # bonds: US Treasury, keyless
 }
 
 

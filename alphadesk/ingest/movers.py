@@ -16,7 +16,10 @@ Where the rows come from:
   indices     market ETFs standing in for the indices — an index level is
               licensed data no free key carries — labelled as the funds.
   crypto      Alpaca's dollar coins, on its own venue's volume.
-  currencies  Polygon's forex snapshot (paid).
+  currencies  FMP's quotes (paid), or Polygon's forex snapshot (paid).
+  commodities front-month futures for 28 physical commodities, FMP's quotes
+              (paid) — no volume or liquidity: contract counts of different
+              contract sizes are not one unit.
   options     Polygon's option snapshots, busiest contracts (paid).
   bonds       the US Treasury's daily par yield curve — public government
               data, keyless, the change in basis points.
@@ -54,11 +57,11 @@ _inflight: dict[str, threading.Event] = {}
 
 CATEGORIES: dict[str, str] = {
     "stocks": "Stocks", "etfs": "ETFs", "indices": "Market ETFs", "crypto": "Crypto",
-    "currencies": "Currencies", "options": "Options", "bonds": "Treasury yields",
+    "currencies": "Currencies", "commodities": "Commodities", "options": "Options", "bonds": "Treasury yields",
 }
 CHANGE_LABEL = {"crypto": "24h", "bonds": "1D bp"}
 
-TTL_S = {"stocks": 30, "crypto": 30, "indices": 30, "etfs": 60, "currencies": 120, "options": 120, "bonds": 900}
+TTL_S = {"stocks": 30, "crypto": 30, "indices": 30, "etfs": 60, "currencies": 120, "commodities": 120, "options": 120, "bonds": 900}
 # How long a request past the lifetime waits for the rebuild before it takes
 # the old payload (2026-09-15). Handing the old copy back at once and
 # rebuilding behind it meant the tile, which asks every 30 seconds, showed a
@@ -88,7 +91,7 @@ STOCK_MIN_TURNOVER = 1_000_000
 DEFAULT_FLOORS: dict[str, tuple[float, float]] = {
     "stocks": (STOCK_MIN_PRICE, STOCK_MIN_TURNOVER), "etfs": (STOCK_MIN_PRICE, STOCK_MIN_TURNOVER),
     "crypto": (0.0, STOCK_MIN_TURNOVER), "options": (0.0, 0.0), "indices": (0.0, 0.0),
-    "bonds": (0.0, 0.0), "currencies": (0.0, 0.0),
+    "bonds": (0.0, 0.0), "currencies": (0.0, 0.0), "commodities": (0.0, 0.0),
 }
 
 
@@ -302,7 +305,10 @@ def _normalize_tabs(got: dict, category: str) -> list[dict]:
             for k in ("volatility", "liquidity", "open_interest", "underlying", "expiry", "volume_suspect",
                       # A price struck outside the regular session, and the
                       # closed session's own move (2026-09-22).
-                      "extended", "regular_pct", "extended_at"):
+                      "extended", "regular_pct", "extended_at",
+                      # A future: its group and quoting unit, and whether its
+                      # last trade was an earlier session's (2026-11-23).
+                      "group", "unit", "traded_at", "earlier_session"):
                 if r.get(k) is not None:
                     row[k] = r[k]
             # A vendor's own figure wins: an option's premium, or the dollar
@@ -320,6 +326,9 @@ def _enrich_stats(router, tabs: list[dict], category: str, venue: bool = False) 
         return
     if category == "currencies":
         _enrich_currencies(router, tabs)
+        return
+    if category == "commodities":
+        _enrich_commodities(router, tabs)
         return
     if category not in ("stocks", "etfs", "indices"):
         return
@@ -390,6 +399,25 @@ def _enrich_currencies(router, tabs: list[dict]) -> None:
     feed's tick count."""
     pairs = sorted({r["symbol"] for t in tabs for r in t["rows"]})
     bars = (router.get("fx_daily_history", pairs, STATS_DAYS + 1) or {}) if pairs else {}
+    for t in tabs:
+        for r in t["rows"]:
+            b = bars.get(r["symbol"])
+            if b and r.get("volatility") is None:
+                r["volatility"] = stats_from_bars([x["close"] for x in b], [None] * len(b),
+                                                  periods=periods_a_year([x["date"] for x in b]))["volatility"]
+
+
+def _enrich_commodities(router, tabs: list[dict]) -> None:
+    """A future's volatility from its last twenty daily closes (2026-11-23),
+    annualised by the sessions a year its own dates show — about 252. The
+    series is the front month, so a roll into the next contract inside the
+    window counts as a move. No liquidity, for the reason in the provider."""
+    syms = sorted({r["symbol"] for t in tabs for r in t["rows"]})
+    try:
+        bars = (router.get("commodity_daily_history", syms, STATS_DAYS + 1) or {}) if syms else {}
+    except Exception as exc:            # a figure we cannot compute is a dash
+        log.debug("commodities: no daily closes for volatility (%s)", exc)
+        return
     for t in tabs:
         for r in t["rows"]:
             b = bars.get(r["symbol"])

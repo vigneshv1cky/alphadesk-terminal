@@ -430,8 +430,10 @@ export function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkabl
               <TD align="right" mono>
                 {r.price != null ? <Flash value={r.price}>{bonds ? `${num(r.price, 2)}%` : num(r.price, decimals)}</Flash> : "—"}
               </TD>
-              <TD align="right" mono className={`font-semibold ${up ? "text-gain" : "text-loss"}`}
-                  title={r.corporate_action
+              <TD align="right" mono className={`font-semibold ${up ? "text-gain" : "text-loss"} ${r.earlier_session ? "opacity-50" : ""}`}
+                  title={r.earlier_session
+                    ? `Last traded ${r.traded_at ? new Date(r.traded_at).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "in an earlier session"} — this is that session's move, so the row is left off Gainers and Losers`
+                    : r.corporate_action
                     ? (r.price_change_pct != null && r.price_change_pct !== r.change_pct
                       ? `Corporate action that day${r.corporate_action_type ? ` (${r.corporate_action_type})` : ""}: the price moved ${moveText(r.price_change_pct)} on the chart; a holder's move, counting what was handed out, was ${moveText(r.change_pct ?? 0)}${r.spin_off ? ` — ${r.spin_off.shares_per_share} ${r.spin_off.new_symbol} per share, closing at ${r.spin_off.new_close}` : ""}`
                       : `Corporate action that day${r.corporate_action_type ? `: ${r.corporate_action_type}` : ""}. The move is the price chart's and may not be what a holder made`)
@@ -464,7 +466,7 @@ export function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkabl
 
 const CATEGORY_LABELS: Record<MoverCategory, string> = {
   stocks: "Stocks", crypto: "Crypto", etfs: "ETFs", options: "Options",
-  indices: "Market ETFs", bonds: "Treasury yields", currencies: "Currencies",
+  indices: "Market ETFs", bonds: "Treasury yields", currencies: "Currencies", commodities: "Commodities",
 }
 /** A period in words, for the subtitle and the picker's hover. */
 /** The tile's own three; the period page offers the rest. */
@@ -476,7 +478,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   polygon: "Polygon", finnhub: "Finnhub", alphavantage: "Alpha Vantage", fmp: "FMP",
 }
 
-/** ONE movers tile, seven categories, with a category picker (2026-09-12).
+/** ONE movers tile, eight categories (commodities joined 2026-11-23), with a category picker (2026-09-12).
  * A tile starts on its registered category and the reader can switch it
  * from the header; the board keeps as many tiles as it likes, each on its
  * own category. Every category but Treasury yields answers from the
@@ -726,6 +728,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
     : q.data?.source
     ? `${q.data.change_label === "24h" ? "rolling 24h" : q.data.change_label === "1D bp" ? "daily curve · change in bp"
         : category === "currencies" ? "since 5pm New York"
+        : category === "commodities" ? "front-month futures · since the last settlement"
         : q.data.session_label ? `${q.data.session_label.toLowerCase()} · since the last close` : "session"} · ${SOURCE_LABELS[q.data.source] ?? q.data.source}${q.data.official === false ? " · scraped" : ""}${q.data.filling ? " · filling in…" : ""}`
     : q.isPending ? "loading…" : isNeedsKey(q.error) ? "needs a data key" : "unavailable right now"
   return (
@@ -816,7 +819,9 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         // chart, so those rows do not open anything.
         : <>
         {halted ? <HaltsTable /> : <MoversTable rows={shown} changeHead={q.data?.change_label ?? "1D"} session={q.data?.session_label ?? null}
-                       changeTip={category === "currencies" ? "Change since the 5pm New York rollover, where the currency trading day begins" : undefined}
+                       changeTip={category === "currencies" ? "Change since the 5pm New York rollover, where the currency trading day begins"
+                         : category === "commodities" ? "Change since the previous session's settlement price. The contracts trade different hours: a dimmed row last traded in an earlier session, so its change is that session's, and it is left off Gainers and Losers"
+                         : undefined}
                        {...(category === "crypto" ? {
                          volTip: session ? `Annualised volatility of daily returns over the twenty days ending ${session}` : "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",
                          liqTip: session ? `Average dollar volume a day over the twenty days ending ${session}, on ${SOURCE_LABELS[q.data?.source ?? ""] ?? q.data?.source ?? "the exchange"}'s own exchange only` : q.data?.liquidity_scope === "venue"
@@ -824,6 +829,9 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
                            : "Dollar volume traded worldwide over the last 24 hours",
                        } : category === "currencies" ? {
                          volTip: "Annualised volatility of daily returns over the last twenty trading days",
+                         liquidity: false,
+                       } : category === "commodities" ? {
+                         volTip: "Annualised volatility of the front-month contract's last twenty daily closes. A roll into the next contract month counts as a move. A dash: your FMP plan does not include that contract's daily history",
                          liquidity: false,
                        } : category === "bonds" ? {
                          volTip: "How much the yield moves in a year, in basis points: the standard deviation of its last twenty daily changes, annualised",
@@ -836,8 +844,10 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
                          volTip: `Annualised volatility of daily returns over the twenty sessions ending ${q.data.session}`,
                          liqTip: `Average dollar volume a day over the twenty sessions ending ${q.data.session}`,
                        } : {})}
-                       nameHead={category === "stocks" ? "Company" : category === "currencies" ? "Currency" : "Name"}
-                       linkable={category !== "options" && category !== "currencies" && category !== "bonds"} options={category === "options"}
+                       nameHead={category === "stocks" ? "Company" : category === "currencies" ? "Currency" : category === "commodities" ? "Commodity" : "Name"}
+                       // A future is not a symbol the board can chart yet (no
+                       // chart vendor here carries one), so its row opens nothing.
+                       linkable={category !== "options" && category !== "currencies" && category !== "bonds" && category !== "commodities"} options={category === "options"}
                        rank={active?.id === "dollar_volume" ? "dollars"
                          : active?.id === "most_active"
                            // A coin list's Active tab ranks by dollars traded on Alpaca's venue.
@@ -872,6 +882,7 @@ const StockMovers = () => <CategoryMoversTile initial="stocks" title="Stock Move
 export const IndexMovers = () => <CategoryMoversTile initial="indices" title="Market ETFs" />
 const CryptoMovers = () => <CategoryMoversTile initial="crypto" title="Crypto Movers" />
 const CurrencyMovers = () => <CategoryMoversTile initial="currencies" title="Currency Movers" />
+const CommodityMovers = () => <CategoryMoversTile initial="commodities" title="Commodity Movers" />
 const EtfMovers = () => <CategoryMoversTile initial="etfs" title="ETF Movers" />
 const OptionMovers = () => <CategoryMoversTile initial="options" title="Option Movers" />
 const BondMovers = () => <CategoryMoversTile initial="bonds" title="Treasury Yields" />
@@ -880,6 +891,7 @@ registerWidget({ id: "equity-overview", label: "Equity overview", order: 13, com
 registerWidget({ id: "stock-movers", label: "Stock movers", order: 17, component: StockMovers })
 registerWidget({ id: "crypto-movers", label: "Crypto movers", order: 18, component: CryptoMovers })
 registerWidget({ id: "currency-movers", label: "Currency movers", order: 18.1, component: CurrencyMovers })
+registerWidget({ id: "commodity-movers", label: "Commodity movers", order: 18.15, component: CommodityMovers })
 // In the place Market ETFs held, beside Stock movers (2026-09-15).
 registerWidget({ id: "related-funds", label: "Funds on this stock", order: 14.5, component: RelatedFundsTile })
 registerWidget({ id: "etf-movers", label: "ETF movers", order: 16, component: EtfMovers })
