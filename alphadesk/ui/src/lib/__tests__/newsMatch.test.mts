@@ -65,3 +65,22 @@ test("a ticker in capitals that names a company skips the word in summaries", ()
   assert.equal(matchesStory("ARM", { title: "Arm vs. Intel: Which Is a Better Buy", tickers: ["INTC"] }, arm), true)
   assert.equal(matchesStory("ARM", { title: "Senate Blocks Arms Sale", tickers: ["SPY"] }, arm), false)
 })
+
+test("tagged only: the box is a list of tickers, in any case, with or without $", async () => {
+  const { tickersIn } = await import("../newsMatch.ts")
+  assert.deepEqual(tickersIn("NVDA AAPL"), ["NVDA", "AAPL"])
+  assert.deepEqual(tickersIn("nvda, $aapl;msft"), ["NVDA", "AAPL", "MSFT"])
+  assert.deepEqual(tickersIn("BRK.B btc-usd NVDA nvda"), ["BRK.B", "BTC-USD", "NVDA"])
+  assert.deepEqual(tickersIn("rate cut"), ["RATE", "CUT"])   // words look like tickers; only the tags decide
+  assert.deepEqual(tickersIn("  ,, 123 "), [])
+})
+
+test("tagged only keeps a story only when a feed tagged it with one of them", async () => {
+  const { taggedWith } = await import("../newsMatch.ts")
+  const downgrade = { tickers: ["OPY"], title: "Oppenheimer Analyst Downgrades Nvidia to Perform" }
+  assert.equal(taggedWith(downgrade, ["NVDA"]), false)        // names the company, tagged with the broker
+  assert.equal(taggedWith({ tickers: ["NVDA", "AMD"] }, ["AAPL", "NVDA"]), true)
+  assert.equal(taggedWith({ tickers: ["BRK-B"] }, ["BRK.B"]), true)
+  assert.equal(taggedWith({ tickers: ["nvda"] }, ["NVDA"]), true)
+  assert.equal(taggedWith({ tickers: ["NVDA"] }, []), false)
+})

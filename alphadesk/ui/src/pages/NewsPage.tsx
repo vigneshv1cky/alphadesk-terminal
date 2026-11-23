@@ -13,7 +13,7 @@ import { storyKind, KIND_LABEL, type StoryKind } from "@/lib/newsKind"
 import { Btn, Empty, fieldCls, Widget, btnCls } from "@/components/terminal"
 import { newsTime } from "@/lib/newsClock"
 import { useWindowedRows } from "@/lib/windowedRows"
-import { matchesStory } from "@/lib/newsMatch"
+import { matchesStory, taggedWith, tickersIn } from "@/lib/newsMatch"
 import { useQuery } from "@tanstack/react-query"
 
 
@@ -81,6 +81,11 @@ export default function NewsPage() {
   const { data, error } = useNews()
   const oneColumn = useOneColumn()
   const [query, setQuery] = useState("")
+  // TAGGED ONLY (2026-11-23, the owner: "I am not able to search only based
+  // on symbols"): the box becomes a list of tickers and a story is kept only
+  // when a feed tagged it with one of them — no headline that merely names
+  // the company, no story related in meaning (lib/newsMatch.tickersIn).
+  const [taggedOnly, setTaggedOnly] = useState(false)
   // The open story lives in ?article= — that is what lets every news row on
   // every OTHER screen link straight into this reader, and what makes an
   // open story shareable and reload-safe.
@@ -139,10 +144,20 @@ export default function NewsPage() {
   const runSearch = async () => {
     const q = query.trim()
     if (q.length < 2) return
+    const syms = taggedOnly ? tickersIn(q) : []
+    if (taggedOnly && !syms.length) return
     setSearch({ q, rows: null })
     try {
-      const page = await api.newsPage({ q, limit: 100 })
-      setSearch(cur => (cur?.q === q ? { q, rows: page.articles } : cur))
+      // Tagged only asks for each ticker's OWN stories — the store's index by
+      // ticker, which also asks the feed when it holds few — rather than a
+      // word search over everything.
+      const rows = taggedOnly
+        ? (await Promise.all(syms.map(symbol => api.newsPage({ symbol, limit: 100 }))))
+            .flatMap(p => p.articles)
+            .filter((a, i, all) => all.findIndex(b => b.article_id === a.article_id) === i)
+            .sort((a, b) => (b.published_at ?? "").localeCompare(a.published_at ?? ""))
+        : (await api.newsPage({ q, limit: 100 })).articles
+      setSearch(cur => (cur?.q === q ? { q, rows } : cur))
     } catch {
       setSearch(cur => (cur?.q === q ? { q, rows: [] } : cur))
     }
@@ -187,7 +202,7 @@ export default function NewsPage() {
   const companies = useQuery({
     queryKey: ["newsTerms", needle],
     queryFn: ({ signal }) => on(signal).newsTerms(needle),
-    enabled: needle.length >= 2,
+    enabled: needle.length >= 2 && !taggedOnly,
     staleTime: Infinity,
   }).data
   // Stories related in MEANING to what is typed (2026-09-19): asked of the
@@ -195,9 +210,9 @@ export default function NewsPage() {
   // "related". Newest first with the rest — found by meaning, never ranked.
   const [meant, setMeant] = useState("")
   useEffect(() => {
-    const t = setTimeout(() => setMeant(needle.length >= 3 ? needle : ""), 450)
+    const t = setTimeout(() => setMeant(needle.length >= 3 && !taggedOnly ? needle : ""), 450)
     return () => clearTimeout(t)
-  }, [needle])
+  }, [needle, taggedOnly])
   const related = useQuery({
     queryKey: ["newsRelated", meant],
     queryFn: ({ signal }) => on(signal).newsRelated(meant),
@@ -211,6 +226,10 @@ export default function NewsPage() {
       && (!source || a.source === source)
       && (!feed || (a.feeds ?? []).includes(feed))
       && (!kind || storyKind(a) === kind)
+    if (taggedOnly && needle) {
+      const syms = tickersIn(needle)
+      return articles.filter(a => keep(a) && taggedWith(a, syms))
+    }
     // Whole words, their forms, and the companies the words name.
     const words = articles.filter(a => keep(a) && (!needle || matchesStory(needle, a, companies)))
     if (!needle || meant !== needle || !related?.length) return words
@@ -224,7 +243,7 @@ export default function NewsPage() {
     // beside it worked throughout because `source` was listed — which is what
     // made the fault look like "FMP is broken" rather than "one filter is".
     // Every name `keep` and the body read belongs in this list.
-  }, [articles, needle, companies, onBoard, source, feed, kind, boardSymbols, meant, related])
+  }, [articles, needle, companies, onBoard, source, feed, kind, boardSymbols, meant, related, taggedOnly])
   const open = articles.find(a => a.article_id === openId) ?? window_.find(a => a.article_id === openId) ?? null
 
   // The list renders only what is on screen (#81). 104px is what a row
@@ -234,7 +253,7 @@ export default function NewsPage() {
   const win = useWindowedRows({
     count: shown.length,
     estimate: 104,
-    resetKey: `${needle}|${onBoard}|${source}|${feed}|${kind}|${search?.q ?? ""}`,
+    resetKey: `${needle}|${taggedOnly}|${onBoard}|${source}|${feed}|${kind}|${search?.q ?? ""}`,
   })
 
   // ARRIVING WITH A STORY IN THE URL scrolls to it once. It is placed by
@@ -330,11 +349,20 @@ export default function NewsPage() {
           value={query}
           onChange={e => { setQuery(e.target.value); if (search) setSearch(null) }}
           onKeyDown={e => { if (e.key === "Enter") void runSearch() }}
-          placeholder="Filter — ticker, word or source…"
+          placeholder={taggedOnly ? "Tickers — NVDA, AAPL" : "Filter — ticker, word or source"}
           aria-label="Filter the headlines"
-          title="Filters the list as you type; Enter searches all stored news"
+          title={taggedOnly
+            ? "Only stories a feed tagged with one of these tickers; Enter searches all stored news for them"
+            : "Filters the list as you type; Enter searches all stored news"}
           className={`${fieldCls} w-64`}
         />
+        <Btn variant="ghost" active={taggedOnly}
+             onClick={() => { setTaggedOnly(on => !on); if (search) setSearch(null) }}
+             title={taggedOnly
+               ? "Showing only stories tagged with the tickers typed. Press to search words, company names and related stories again"
+               : "Show only stories tagged with the tickers typed: one or more, separated by spaces or commas, with or without $"}>
+          Tagged only
+        </Btn>
         {query.trim().length >= 2 && !search && (
           <Btn variant="ghost" onClick={() => void runSearch()} title="Search every story stored for you, not only the list">
             Search all
@@ -404,6 +432,8 @@ export default function NewsPage() {
         {!err && !data && <Empty>loading…</Empty>}
         {!err && data && shown.length === 0 && !(search && !search.rows) && (
           <Empty>{search ? `no stored story matches “${search.q}”`
+            : taggedOnly && needle && !tickersIn(needle).length ? "type one or more tickers, such as NVDA, AAPL"
+            : taggedOnly && needle ? `no story in the list is tagged ${tickersIn(needle).join(", ")}; Enter searches all stored news`
             : needle || onBoard || source || feed ? "nothing matches these filters" : "no news in the window"}</Empty>
         )}
         {!err && shown.length > 0 && (
