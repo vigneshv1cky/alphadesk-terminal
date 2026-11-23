@@ -265,6 +265,24 @@ export function visibleExtent(
  * it runs the series off the bottom and compressing produces a negative
  * floor. A factor above 1 opens the scale up; below 1 closes it in.
  */
+/** A price range moved by a vertical drag of `dy` pixels over a pane `height`
+ * tall (2026-11-23, the owner: "x and y axis like trading view"). The bars
+ * follow the hand, as they do in the sideways pan: dragging DOWN moves them
+ * down the screen, which is the visible range moving UP the price axis. The width of the range is
+ * kept; on the log scale the shift is in log units, so a drag moves the same
+ * proportion at every price. Pure. */
+export function shiftedRange(range: { min: number; max: number }, dy: number, height: number, log = false): { min: number; max: number } {
+  const { min, max } = range
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min || !(height > 0) || !Number.isFinite(dy)) return range
+  if (log && min > 0) {
+    const lo = Math.log(min), hi = Math.log(max)
+    const d = (dy / height) * (hi - lo)
+    return { min: Math.exp(lo + d), max: Math.exp(hi + d) }
+  }
+  const d = (dy / height) * (max - min)
+  return { min: min + d, max: max + d }
+}
+
 export function scaledRange(range: { min: number; max: number }, factor: number, log = false): { min: number; max: number } {
   const { min, max } = range
   if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min || !(factor > 0)) return range

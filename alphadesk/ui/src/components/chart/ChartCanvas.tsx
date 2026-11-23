@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import type { ChartBar } from "@/lib/api"
 import {
   clampView, indexToX, maxSpan, padRangeInset, priceDecimals, priceTicks, priceTicksLog, priceToY,
-  RIGHT_GAP, scaledRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
+  RIGHT_GAP, scaledRange, shiftedRange, visibleExtent, xToIndex, yToPrice, zoomAt, type Scale,
 } from "@/lib/chartScales"
 import { bucketBars } from "@/lib/chartBuckets"
 import { useSmoothedRange } from "@/lib/smoothRange"
@@ -41,6 +41,8 @@ export type Projection = {
 }
 
 const AXIS_W = 62      // right price gutter
+/** Vertical travel, in pixels, before a plot drag moves the price scale. */
+const VERTICAL_DEAD_PX = 6
 /** Corner radius of the axis chips (last price, crosshair, countdown): a
  * square chip read as hard-edged beside the softer type (2026-11-23). */
 const TAG_RX = 3
@@ -196,7 +198,11 @@ export function ChartCanvas({
   const [view, setView] = useState<{ from: number; to: number } | null>(
     () => (bars.length ? { from: Math.min(focusFrom, Math.max(0, bars.length - 2)), to: bars.length } : null))
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
-  const drag = useRef<{ x: number; from: number; to: number } | null>(null)
+  /** A plot drag: where it began, the time window and the price range then,
+   * and whether it has moved far enough vertically to take the price scale
+   * off its fit (VERTICAL_DEAD_PX). */
+  const drag = useRef<{ x: number; y: number; from: number; to: number;
+    range: { min: number; max: number }; vertical: boolean } | null>(null)
   // State, not just the ref: the grab cursor is rendered, and a ref mutation
   // does not re-render, so reading drag.current in the style never changed it.
   const [panning, setPanning] = useState(false)
@@ -623,7 +629,7 @@ export function ChartCanvas({
   const onDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || yDrag.current || xDrag.current || paneDrag.current) return
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId) } catch { /* no live pointer (synthetic) */ }
-    drag.current = { x: e.clientX, from, to }
+    drag.current = { x: e.clientX, y: e.clientY, from, to, range: { min, max }, vertical: false }
     userMoved.current = true
     setPanning(true)
   }
@@ -664,6 +670,18 @@ export function ChartCanvas({
       // Clamped like every other view change — an unclamped drag could push
       // the series off the edge and leave a blank chart with no way back.
       setView(clampView(drag.current.from + shift, drag.current.to + shift, edgeLen))
+      // AND UP AND DOWN (2026-11-23, the owner: "x and y axis like trading
+      // view"). Past a few pixels of vertical travel the drag takes the price
+      // scale off its fit and moves it with the hand; from then on the range
+      // is HELD, exactly as a stretch of the price gutter holds it, until the
+      // Auto button or a double-click on the gutter hands it back. The dead
+      // zone keeps a sideways drag, which always wobbles a little, fitting.
+      const dy = e.clientY - drag.current.y
+      if (!drag.current.vertical && Math.abs(dy) >= VERTICAL_DEAD_PX) drag.current.vertical = true
+      if (drag.current.vertical) {
+        setHeld(shiftedRange(drag.current.range, dy, priceH, scaleMode === "log"))
+        setYZoom(1)
+      }
       return
     }
     if (x > plotW || y > priceH) { setCursor(null); onHover?.(null, null); return }
@@ -1514,7 +1532,7 @@ export function ChartCanvas({
           onPointerCancel={() => { yDrag.current = null; setYResizing(false) }}
           onDoubleClick={e => { e.stopPropagation(); setYZoom(1); setHeld(null) }}
         >
-          <title>Drag to set the price scale — it stays where you put it · double-click to fit the bars again</title>
+          <title>Drag to set the price scale — it stays where you put it · double-click or press Auto to fit the bars again</title>
         </rect>
 
         {/* The time gutter, grabbable — the x-axis twin of the price gutter
@@ -1560,6 +1578,24 @@ export function ChartCanvas({
         >
           <title>Drag to stretch the time scale · double-click to fit</title>
         </rect>
+
+        {/* AUTO (2026-11-23): once the price scale is held — by a vertical
+            drag of the plot or a stretch of the gutter — this sits at the
+            foot of the price axis and hands the scale back to fitting the
+            bars on screen, the way TradingView's auto toggle does. A
+            double-click on the gutter still does the same. Only shown while
+            there is something to hand back. */}
+        {(held || yZoom !== 1) && priceH > 40 && (
+          <g role="button" aria-label="Fit the price scale to the bars on screen" style={{ cursor: "pointer" }}
+             onPointerDown={e => e.stopPropagation()}
+             onMouseDown={e => e.stopPropagation()}
+             onClick={e => { e.stopPropagation(); setHeld(null); setYZoom(1) }}>
+            <rect x={plotW + 2} y={priceH - 20} width={AXIS_W - 4} height={16} rx={TAG_RX}
+                  fill={tagBg} stroke={tagBorder} strokeWidth={1} />
+            <text x={plotW + AXIS_W / 2} y={priceH - 8.5} fill={tagFg} fontSize={11} textAnchor="middle">Auto</text>
+            <title>The price scale is set by hand · click to fit it to the bars on screen again</title>
+          </g>
+        )}
       </svg>
     </div>
   )
