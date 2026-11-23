@@ -308,8 +308,12 @@ function HaltsTable() {
 
 export function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = true, options = false, rank = null, nameHead = "Name",
   volTip = "Annualised volatility of daily returns over the last twenty sessions",
-  liqTip = "Average dollar volume a day over the last twenty sessions", liquidity = true, session = null }: {
+  liqTip = "Average dollar volume a day over the last twenty sessions", liquidity = true, session = null, onPick, picked = null }: {
   rows: CategoryMoverRow[]; empty?: string; changeHead?: string; linkable?: boolean
+  /** A click PICKS the row for something beside the table (the period page's
+   * chart) instead of adding it to the board; `picked` is shaded. */
+  onPick?: (row: CategoryMoverRow) => void
+  picked?: string | null
   /** The session these prices were struck in when it is not the regular one
    * ("Pre-market", "After hours", "Overnight", "Weekend"): the change is
    * then measured from the last close, and the volume beside it is that
@@ -423,7 +427,8 @@ export function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkabl
           const up = (r.change_pct ?? 0) >= 0
           const decimals = r.price != null ? priceDecimals(r.price, named) : 2
           return (
-            <TR key={r.symbol} onClick={linkable || (options && !!r.underlying) ? () => open(r) : undefined}
+            <TR key={r.symbol} className={picked === r.symbol ? "bg-row-selected" : undefined}
+                onClick={onPick ? () => onPick(r) : linkable || (options && !!r.underlying) ? () => open(r) : undefined}
                 onRest={linkable && !options ? () => prefetchChart(r.symbol) : undefined}>
               <TD className="truncate font-semibold" title={r.name ?? undefined}>{r.display}</TD>
               {named && <TD className="truncate text-muted-foreground" title={r.name ?? undefined}>{r.name && r.name !== r.display ? r.name : "—"}</TD>}
