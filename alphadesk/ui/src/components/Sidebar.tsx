@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
 import { Activity, Building2, CalendarDays, CalendarRange, ChartCandlestick, ChevronDown, ChevronLeft, FileText, TrendingUp, Layers3, LayoutGrid, LineChart, MessageSquare, Newspaper, Plus, LayoutDashboard, Plug, Star, UserRound,
 } from "lucide-react"
@@ -11,6 +11,8 @@ import { WidgetLibraryDialog } from "@/components/WidgetLibrary"
 import { BasketDialog } from "@/components/BasketDialog"
 import { searchBaskets } from "@/lib/basketSearch"
 import { btnCls } from "@/components/terminal"
+import { focusables, isTextEntry } from "@/lib/focus"
+import { opensOnSpace, railStep } from "@/lib/railKeys"
 
 /** The nav rail — 208px, single-line 30px rows: icon, label, and a
  * right-aligned count where there is one. The counts are the same shared
@@ -114,6 +116,28 @@ function useBoardNewsCount(): number {
   return boardStories(rail.data.stories, symbols, seen).fresh.size
 }
 
+/** The rail's own keys (lib/railKeys): the arrows, Home and End step through
+ * every stop in the rail, and Space opens a row as Enter does. Tab is left
+ * alone, so every row and control stays a Tab stop. The basket search keeps
+ * its arrows, and a key pressed with a modifier is left to the browser. */
+function onRailKey(e: React.KeyboardEvent<HTMLElement>) {
+  const target = e.target as HTMLElement
+  // React bubbles a portal's keys to its parent component, so the rail's
+  // dialogs (New view, New basket) arrive here too: they are not the rail's.
+  if (!e.currentTarget.contains(target)) return
+  if (e.altKey || e.ctrlKey || e.metaKey || isTextEntry(target)) return
+  if (opensOnSpace(e.key, target.tagName)) {
+    e.preventDefault()
+    target.click()
+    return
+  }
+  const stops = focusables(e.currentTarget)
+  const next = railStep(e.key, stops.indexOf(target), stops.length)
+  if (next < 0) return
+  e.preventDefault()
+  stops[next].focus()
+}
+
 /** Dispatched by the header's menu button on a phone to open the drawer. */
 export const OPEN_MENU_EVENT = "alphadesk:open-menu"
 
@@ -129,11 +153,31 @@ export function Sidebar() {
   useEffect(() => { setDrawerOpen(false) }, [pathname])
   // On a phone there is no strip at all (2026-09-18): its 56px was a sixth
   // of a 375px screen. The header's menu button opens the drawer instead.
+  const drawerOpener = useRef<HTMLElement | null>(null)
   useEffect(() => {
-    const open = () => setDrawerOpen(true)
+    const open = () => {
+      drawerOpener.current = document.activeElement as HTMLElement | null
+      setDrawerOpen(true)
+    }
     window.addEventListener(OPEN_MENU_EVENT, open)
     return () => window.removeEventListener(OPEN_MENU_EVENT, open)
   }, [])
+  // Keyboard focus follows the drawer (2026-11-23): in on the page you are
+  // on when it opens, and back to the menu button when Escape or the
+  // collapse button puts it away. A pick navigates, which closes it too;
+  // focus then stays where the new page puts it.
+  const navRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!drawerOpen) return
+    const nav = navRef.current
+    if (!nav) return
+    ;(nav.querySelector<HTMLElement>("[aria-current=page]") ?? focusables(nav)[0])?.focus()
+  }, [drawerOpen])
+  const closeDrawer = () => {
+    setDrawerOpen(false)
+    const opener = drawerOpener.current
+    if (opener?.isConnected) opener.focus()
+  }
   const [viewsOpen, toggleViews] = useSectionFold("views")
   const [basketsOpen, toggleBaskets] = useSectionFold("baskets")
   const [mineOpen, toggleMine] = useSectionFold("my-views")
@@ -154,7 +198,17 @@ export function Sidebar() {
   const themes = themesData?.themes ?? []
   const shownBaskets = searchBaskets(themes, basketQuery)
 
+  // Collapsing or expanding swaps one rail for the other, so the button that
+  // was pressed is gone and focus fell to the page body. It lands on the
+  // other rail's toggle instead, so Enter twice is a round trip.
+  const refocusToggle = useRef(false)
+  useEffect(() => {
+    if (!refocusToggle.current) return
+    refocusToggle.current = false
+    navRef.current?.querySelector<HTMLElement>("[data-rail-toggle]")?.focus()
+  }, [collapsed])
   const toggle = () => {
+    refocusToggle.current = true
     setCollapsed(v => {
       try { localStorage.setItem(COLLAPSE_KEY, v ? "0" : "1") } catch { /* private mode */ }
       return !v
@@ -176,11 +230,12 @@ export function Sidebar() {
   if (narrow && !drawerOpen) return null
   if (collapsed && !(narrow && drawerOpen)) {
     return (
-      <nav aria-label="Views" className="flex w-[44px] shrink-0 flex-col overflow-hidden rounded-lg border border-card-border bg-card shadow-card">
+      <nav ref={navRef} onKeyDown={onRailKey} aria-label="Views" className="flex w-[44px] shrink-0 flex-col overflow-hidden rounded-lg border border-card-border bg-card shadow-card">
         <div className="flex h-[32px] items-center justify-center border-b border-row-rule">
           <button
             type="button"
             onClick={() => (narrow ? setDrawerOpen(true) : toggle())}
+            data-rail-toggle
             aria-label="Expand the navigation rail"
             className={btnCls({ size: "sm", icon: true })}
           >
@@ -227,12 +282,13 @@ export function Sidebar() {
   }
 
   const rail = (
-    <nav aria-label="Views" className={`flex w-[208px] shrink-0 flex-col overflow-hidden rounded-lg border border-card-border bg-card shadow-card ${narrow ? "h-full" : ""}`}>
+    <nav ref={navRef} onKeyDown={onRailKey} aria-label="Views" className={`flex w-[208px] shrink-0 flex-col overflow-hidden rounded-lg border border-card-border bg-card shadow-card ${narrow ? "h-full" : ""}`}>
       <SectionHeader label="Views" open={viewsOpen} onToggle={toggleViews}
                      className="h-[32px] py-0 pl-3 pr-2">
         <button
           type="button"
-          onClick={() => (narrow ? setDrawerOpen(false) : toggle())}
+          onClick={() => (narrow ? closeDrawer() : toggle())}
+          data-rail-toggle
           aria-label="Collapse the navigation rail"
           className={btnCls({ size: "sm", icon: true })}
         >
@@ -394,7 +450,11 @@ export function Sidebar() {
     return (
       // Below the header (52px) and the symbol strip (46px), not over them —
       // the drawer borrows the CONTENT area, the chrome stays put.
-      <div className="fixed inset-x-0 bottom-0 top-[98px] z-[60]" role="dialog" aria-label="Navigation">
+      <div className="fixed inset-x-0 bottom-0 top-[98px] z-[60]" role="dialog" aria-label="Navigation"
+           onKeyDown={e => {
+             const t = e.target as Element
+             if (e.key === "Escape" && e.currentTarget.contains(t) && !isTextEntry(t)) closeDrawer()
+           }}>
         <div className="absolute inset-0 bg-black/60 [animation:fade-in_120ms_linear]" onClick={() => setDrawerOpen(false)} aria-hidden="true" />
         <div className="drawer-in relative h-full w-fit py-1.5 pl-1.5">{rail}</div>
       </div>
