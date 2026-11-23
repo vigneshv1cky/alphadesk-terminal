@@ -1267,11 +1267,13 @@ export function ChartCanvas({
               d.kind === "histogram" ? (
                 <g key={i}>
                   {/* Lighter than a candle body: the volume band is context
-                      for the price above it, not a second thing to read. A
+                      for the price above it, not a second thing to read —
+                      half strength, the convention the candle palette comes
+                      from. A
                       shaded histogram draws its growing columns solid and its
                       fading ones faint. */}
-                  <path d={d.up} fill={d.color} fillOpacity={"shade" in d && d.shade ? 0.85 : 0.42} />
-                  <path d={d.down} fill={d.downColor} fillOpacity={"shade" in d && d.shade ? 0.85 : 0.42} />
+                  <path d={d.up} fill={d.color} fillOpacity={"shade" in d && d.shade ? 0.85 : 0.5} />
+                  <path d={d.down} fill={d.downColor} fillOpacity={"shade" in d && d.shade ? 0.85 : 0.5} />
                   {"upWeak" in d && d.upWeak && <path d={d.upWeak} fill={d.color} fillOpacity={0.3} />}
                   {"downWeak" in d && d.downWeak && <path d={d.downWeak} fill={d.downColor} fillOpacity={0.3} />}
                 </g>

@@ -92,6 +92,12 @@
     --color-gain: var(--gain);
     --color-gain-tint: var(--gain-tint);
     --color-loss: var(--loss);
+    /* The chart's own up/down pair — candles, wicks, volume and the readout
+       over them. Kept apart from gain/loss, which colour every table and
+       pill: the conventional trading-terminal candle palette is a teal and a
+       coral that would read off-theme as the app's text colours. */
+    --color-chart-up: var(--chart-up);
+    --color-chart-down: var(--chart-down);
     --color-accent: var(--accent);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent-100: var(--accent-100);
@@ -158,6 +164,11 @@
     --input: color-mix(in srgb, #16161d 40%, transparent);
     --grid-line: #d6d6d6;        /* chart gridlines only */
     --chart-grid: rgba(32, 30, 29, 0.08);
+    /* Candle colours: the widely used trading-terminal pair, teal up and coral
+       down (2026-11-23, the owner's ask). Light and dark are written apart so
+       either can be tuned for its own ground. */
+    --chart-up: #089981;
+    --chart-down: #f23645;
     --popover: #f8f8f8;
     --popover-foreground: #16161d;
     --muted: #eaeaea;
@@ -241,6 +252,8 @@
     --input: color-mix(in srgb, #ededed 22%, transparent);
     --grid-line: #262626;        /* chart gridlines only */
     --chart-grid: rgba(237, 237, 237, 0.06);
+    --chart-up: #089981;
+    --chart-down: #f23645;
     --popover: #171717;
     --popover-foreground: #ededed;
     --muted: #222222;
