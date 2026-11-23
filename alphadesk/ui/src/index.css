@@ -331,6 +331,11 @@
     border-radius: var(--radius-md);
     overflow: hidden;
   }
+  /* The chart's chrome draws the icon set at the chart's own 1.5 stroke
+     (2026-11-23, the owner: "the tool bar in charts still look sharp"): the
+     set's default 2 read heavy beside the hand-drawn glyphs and the softer
+     type. A CSS stroke-width beats the icons' presentation attribute. */
+  .chart-chrome svg.lucide { stroke-width: 1.5; }
   /* THE INK CHROME (2026-09-18, option C of five colour directions drafted
      on a design canvas): the app header is a solid ink bar in both themes,
      with no rule under it (the reader took the red rule out, 2026-09-18) —

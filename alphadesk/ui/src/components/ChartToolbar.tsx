@@ -5,7 +5,8 @@ import { INDICATORS, type Indicator, type IndicatorDef, type IndicatorType } fro
 import type { ScaleMode } from "@/components/chart/ChartCanvas"
 import { SERIES_KINDS, type SeriesKind } from "@/lib/series"
 import type { ChartRange, IntervalSpec } from "@/lib/api"
-import { menuHeadCls, menuItemCls, menuPanelCls } from "@/components/terminal"
+import { btnCls, menuHeadCls, menuItemCls, menuPanelCls } from "@/components/terminal"
+import { cn } from "@/lib/utils"
 
 /** The chart's controls: series type, interval, scale, indicators.
  *
@@ -65,16 +66,27 @@ export const RANGES: ChartRange[] = ["1D", "5D", "1M", "3M", "6M", "YTD", "1Y", 
 /** The label theirs uses for the whole series. The server's key stays MAX. */
 export const rangeLabel = (r: ChartRange) => (r === "MAX" ? "All" : r)
 
-// The toolbar's bordered chip. Selected is the shared soft grey fill, as
-// everywhere else (2026-09-18): red is for headings and alerts.
-const btn = "inline-flex h-[24px] items-center whitespace-nowrap border px-2 text-caption font-semibold tracking-ticker transition-colors"
 /** The toolbar button, the way theirs is: borderless, 28px, an icon and
  * a short label, tinted when open or active. Exported for the page's own
  * buttons so the whole bar reads as one row. */
 // 13.5px on a 14px root (2026-09-11, the reader's call — 12.5 read small):
 // the toolbar's words sit a hair under body size, its icons a hair over.
-export const BAR = "inline-flex h-[32px] shrink-0 items-center gap-1.5 rounded-sm px-2 text-body font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-35 disabled:hover:bg-transparent"
+// BUILT ON THE SHARED BUTTON (2026-11-23, the owner: "the tool bar in charts
+// still look sharp"): the ghost button's faint hover and soft grey selection,
+// at the toolbar's own 32px nav-row height, 5px corners, medium weight and
+// no letter-spacing — the shared default's semibold tracked caps read hard
+// beside the softer type (#166).
+export const BAR = btnCls({ variant: "ghost" },
+  "h-[32px] gap-1.5 rounded-sm px-2 text-body font-medium tracking-normal text-foreground disabled:opacity-35")
 export const BAR_ON = "bg-foreground/10 !text-foreground"
+/** A range button, the SAME on the tile's range row and the workspace's
+ * strip: they had drifted to two looks (32px medium beside 24px semibold
+ * tracked). 28px, the chip height. */
+export const rangeCls = (active: boolean) => btnCls({ variant: "ghost", active },
+  "tnum h-[28px] rounded-sm px-2 text-body font-medium tracking-normal")
+/** Marks the chart's chrome, where index.css draws the stock icons at the
+ * chart's own 1.5 stroke instead of the icon set's heavier 2. */
+export const CHROME = "chart-chrome"
 export const BAR_ICON = "h-[17px] w-[17px]"
 export const Divider = () => <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border" />
 
@@ -103,8 +115,6 @@ export function SeriesGlyph({ kind }: { kind: SeriesKind }) {
   }
   return <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">{body[kind]}</svg>
 }
-const on = "border-border bg-foreground/10 text-foreground"
-const off = "border-border text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
 
 /** A menu that closes on outside click and on Escape. Hand-rolled for the same
  * reason the rest of the primitives are — one popover does not justify a
@@ -168,7 +178,7 @@ export function Menu({ label, active, wide, chevron = true, up = false, align = 
         onClick={() => setOpen(o => !o)}
         className={variant === "bar"
           ? `${BAR} ${active || open ? BAR_ON : ""}`
-          : `${btn} ${active || open ? on : off}`}
+          : btnCls({ active: active || open })}
       >
         {label}{chevron && variant === "chip" && <span className="text-label"> ▾</span>}
       </button>
@@ -245,7 +255,7 @@ export function ChartToolbar({
   barCount?: number
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-0.5 border-b border-row-rule px-2.5 py-1.5">
+    <div className={`${CHROME} flex flex-wrap items-center gap-0.5 border-b border-row-rule px-2.5 py-1.5`}>
       {leading}
       {leading && <Divider />}
       {/* Theirs, control for control: the series as a picture, the
@@ -366,7 +376,7 @@ export function ChartRanges({ range, onRange, loading = false }: {
   loading?: boolean
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-0.5 border-t border-row-rule px-2.5 py-1.5">
+    <div className={`${CHROME} flex flex-wrap items-center gap-0.5 border-t border-row-rule px-2.5 py-1.5`}>
       {RANGES.map(r => (
         <button
           key={r}
@@ -374,7 +384,7 @@ export function ChartRanges({ range, onRange, loading = false }: {
           onClick={() => onRange(r)}
           aria-pressed={range === r}
           aria-busy={loading && range === r}
-          className={`${BAR} tnum !px-1.5 ${range === r ? BAR_ON : "text-muted-foreground"} ${loading && range === r ? "animate-pulse" : ""}`}
+          className={cn(rangeCls(range === r), loading && range === r && "animate-pulse")}
         >
           {rangeLabel(r)}
         </button>

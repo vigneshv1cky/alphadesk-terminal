@@ -5,6 +5,7 @@ import { ChartDrawings, DrawingToolbar, nextId } from "@/components/ChartDrawing
 import { IndicatorLegend, IndicatorSettings } from "@/components/chart/IndicatorPanel"
 import type { ChartEngine } from "@/lib/chartEngine"
 import { menuItemCls, menuPanelCls } from "@/components/terminal"
+import { CHROME } from "@/components/ChartToolbar"
 import { useNarrowViewport } from "@/lib/viewport"
 import { previousSessionLastIndex } from "@/lib/percentBase"
 import { useQuote } from "@/lib/queries"
@@ -120,7 +121,7 @@ export function ChartSurface({ e, legendTop, toolsAlwaysOn = false, children }: 
     // The tool column sits BESIDE the canvas, not over it: a strip floating
     // on the plot hid the bars under it, and the canvas measures its own
     // width so it simply gives the column its 34px.
-    <div className="flex">
+    <div className={`${CHROME} flex`}>
       {drawable && (
         <DrawingToolbar
           closable={!toolsAlwaysOn}
