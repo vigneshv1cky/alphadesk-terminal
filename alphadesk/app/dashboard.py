@@ -1366,7 +1366,9 @@ def api_category_movers(category: str, top: int = 20,
                         min_liquidity: float | None = Query(None, ge=0),
                         min_volatility: float | None = Query(None, ge=0),
                         session: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-                        period: str | None = Query(None, pattern=r"^(1D|1W|1M)$")):
+                        period: str | None = Query(None, pattern=r"^(1D|1W|1M|3M|6M|YTD|1Y|CUSTOM)$"),
+                        from_date: str | None = Query(None, alias="from", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                        to_date: str | None = Query(None, alias="to", pattern=r"^\d{4}-\d{2}-\d{2}$")):
     """Movers by category — stocks, crypto, etfs, mutual_funds, options,
     indices, futures, bonds, currencies — one shape for one tile
     (ingest/movers.py). The floors are the reader's when given, the
@@ -1380,19 +1382,31 @@ def api_category_movers(category: str, top: int = 20,
     `period` 1W or 1M (stocks and ETFs, 2026-11-10) measures the latest
     price against the close five or twenty-one sessions earlier, both read
     fresh and split-adjusted (movers.period_movers); 1D is the usual list.
-    It cannot be combined with `session`."""
+    It cannot be combined with `session`. Since 2026-11-23 also 3M, 6M, 1Y
+    (63, 126, 252 sessions), YTD (from the last close of the year before),
+    and the reader's own dates: `from` (the close of the session on or
+    before it) and optionally `to` (YYYY-MM-DD; a past `to` ends the period
+    at that session's close). `from` alone implies CUSTOM. 400 names a date
+    that cannot be measured."""
     from alphadesk.ingest import movers
+    if from_date and not period:
+        period = "CUSTOM"
+    if (from_date or to_date) and period != "CUSTOM":
+        raise HTTPException(400, "from and to go with period=CUSTOM")
     if period and period != "1D":
         if session:
-            raise HTTPException(400, "a period list always ends now; it cannot be combined with session")
+            raise HTTPException(400, "a period list cannot be combined with session; give its end as to instead")
         if category not in movers.PERIOD_CATEGORIES:
             raise HTTPException(404, f"a {period} list is only available for {', '.join(movers.PERIOD_CATEGORIES)}")
         try:
             return movers.period_movers(category, period, top=max(1, min(top, 50)),
                                         min_price=min_price, min_turnover=min_turnover,
-                                        min_liquidity=min_liquidity, min_volatility=min_volatility)
+                                        min_liquidity=min_liquidity, min_volatility=min_volatility,
+                                        from_day=from_date, to_day=to_date)
         except KeyError:
             raise HTTPException(404, f"no such category: {category}")
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
     if session:
         if category not in movers.SESSION_CATEGORIES:
             raise HTTPException(404, f"a past session is only available for "

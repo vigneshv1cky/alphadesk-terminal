@@ -814,7 +814,7 @@ class _Period:
             out = {}
             for s in args[0]:
                 if s == "SPY":
-                    out[s] = [_Bar(d, 500.0) for d in _weekdays_back("2026-11-09", 40)]
+                    out[s] = [_Bar(d, 500.0) for d in _weekdays_back("2026-11-09", 400)]
                 elif s in self.adjusted:
                     out[s] = [_Bar(d, c) for d, c in self.adjusted[s].items()]
             return out
@@ -898,10 +898,130 @@ def test_a_period_is_refused_where_it_cannot_be_measured(_period_env):
 def test_the_agent_tool_takes_a_period_but_not_with_a_session(monkeypatch):
     from alphadesk import mcp_server
     seen = []
-    monkeypatch.setattr(movers, "period_movers", lambda cat, per, top=20: seen.append((cat, per)) or
+    monkeypatch.setattr(movers, "period_movers", lambda cat, per, top=20, **kw: seen.append((cat, per)) or
                         {"category": cat, "period": per, "tabs": [{"id": "gainers", "rows": [{"symbol": "AAA"}]}]})
     got = mcp_server.movers("stocks", period="1w")
     assert seen == [("stocks", "1W")] and got["gainers"] == [{"symbol": "AAA"}] and got["period"] == "1W"
     assert "cannot be combined" in mcp_server.movers("stocks", session="2026-11-02", period="1M")["error"]
     assert "only available" in mcp_server.movers("crypto", period="1W")["error"]
     assert "must be one of" in mcp_server.movers("stocks", period="2W")["error"]
+
+
+# ── any period (2026-11-23): 3M, 6M, YTD, 1Y and the reader's own dates ──
+
+_CAL = _weekdays_back("2026-11-09", 400)            # newest first, holidays ignored
+
+
+def test_named_periods_count_sessions_back_from_the_end():
+    for per, n in (("3M", 63), ("6M", 126), ("1Y", 252)):
+        assert movers.period_span(per, _CAL, "2026-11-09") == (_CAL[n], "2026-11-09")
+
+
+def test_year_to_date_measures_from_the_last_close_of_the_year_before():
+    assert movers.period_span("YTD", _CAL, "2026-11-09") == ("2025-12-31", "2026-11-09")
+
+
+def test_custom_start_on_a_weekend_measures_from_the_friday_before():
+    # 2026-10-03 is a Saturday.
+    assert movers.period_span("CUSTOM", _CAL, "2026-11-09", "2026-10-03") == ("2026-10-02", "2026-11-09")
+    # A past end lands on the session on or before it (Sunday → Friday).
+    assert movers.period_span("CUSTOM", _CAL, "2026-11-09", "2026-10-03", "2026-10-25") == ("2026-10-02", "2026-10-23")
+    # An end at or after the latest session is now.
+    assert movers.period_span("CUSTOM", _CAL, "2026-11-09", "2026-10-03", "2026-11-20")[1] == "2026-11-09"
+
+
+@pytest.mark.parametrize("args, words", [
+    (("CUSTOM", "2026-11-09", None), "before the end"),           # start on the end session
+    (("CUSTOM", "2026-10-03", "2026-10-01"), "before the start"),  # end before start
+    (("CUSTOM", None, None), "needs a start date"),
+    (("CUSTOM", "2020-01-01", None), "does not reach"),           # past the calendar read
+    (("5Y", None, None), "period must be one of"),
+])
+def test_a_period_that_cannot_be_measured_says_why(args, words):
+    per, frm, to = args
+    with pytest.raises(ValueError, match=words):
+        movers.period_span(per, _CAL, "2026-11-09", frm, to)
+
+
+def test_a_custom_period_ending_in_the_past_is_settled_and_says_whose_stats(_period_env):
+    end, base = "2026-10-23", "2026-10-02"
+    router = _period_env(_Period({end: {"AAA": _bar(120.0), "BBB": _bar(40.0)},
+                                  base: {"AAA": _bar(100.0), "BBB": _bar(50.0)}}, {}))
+    got = movers.period_movers("stocks", "CUSTOM", from_day="2026-10-03", to_day="2026-10-25")
+    assert (got["period"], got["period_from"], got["period_to"], got["live"]) == ("CUSTOM", base, end, False)
+    assert got["sessions"] == 15 and got["change_label"] == "Change"
+    assert "not the period's" in got["note"]
+    tabs = {t["id"]: t["rows"] for t in got["tabs"]}
+    assert [r["symbol"] for r in tabs["gainers"]] == ["AAA"] and tabs["gainers"][0]["change_pct"] == 20.0
+    assert [r["symbol"] for r in tabs["losers"]] == ["BBB"]
+    assert set(router.asked) == {end, base}
+
+
+def test_a_start_date_alone_means_a_custom_period(_period_env):
+    _period_env(_Period({"2026-11-09": {"AAA": _bar(110.0)}, "2026-10-30": {"AAA": _bar(100.0)}}, {}))
+    got = movers.period_movers("stocks", "1M", from_day="2026-10-30")
+    assert (got["period"], got["period_from"], got["live"]) == ("CUSTOM", "2026-10-30", False)
+
+
+@pytest.mark.parametrize("kw, words", [
+    ({"from_day": "2026-13-01"}, "YYYY-MM-DD"),
+    ({"from_day": "2019-01-01"}, "at most 5 years"),
+    ({"from_day": "2026-12-01"}, "in the future"),
+])
+def test_bad_dates_are_refused_before_any_vendor_is_asked(_period_env, kw, words):
+    router = _period_env(_Period({}, {}))
+    with pytest.raises(ValueError, match=words):
+        movers.period_movers("stocks", "CUSTOM", **kw)
+    assert router.asked == []
+
+
+def test_a_date_the_calendar_cannot_place_is_worded_as_a_date_not_a_vendor(_period_env):
+    _period_env(_Period({}, {}))
+    got = movers.period_movers("stocks", "CUSTOM", from_day="2026-11-09")
+    assert got["unavailable"] and got["note"].startswith("The start date must be before")
+    assert "vendor" not in got["note"]
+
+
+def test_large_moves_are_checked_in_rank_order_not_alphabetically(_period_env):
+    # Seventy moves past 50% over a year. The check reads sixty symbols a
+    # call; taken alphabetically, ZZZ — the largest move, and one with no
+    # adjusted close behind it — would never have been looked at.
+    end, base = "2026-11-09", _CAL[252]
+    names = [f"S{a}{b}" for a in "ABC" for b in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"][:70]
+    now = {s: _bar(100.0 + i) for i, s in enumerate(names)} | {"ZZZ": _bar(1000.0)}
+    was = {s: _bar(50.0) for s in now}
+    adjusted = {s: {base: 50.0} for s in now if s != "ZZZ"}
+    _period_env(_Period({end: now, base: was}, adjusted))
+    got = movers.period_movers("stocks", "1Y", top=10)
+    gainers = [r["symbol"] for r in next(t for t in got["tabs"] if t["id"] == "gainers")["rows"]]
+    assert "ZZZ" not in gainers
+    assert gainers[:3] == names[::-1][:3] and len(gainers) == 10
+
+
+def test_the_route_passes_dates_and_refuses_them_without_a_custom_period(client, monkeypatch):
+    seen = []
+
+    def fake(cat, per, top=20, from_day=None, to_day=None, **kw):
+        seen.append((cat, per, from_day, to_day))
+        if from_day == "2026-11-09":
+            raise ValueError("the start date must be before the end of the period")
+        return {"category": cat, "period": per, "tabs": []}
+    monkeypatch.setattr(movers, "period_movers", fake)
+    assert client.get("/api/movers/stocks?from=2026-10-03&to=2026-10-25").status_code == 200
+    assert client.get("/api/movers/etfs?period=YTD").status_code == 200
+    assert seen == [("stocks", "CUSTOM", "2026-10-03", "2026-10-25"), ("etfs", "YTD", None, None)]
+    assert client.get("/api/movers/stocks?period=1W&from=2026-10-03").status_code == 400
+    bad = client.get("/api/movers/stocks?period=CUSTOM&from=2026-11-09")
+    assert bad.status_code == 400 and "before the end" in bad.json()["detail"]
+    assert client.get("/api/movers/crypto?period=1Y").status_code == 404
+
+
+def test_the_agent_tool_takes_dates(monkeypatch):
+    from alphadesk import mcp_server
+    seen = []
+    monkeypatch.setattr(movers, "period_movers", lambda cat, per, top=20, from_day=None, to_day=None:
+                        seen.append((per, from_day, to_day)) or {"category": cat, "period": per, "tabs": []})
+    mcp_server.movers("stocks", from_date="2026-10-03")
+    mcp_server.movers("etfs", period="6m")
+    assert seen == [("CUSTOM", "2026-10-03", None), ("6M", None, None)]
+    assert "go with period CUSTOM" in mcp_server.movers("stocks", period="1W", to_date="2026-10-25")["error"]

@@ -306,7 +306,7 @@ function HaltsTable() {
   )
 }
 
-function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = true, options = false, rank = null, nameHead = "Name",
+export function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkable = true, options = false, rank = null, nameHead = "Name",
   volTip = "Annualised volatility of daily returns over the last twenty sessions",
   liqTip = "Average dollar volume a day over the last twenty sessions", liquidity = true, session = null }: {
   rows: CategoryMoverRow[]; empty?: string; changeHead?: string; linkable?: boolean
@@ -467,9 +467,11 @@ const CATEGORY_LABELS: Record<MoverCategory, string> = {
   indices: "Market ETFs", bonds: "Treasury yields", currencies: "Currencies",
 }
 /** A period in words, for the subtitle and the picker's hover. */
-const PERIOD_NAMES: Record<MoverPeriod, string> = { "1D": "1 session", "1W": "1 week", "1M": "1 month" }
+/** The tile's own three; the period page offers the rest. */
+type TilePeriod = Extract<MoverPeriod, "1D" | "1W" | "1M">
+const PERIOD_NAMES: Record<TilePeriod, string> = { "1D": "1 session", "1W": "1 week", "1M": "1 month" }
 
-const SOURCE_LABELS: Record<string, string> = {
+export const SOURCE_LABELS: Record<string, string> = {
   alpaca: "Alpaca", treasury: "US Treasury",
   polygon: "Polygon", finnhub: "Finnhub", alphavantage: "Alpha Vantage", fmp: "FMP",
 }
@@ -481,11 +483,11 @@ const SOURCE_LABELS: Record<string, string> = {
  * reader's own data key (2026-09-13); a category none of their vendors
  * carries shows a prompt naming the vendors that do. Treasury yields are
  * the US Treasury's public par curve, keyless. */
-type Floors = { min_price: number; min_turnover: number; min_liquidity: number; min_volatility: number }
+export type Floors = { min_price: number; min_turnover: number; min_liquidity: number; min_volatility: number }
 
 /** The reader's floors for one tile and category, kept in the browser. */
 function floorsKey(tile: string, category: MoverCategory) { return `alphadesk.movers.${tile}.${category}` }
-function readFloors(tile: string, category: MoverCategory): Floors | null {
+export function readFloors(tile: string, category: MoverCategory): Floors | null {
   try {
     const raw = localStorage.getItem(floorsKey(tile, category))
     if (!raw) return null
@@ -494,7 +496,7 @@ function readFloors(tile: string, category: MoverCategory): Floors | null {
       ? { min_price: p.min_price, min_turnover: p.min_turnover, min_liquidity: p.min_liquidity ?? 0, min_volatility: p.min_volatility ?? 0 } : null
   } catch { return null }
 }
-function writeFloors(tile: string, category: MoverCategory, f: Floors | null) {
+export function writeFloors(tile: string, category: MoverCategory, f: Floors | null) {
   try { f ? localStorage.setItem(floorsKey(tile, category), JSON.stringify(f)) : localStorage.removeItem(floorsKey(tile, category)) } catch { /* private mode */ }
 }
 
@@ -524,7 +526,7 @@ function FloorRow({ label, hint, unit, value, onChange, onKey, bad }: {
   )
 }
 
-function FloorsPopover({ floors, defaults, onApply, onClose }: {
+export function FloorsPopover({ floors, defaults, onApply, onClose }: {
   floors: Floors; defaults: Floors; onApply: (f: Floors | null) => void; onClose: () => void
 }) {
   const [price, setPrice] = useState(String(floors.min_price))
@@ -617,8 +619,8 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   // session stepper steps aside while one is shown; not kept across visits,
   // for the same reason the session is not.
   const canPeriod = category === "stocks" || category === "etfs"
-  const [periodPicked, setPeriod] = useState<MoverPeriod>("1D")
-  const period: MoverPeriod = canPeriod ? periodPicked : "1D"
+  const [periodPicked, setPeriod] = useState<TilePeriod>("1D")
+  const period: TilePeriod = canPeriod ? periodPicked : "1D"
   const spans = period !== "1D"
   const sessions = useQuery({
     queryKey: ["mover-sessions", category, SESSIONS_BACK],

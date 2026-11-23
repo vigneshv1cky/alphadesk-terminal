@@ -259,7 +259,8 @@ def quote(symbol: str) -> dict:
 
 @mcp.tool(annotations=READ_ONLY)
 @with_venue
-def movers(category: str = "stocks", top: int = 20, session: str = "", period: str = "1D") -> dict:
+def movers(category: str = "stocks", top: int = 20, session: str = "", period: str = "1D",
+           from_date: str = "", to_date: str = "") -> dict:
     """Most active, gainers and losers, for one asset class.
 
     `category` is one of: stocks, etfs, indices, crypto, currencies, options,
@@ -294,16 +295,22 @@ def movers(category: str = "stocks", top: int = 20, session: str = "", period: s
     that means anything beside that day's move. A dash means too few closes
     before the day, or a vendor that refused the bars.
 
-    `period` "1W" or "1M" (stocks and etfs only) gives the gainers and
-    losers over the last 5 or 21 sessions: ONE point-to-point change, the
-    latest price against the close that many sessions earlier, never an
-    average of daily moves. Both ends are split-adjusted as of now and moves
+    `period` "1W", "1M", "3M", "6M" or "1Y" (stocks and etfs only) gives the
+    gainers and losers over the last 5, 21, 63, 126 or 252 sessions; "YTD"
+    from the last close of the year before; "CUSTOM" with `from_date`
+    (YYYY-MM-DD, at most five years back; the close of the session on or
+    before it) and optionally `to_date` (a past end measures to that
+    session's close; `from_date` alone implies CUSTOM). ONE point-to-point
+    change, the end price against the start close, never an average of
+    daily moves. Both ends are split-adjusted as of now and moves
     of 50% or more are re-checked against each symbol's own adjusted bars; a
     spin-off is not restated by split adjustment, so read `corporate_action`
     before reading a parent's loss as a fall. `period_from` and `period_to`
     name the two sessions; `live` is true while the later one still trades.
-    The dollar-volume floor uses the average of those two sessions. It ends
-    now, so it cannot be combined with `session`.
+    `sessions` counts the sessions between them. The dollar-volume floor
+    uses the average of those two sessions; `volatility` and `liquidity` are
+    the twenty sessions ending NOW even when the period ended earlier. It
+    cannot be combined with `session`.
 
     The payload says `closed` when the market did not open and `unavailable`
     when the vendor was asked and refused. Those are different things and
@@ -313,14 +320,23 @@ def movers(category: str = "stocks", top: int = 20, session: str = "", period: s
     cat = (category or "stocks").strip().lower()
     top = max(1, min(int(top), 50))
     per = (period or "1D").strip().upper()
+    if from_date and per == "1D":
+        per = "CUSTOM"
+    if (from_date or to_date) and per != "CUSTOM":
+        return {"error": "from_date and to_date go with period CUSTOM", "category": cat}
     if per != "1D":
-        if per not in mv.PERIODS:
-            return {"error": f"period must be one of 1D, {', '.join(mv.PERIODS)}", "category": cat}
+        if per not in mv.PERIODS and per not in mv.PERIOD_SPANS:
+            return {"error": f"period must be one of 1D, {', '.join([*mv.PERIODS, *mv.PERIOD_SPANS])}",
+                    "category": cat}
         if session:
-            return {"error": "a period list always ends now; it cannot be combined with session", "category": cat}
+            return {"error": "a period list cannot be combined with session; give its end as to_date instead", "category": cat}
         if cat not in mv.PERIOD_CATEGORIES:
             return {"error": f"a {per} list is only available for {', '.join(mv.PERIOD_CATEGORIES)}", "category": cat}
-        return _mover_lists(mv.period_movers(cat, per, top=top))
+        try:
+            return _mover_lists(mv.period_movers(cat, per, top=top, from_day=from_date or None,
+                                                 to_day=to_date or None))
+        except ValueError as exc:
+            return {"error": str(exc), "category": cat, "period": per}
     if session:
         if cat not in mv.SESSION_CATEGORIES:
             return {"error": f"a past session is only available for {', '.join(mv.SESSION_CATEGORIES)}",

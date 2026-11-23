@@ -26,6 +26,7 @@ const PAGE_IMPORTS = {
   PostsPage: () => import("@/pages/PostsPage"),
   AnalysisPage: () => import("@/pages/AnalysisPage"),
   SectorsPage: () => import("@/pages/SectorsPage"),
+  PeriodMoversPage: () => import("@/pages/PeriodMoversPage"),
   PortfolioPage: () => import("@/pages/PortfolioPage"),
   EarningsPage: () => import("@/pages/EarningsPage"),
   CalendarsPage: () => import("@/pages/CalendarsPage"),
@@ -43,7 +44,7 @@ const PAGE_IMPORTS = {
 }
 
 /** Fetched ahead in this order: the pages a reader moves between first. */
-const WARM_ORDER: (keyof typeof PAGE_IMPORTS)[] = ["DashboardPage", "NewsPage", "FilingsPage", "PostsPage", "AnalysisPage", "SectorsPage", "ChartPage", "CompanyPage", "OptionsPage", "EarningsPage", "CalendarsPage", "PortfolioPage", "CustomViewPage", "AccountPage", "AgentAccessPage", "ThemePage", "TermsPage", "PrivacyPage", "DisclaimerPage", "AboutPage"]
+const WARM_ORDER: (keyof typeof PAGE_IMPORTS)[] = ["DashboardPage", "NewsPage", "FilingsPage", "PostsPage", "AnalysisPage", "SectorsPage", "PeriodMoversPage", "ChartPage", "CompanyPage", "OptionsPage", "EarningsPage", "CalendarsPage", "PortfolioPage", "CustomViewPage", "AccountPage", "AgentAccessPage", "ThemePage", "TermsPage", "PrivacyPage", "DisclaimerPage", "AboutPage"]
 
 const DashboardPage = lazy(PAGE_IMPORTS.DashboardPage)
 const NewsPage = lazy(PAGE_IMPORTS.NewsPage)
@@ -51,6 +52,7 @@ const FilingsPage = lazy(PAGE_IMPORTS.FilingsPage)
 const PostsPage = lazy(PAGE_IMPORTS.PostsPage)
 const AnalysisPage = lazy(PAGE_IMPORTS.AnalysisPage)
 const SectorsPage = lazy(PAGE_IMPORTS.SectorsPage)
+const PeriodMoversPage = lazy(PAGE_IMPORTS.PeriodMoversPage)
 const PortfolioPage = lazy(PAGE_IMPORTS.PortfolioPage)
 const EarningsPage = lazy(PAGE_IMPORTS.EarningsPage)
 const CalendarsPage = lazy(PAGE_IMPORTS.CalendarsPage)
@@ -101,6 +103,7 @@ function warmPages() {
 const TITLES: Record<string, string> = {
   "/markets": "Markets · AlphaDesk",
   "/sectors": "Sectors · AlphaDesk",
+  "/periods": "Period movers · AlphaDesk",
   "/analysis": "Analysis · AlphaDesk",
   "/news": "News · AlphaDesk",
   "/filings": "Filings · AlphaDesk",
@@ -269,6 +272,7 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
               <Route path="/" element={<Navigate to="/markets" replace />} />
               <Route path="/markets" element={<DashboardPage />} />
               <Route path="/sectors" element={<SectorsPage />} />
+              <Route path="/periods" element={<PeriodMoversPage />} />
               <Route path="/analysis" element={<AnalysisPage />} />
               {/* Compare folded into Portfolio (2026-09-16): same board
                   chips, one page. Old links keep their symbols. */}

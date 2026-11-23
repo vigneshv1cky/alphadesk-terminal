@@ -945,21 +945,85 @@ def session_movers(category: str, day: str, top: int = 20,
 
 #: The periods a list can span, in sessions back from the latest one: the
 #: change is measured from the close that many sessions earlier.
-PERIODS: dict[str, int] = {"1W": 5, "1M": 21}
-PERIOD_LABELS = {"1W": "1 week", "1M": "1 month"}
+PERIODS: dict[str, int] = {"1W": 5, "1M": 21, "3M": 63, "6M": 126, "1Y": 252}
+#: Periods that are not a count of sessions: the year so far (from the last
+#: close of the year before) and a reader's own dates (2026-11-23).
+PERIOD_SPANS = ("YTD", "CUSTOM")
+PERIOD_LABELS = {"1W": "1 week", "1M": "1 month", "3M": "3 months", "6M": "6 months", "1Y": "1 year",
+                 "YTD": "the year so far", "CUSTOM": "your dates"}
 PERIOD_CATEGORIES = ("stocks", "etfs")
+#: How far back a reader's own start date may reach. The calendar and the
+#: large-move check each read a symbol's daily bars back to it, so a decade
+#: would be thousands of bars per symbol checked.
+CUSTOM_MAX_YEARS = 5
 #: A list ending in a session still trading is rebuilt this often; one
 #: ending in a finished session is settled until the next one opens.
 PERIOD_LIVE_TTL_S = 120
+
+
+def period_span(period: str, sessions: list[str], latest: str, from_day: Optional[str] = None,
+                to_day: Optional[str] = None) -> tuple[str, str]:
+    """(base session, end session) for a period, from `sessions` (the
+    sessions that opened, newest first) and `latest` (the session now or
+    last trading). Raises ValueError, in words, when it cannot be measured.
+    Pure.
+
+    * 1W/1M/3M/6M/1Y: the close that many sessions before the end.
+    * YTD: the last close of the year before the end's year.
+    * CUSTOM: the close of the last session ON OR BEFORE `from_day`, to the
+      last session on or before `to_day` (or now). A start on a weekend or
+      holiday therefore measures from the Friday before it."""
+    per = (period or "").strip().upper()
+    end = latest
+    if per == "CUSTOM" and to_day and to_day < latest:
+        if to_day < (from_day or ""):
+            raise ValueError("the end date is before the start date")
+        end = next((d for d in sessions if d <= to_day), "")
+        if not end:
+            raise ValueError(f"no session on or before {to_day} in the calendar")
+    earlier = [d for d in sessions if d < end]
+    if per in PERIODS:
+        if len(earlier) < PERIODS[per]:
+            raise ValueError(f"the session calendar does not reach {PERIODS[per]} sessions back")
+        return earlier[PERIODS[per] - 1], end
+    if per == "YTD":
+        base = next((d for d in earlier if d < f"{end[:4]}-01-01"), None)
+        if not base:
+            raise ValueError("the session calendar does not reach the end of last year")
+        return base, end
+    if per == "CUSTOM":
+        if not from_day:
+            raise ValueError("a custom period needs a start date")
+        base = next((d for d in sessions if d <= from_day), None)
+        if not base:
+            raise ValueError(f"the session calendar does not reach {from_day}")
+        if base >= end:
+            raise ValueError("the start date must be before the end of the period")
+        return base, end
+    raise ValueError(f"period must be one of {', '.join([*PERIODS, *PERIOD_SPANS])}")
+
+
+def _sessions_needed(per: str, today: date, from_day: Optional[str]) -> int:
+    """How many sessions back the calendar must reach for a period."""
+    if per in PERIODS:
+        return PERIODS[per] + 10
+    since = date(today.year - 1, 12, 20) if per == "YTD" else date.fromisoformat(from_day) - timedelta(days=7)
+    return int((today - since).days * 0.72) + 15
 
 
 def period_movers(category: str, period: str, top: int = 20,
                   min_price: Optional[float] = None,
                   min_turnover: Optional[float] = None,
                   min_liquidity: Optional[float] = None,
-                  min_volatility: Optional[float] = None) -> dict:
+                  min_volatility: Optional[float] = None,
+                  from_day: Optional[str] = None, to_day: Optional[str] = None) -> dict:
     """The gainers and losers over a WEEK or a MONTH (2026-11-10, the owner:
-    "we are able to only look at daily gainer or loosers").
+    "we are able to only look at daily gainer or loosers"), and since
+    2026-11-23 over 3 or 6 months, a year, the year so far or the reader's
+    own dates (`period` "CUSTOM" with `from_day`, optionally `to_day`, both
+    YYYY-MM-DD). A past end means both ends are finished sessions, cached as
+    settled; volatility and liquidity are still the twenty sessions ending
+    now, and the note says so.
 
     ONE POINT-TO-POINT CHANGE, NEVER AN AVERAGE: the latest price (the
     session still trading, or the last close) against the close `PERIODS`
@@ -989,8 +1053,24 @@ def period_movers(category: str, period: str, top: int = 20,
     if cat not in PERIOD_CATEGORIES:
         raise KeyError(cat)
     per = (period or "").strip().upper()
-    if per not in PERIODS:
-        raise ValueError(f"period must be one of {', '.join(PERIODS)}")
+    if from_day and per not in PERIOD_SPANS:
+        per = "CUSTOM"
+    if per not in PERIODS and per not in PERIOD_SPANS:
+        raise ValueError(f"period must be one of {', '.join([*PERIODS, *PERIOD_SPANS])}")
+    today = now_et().date()
+    for name, value in (("start", from_day), ("end", to_day)):
+        if value:
+            try:
+                date.fromisoformat(value)
+            except ValueError:
+                raise ValueError(f"the {name} date must be YYYY-MM-DD") from None
+    if per == "CUSTOM":
+        if not from_day:
+            raise ValueError("a custom period needs a start date")
+        if from_day < date(today.year - CUSTOM_MAX_YEARS, today.month, min(today.day, 28)).isoformat():
+            raise ValueError(f"a start date reaches back at most {CUSTOM_MAX_YEARS} years")
+        if from_day > today.isoformat():
+            raise ValueError("the start date is in the future")
     router = get_prices()
     top = max(1, min(int(top), 50))
     d_price, d_turn = DEFAULT_FLOORS.get(cat, (0.0, 0.0))
@@ -998,20 +1078,22 @@ def period_movers(category: str, period: str, top: int = 20,
     mt = max(0.0, float(min_turnover)) if min_turnover is not None else d_turn
     ml = max(0.0, float(min_liquidity or 0.0))
     mv = max(0.0, float(min_volatility or 0.0))
-    end = cal.latest_session(now_et()).isoformat()
-    live = not session_finished(end)
+    latest = cal.latest_session(now_et()).isoformat()
     key = (f"period|{router.owner}|{','.join(router.connected)}|"
-           f"{cat}:{per}:{end}:{top}:{mp:g}:{mt:g}:{ml:g}:{mv:g}")
+           f"{cat}:{per}:{from_day or ''}:{to_day or ''}:{latest}:{top}:{mp:g}:{mt:g}:{ml:g}:{mv:g}")
+    live = not session_finished(latest) and not (per == "CUSTOM" and to_day and to_day < latest)
     with _lock:
         hit = _cache.get(key)
     if hit and time.time() - hit[0] < (PERIOD_LIVE_TTL_S if live else SESSION_TTL_S):
         return hit[1]
     if not router.vendor_for("market_day", "market_day"):
         raise NeedsKey("market_day")
-    earlier = [d for d in trading_sessions(router, PERIODS[per] + 10) if d < end]
-    if len(earlier) < PERIODS[per]:
-        return _period_unavailable(cat, per, end, f"the session calendar does not reach {PERIODS[per]} sessions back")
-    base = earlier[PERIODS[per] - 1]
+    try:
+        calendar = trading_sessions(router, _sessions_needed(per, today, from_day))
+        base, end = period_span(per, calendar, latest, from_day, to_day if per == "CUSTOM" else None)
+    except ValueError as exc:                  # the dates, not the vendor
+        return {**_period_unavailable(cat, per, latest, str(exc)), "note": f"{str(exc)[:1].upper()}{str(exc)[1:]}."}
+    live = live and end == latest
     try:
         now_bars = _fresh_market_day(router, end, PERIOD_LIVE_TTL_S if live else SESSION_TTL_S)
         base_bars = _fresh_market_day(router, base, SESSION_TTL_S, as_of=end)
@@ -1034,10 +1116,11 @@ def period_movers(category: str, period: str, top: int = 20,
         r = _row(sym, close, (close - was) / was * 100.0, bar.get("volume") or 0)
         r["turnover"] = (close * (bar.get("volume") or 0) + was * (was_bar.get("volume") or 0)) / 2.0
         rows.append(r)
-    checked = _check_base_closes(router, rows, lambda r: base, end)
     tabs = [t for t in tabs_from_list(rows) if t["id"] != "all"]
-    _apply_checked(tabs, checked)
     apply_floors(tabs, mp, mt)
+    # A later floor on volatility or liquidity keeps up to fifty rows to
+    # measure, so every one of those must have been checked too.
+    checked = _check_ranked(router, tabs, base, end, 60 if (ml > 0 or mv > 0) else top + 10)
     for t in tabs:
         t["rows"] = t["rows"][:max(top, 50) if (ml > 0 or mv > 0) else top]
     _enrich_stats(router, tabs, cat)
@@ -1047,13 +1130,15 @@ def period_movers(category: str, period: str, top: int = 20,
     _fill_names(router, tabs)
     corrected = sum(1 for r in checked.values() if r is not None)
     dropped = sum(1 for r in checked.values() if r is None)
-    result = {"category": cat, "label": CATEGORIES[cat], "change_label": per,
+    result = {"category": cat, "label": CATEGORIES[cat], "change_label": per if per in PERIODS or per == "YTD" else "Change",
               "period": per, "period_label": PERIOD_LABELS[per], "period_from": base, "period_to": end,
+              "sessions": calendar.index(base) - calendar.index(end) if end in calendar else None,
               "live": live, "historical": False, "extended": False, "session_label": None,
               "official": True, "source": _day_vendor.get((router.owner, end), "unknown"), "filling": False,
               "note": (f"{'Latest price' if live else f'{end} close'} against the {base} close, both adjusted "
                        f"for splits. Dollar-volume floor on the average of those two sessions; volatility and "
-                       f"liquidity are the last twenty sessions."
+                       f"liquidity are the twenty sessions ending now"
+                       + (", not the period's." if not live and end != latest else ".")
                        + (f" {corrected} large move{'s' if corrected != 1 else ''} re-measured from adjusted "
                           f"closes." if corrected else "")
                        + (f" {dropped} large move{'s' if dropped != 1 else ''} left out: no adjusted close to "
@@ -1064,6 +1149,31 @@ def period_movers(category: str, period: str, top: int = 20,
     with _lock:
         _cache[key] = (time.time(), result)
     return result
+
+
+def _check_ranked(router, tabs: list[dict], base: str, end: str, want: int) -> dict[str, Optional[dict]]:
+    """The large-move check for a period list, in place on `tabs`, IN RANK
+    ORDER: only rows that could reach the shown list are looked up, a round
+    at a time, until the top of each side has been checked (2026-11-23).
+    The check reads at most sixty symbols a call and took them
+    alphabetically, which over a year — hundreds of moves past 50% — would
+    have checked the A's and left the rest of the list as the vendor sent
+    it. Returns everything checked, for the note."""
+    looked: set[str] = set()
+    checked: dict[str, Optional[dict]] = {}
+    for _ in range(4):
+        pending = [r for t in tabs if t["id"] in ("gainers", "losers")
+                   for r in t["rows"][:want]
+                   if r["symbol"] not in looked and abs(r.get("change_pct") or 0) >= _SPLIT_CHECK_PCT]
+        if not pending:
+            break
+        for i in range(0, len(pending), 60):
+            chunk = pending[i:i + 60]
+            looked.update(r["symbol"] for r in chunk)
+            found = _check_base_closes(router, chunk, lambda r: base, end)
+            checked.update(found)
+            _apply_checked(tabs, found)
+    return checked
 
 
 def _period_unavailable(cat: str, per: str, end: str, why: str) -> dict:
