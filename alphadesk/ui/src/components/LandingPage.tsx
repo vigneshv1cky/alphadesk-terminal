@@ -103,7 +103,7 @@ function PasswordForm({ onSignedIn, tokenMode = false }: { onSignedIn: () => voi
              autoComplete={tokenMode ? "off" : "current-password"} required className={field} />
       {error && <p className="text-caption text-loss">{error}</p>}
       <button type="submit" disabled={busy}
-              className={btnCls({ size: "lg" }, "h-[52px] rounded-md border-0 bg-foreground text-body font-extrabold uppercase tracking-caps text-background hover:bg-foreground/85 hover:text-background")}>
+              className={btnCls({ size: "lg" }, "h-[52px] rounded-md border-0 bg-foreground text-body font-extrabold text-background hover:bg-foreground/85 hover:text-background")}>
         {busy ? "Signing in…" : "Sign in"}
       </button>
       <p className="text-caption text-muted-foreground">
@@ -116,7 +116,7 @@ function PasswordForm({ onSignedIn, tokenMode = false }: { onSignedIn: () => voi
 
 function OpenTerminal() {
   return (
-    <a href="/markets" className="flex h-[52px] items-center justify-center rounded-md bg-foreground px-6 text-body font-extrabold uppercase tracking-caps text-background no-underline hover:bg-foreground/85">
+    <a href="/markets" className="flex h-[52px] items-center justify-center rounded-md bg-foreground px-6 text-body font-extrabold text-background no-underline hover:bg-foreground/85">
       Open your terminal
     </a>
   )
@@ -186,7 +186,7 @@ export function LandingPage({ signedIn = false, onPasswordSignIn, tokenMode = fa
 
       {/* ── how it works ─────────────────────────────────────────────── */}
       <section className="px-5 pt-20 sm:px-10 sm:pt-24 lg:px-24">
-        <div className="text-label font-bold uppercase tracking-caps text-muted-foreground">How it works</div>
+        <div className="text-label font-bold text-muted-foreground">How it works</div>
         <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
           {STEPS.map((s, i) => (
             <div key={s.title} className="rounded-lg border border-card-border bg-card p-7 shadow-card">
@@ -200,7 +200,7 @@ export function LandingPage({ signedIn = false, onPasswordSignIn, tokenMode = fa
 
       {/* ── inside the terminal ──────────────────────────────────────── */}
       <section id="inside" className="px-5 pt-20 sm:px-10 sm:pt-24 lg:px-24">
-        <div className="text-label font-bold uppercase tracking-caps text-muted-foreground">Inside the terminal</div>
+        <div className="text-label font-bold text-muted-foreground">Inside the terminal</div>
         <h2 className="mt-2.5 text-[clamp(30px,3vw,40px)] font-black tracking-[-0.03em]">Everything on one board.</h2>
         <div className="mt-8 grid grid-cols-1 gap-x-6 gap-y-10 md:grid-cols-2">
           {SHOTS.map(s => (
@@ -219,7 +219,7 @@ export function LandingPage({ signedIn = false, onPasswordSignIn, tokenMode = fa
 
       {/* ── bring your own keys ──────────────────────────────────────── */}
       <section className="px-5 pt-20 sm:px-10 sm:pt-24 lg:px-24">
-        <div className="text-label font-bold uppercase tracking-caps text-muted-foreground">Your keys</div>
+        <div className="text-label font-bold text-muted-foreground">Your keys</div>
         <h2 className="mt-2.5 text-[clamp(30px,3vw,40px)] font-black tracking-[-0.03em]">The data stays yours.</h2>
         <p className="mt-4 max-w-[62ch] text-[17px] leading-[1.6] text-muted-foreground">
           A terminal usually rents you its data at its price. AlphaDesk connects the
@@ -257,7 +257,7 @@ export function LandingPage({ signedIn = false, onPasswordSignIn, tokenMode = fa
           </p>
         </div>
         {onPasswordSignIn && !signedIn
-          ? <a href="#signin" className="flex h-[52px] items-center justify-center rounded-md bg-foreground px-6 text-body font-extrabold uppercase tracking-caps text-background no-underline hover:bg-foreground/85">Sign in</a>
+          ? <a href="#signin" className="flex h-[52px] items-center justify-center rounded-md bg-foreground px-6 text-body font-extrabold text-background no-underline hover:bg-foreground/85">Sign in</a>
           : <OpenTerminal />}
       </section>
 

@@ -48,11 +48,15 @@ export function WidgetLibraryDialog({ title, submitLabel, initialIds, withName, 
     <Dialog title={title} onClose={onClose} maxWidth="max-w-[640px]">
       {withName && (
         <label className="block border-b border-row-rule px-4 py-3">
-          <span className="mb-1 block text-label font-medium uppercase tracking-caps text-muted-foreground">
+          <span className="mb-1 block text-label font-medium text-muted-foreground">
             Name
           </span>
+          {/* No autoFocus (2026-11-23): it focused this field before the
+              modal shell recorded what opened it, so the shell took the
+              field for the opener and Escape left focus on the page body
+              instead of the rail's +. The shell focuses the first text
+              field itself, which is this one. */}
           <input
-            autoFocus
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="e.g. Energy Desk"
@@ -105,7 +109,7 @@ export function WidgetLibraryDialog({ title, submitLabel, initialIds, withName, 
           type="button"
           disabled={picked.size === 0 || (withName && !name.trim())}
           onClick={() => onSubmit(name, all.filter(w => picked.has(w.id)).map(w => w.id))}
-          className={btnCls({ variant: "accent", size: "lg" }, "px-4 font-extrabold uppercase tracking-caps")}
+          className={btnCls({ variant: "accent", size: "lg" }, "px-4 font-bold")}
         >
           {submitLabel}
         </button>

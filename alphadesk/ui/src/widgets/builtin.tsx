@@ -223,7 +223,7 @@ export function NewsTape({ span = 6 }: {
             <a href={post.url ?? undefined} target="_blank" rel="noopener noreferrer"
                title={post.trust ?? undefined}
                className="block w-full px-3 py-3 text-left">
-              <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
+              <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium">
                 {/* Where a story shows its tickers, a post shows that it is
                     one — and that nobody stands behind it. */}
                 <span className="border border-border px-1 text-label font-semibold leading-[17px] tracking-ticker text-muted-foreground">
@@ -242,7 +242,7 @@ export function NewsTape({ span = 6 }: {
         ) : h ? (
           <li key={h.article_id} className="row-rule hover:bg-foreground/5">
             <button type="button" onClick={() => setOpenId(h)} className="block w-full px-3 py-3 text-left">
-              <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium uppercase tracking-caps">
+              <span className="mb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-label font-medium">
                 <HeadlineTickers symbols={h.tickers} />
                 <span className="text-accent-700">{h.source}</span>
                 {h.published_at && (

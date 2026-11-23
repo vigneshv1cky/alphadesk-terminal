@@ -138,12 +138,12 @@ function Chain({ symbol, expiry, expiries, onExpiry, rows, spot, feed, pick, onP
           {/* One sticky block for both header rows: per-cell offsets drift
               with the first row's height and the rows overlapped. */}
           <thead className="sticky top-0 z-10 bg-panel">
-            <tr className="text-label font-semibold uppercase tracking-caps">
+            <tr className="text-label font-semibold">
               <th colSpan={5} className="bg-panel px-2 pt-2 text-center text-gain" data-tip="Calls: the right to buy 100 shares at the strike before expiry. Shaded rows are in the money, strike below the stock price" aria-description="Calls: the right to buy 100 shares at the strike before expiry. Shaded rows are in the money, strike below the stock price">Calls</th>
               <th className="bg-panel" />
               <th colSpan={5} className="bg-panel px-2 pt-2 text-center text-loss" data-tip="Puts: the right to sell 100 shares at the strike before expiry. Shaded rows are in the money, strike above the stock price" aria-description="Puts: the right to sell 100 shares at the strike before expiry. Shaded rows are in the money, strike above the stock price">Puts</th>
             </tr>
-            <tr className="text-label font-medium uppercase tracking-caps text-muted-foreground">
+            <tr className="text-label font-medium text-muted-foreground">
               {["IV", "Last", "Bid", "Ask", "Vol"].map(h => <th key={`c${h}`} data-tip={CHAIN_TIPS[h]} aria-description={CHAIN_TIPS[h]} className="border-b border-row-rule bg-panel px-2 py-1.5 text-right font-medium">{h}</th>)}
               <th data-tip={CHAIN_TIPS.Strike} aria-description={CHAIN_TIPS.Strike} className="border-b border-row-rule bg-panel px-2 py-1.5 text-center font-medium">Strike</th>
               {["Vol", "Bid", "Ask", "Last", "IV"].map(h => <th key={`p${h}`} data-tip={CHAIN_TIPS[h]} aria-description={CHAIN_TIPS[h]} className={`border-b border-row-rule bg-panel px-2 py-1.5 font-medium ${h === "Vol" ? "text-left" : "text-right"}`}>{h}</th>)}
@@ -272,7 +272,7 @@ function Contract({ symbol, expiry, row, type, spot }: {
   const width = Math.min(0.6, Math.max(0.12, move ? (2.5 * move) / spot : 0.2, Math.abs(row.strike - spot) / spot * 1.4))
   const stat = (label: string, value: React.ReactNode, title?: string) => (
     <div className="min-w-0" title={title}>
-      <div className="truncate text-label font-medium uppercase tracking-caps text-muted-foreground">{label}</div>
+      <div className="truncate text-label font-medium text-muted-foreground">{label}</div>
       <div className="tnum truncate text-body font-semibold">{value}</div>
     </div>
   )
@@ -286,7 +286,7 @@ function Contract({ symbol, expiry, row, type, spot }: {
     <Widget span={4} title="Contract" actions={toggle}
             subtitle={premium != null ? `${direction === "long" ? "paid" : "received"} ${money(premium)} a share (${row.mid != null ? "mid" : "last"})` : "no price to lay out"}>
       <div className="px-3 py-2">
-        <div className="text-figure font-bold">
+        <div className="text-figure font-semibold">
           {symbol} {money(row.strike, row.strike % 1 ? 2 : 0)}{" "}
           <span className={type === "call" ? "text-gain" : "text-loss"}>{type === "call" ? "Call" : "Put"}</span>
           <span className="ml-1.5 text-body font-medium text-muted-foreground">· {longDay(expiry)}</span>
@@ -303,7 +303,7 @@ function Contract({ symbol, expiry, row, type, spot }: {
           {stat("IV", row.implied_volatility != null ? `${row.implied_volatility.toFixed(1)}%` : dash)}
           {stat("Volume", compact(row.volume ?? 0), `Open interest ${compact(row.open_interest)}`)}
         </div>
-        <div className="mt-3 text-label font-semibold uppercase tracking-caps text-muted-foreground">
+        <div className="mt-3 text-label font-semibold text-muted-foreground">
           Greeks <span className="font-normal normal-case tracking-normal">· per share, {direction}</span>
         </div>
         {greek("Delta", row.delta, "Change in the option's price for a $1 move in the underlying")}
@@ -419,14 +419,14 @@ function Flow({ symbols, onPick }: { symbols: string[]; onPick: (t: OptionFlowTr
   )
   const sideTag = (t: OptionFlowTrade) =>
     t.side == null ? <span className="text-muted-foreground" title="Traded before this page began watching: no quote from that moment, so the side is not known">{dash}</span>
-      : <span className={`font-semibold uppercase ${t.side === "ask" ? "text-gain" : t.side === "bid" ? "text-loss" : "text-muted-foreground"}`}
+      : <span className={`font-semibold capitalize ${t.side === "ask" ? "text-gain" : t.side === "bid" ? "text-loss" : "text-muted-foreground"}`}
               title={t.side === "ask" ? "Filled at or above the ask: a buyer paid up" : t.side === "bid" ? "Filled at or below the bid: a seller hit it" : "Filled between the bid and the ask"}>{t.side}</span>
   const head = (label: string, key: SortKey | null, align: "left" | "right" = "right", title?: string) => (
     <th key={label} data-tip={title} aria-description={title}
         className={`sticky top-0 z-10 whitespace-nowrap border-b border-row-rule bg-panel px-2 py-1.5 font-medium ${align === "left" ? "text-left" : "text-right"}`}>
       {key ? (
         <button type="button" onClick={() => setSort(s => ({ key, desc: s.key === key ? !s.desc : true }))}
-                className={`uppercase tracking-caps hover:text-foreground ${sort.key === key ? "text-foreground" : ""}`}>
+                className={`hover:text-foreground ${sort.key === key ? "text-foreground" : ""}`}>
           {label}{sort.key === key ? (sort.desc ? " ▾" : " ▴") : ""}
         </button>
       ) : label}
@@ -459,7 +459,7 @@ function Flow({ symbols, onPick }: { symbols: string[]; onPick: (t: OptionFlowTr
         : !shown.length ? <Empty>no orders of {PREMIUMS.find(p => p.v === minPremium)?.label} today on the most active contracts</Empty> : (
         <table className={`w-full border-collapse text-body ${hasLive ? "min-w-[1180px]" : "min-w-[900px]"}`}>
           <thead>
-            <tr className="text-label font-medium uppercase tracking-caps text-muted-foreground">
+            <tr className="text-label font-medium text-muted-foreground">
               {head("Time (ET)", "t", "left", "When the order printed, New York time. Click a sortable heading to sort")}
               {head("Ticker", "ticker", "left", "The underlying stock or fund")}
               {hasLive && head("Side", null, "left", "Where the order filled against the quote seen live: ASK, a buyer paid up; BID, a seller hit the bid; MID, between the two. A dash: it traded before this page began watching")}
@@ -518,7 +518,7 @@ function Flow({ symbols, onPick }: { symbols: string[]; onPick: (t: OptionFlowTr
                   <span className="flex flex-wrap gap-1" title={t.code ? `Conditions: ${t.code}` : undefined}>
                     {t.flags.map(f => (
                       <span key={f} title={FLAG_NOTE[f]}
-                            className={`whitespace-nowrap rounded-sm border px-1 text-label font-semibold uppercase leading-[15px] tracking-caps ${FLAG_TONE[f] ?? "border-border text-muted-foreground"}`}>
+                            className={`whitespace-nowrap rounded-sm border px-1 text-label font-semibold leading-[15px] ${FLAG_TONE[f] ?? "border-border text-muted-foreground"}`}>
                         {f}
                       </span>
                     ))}

@@ -194,7 +194,7 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
               key={tab.to}
               to={tab.to}
               className={({ isActive }) =>
-                `${"wideOnly" in tab ? "hidden md:flex" : "flex"} items-center px-1.5 text-caption font-extrabold uppercase tracking-caps sm:px-2.5 xl:px-4 ${
+                `${"wideOnly" in tab ? "hidden md:flex" : "flex"} items-center px-1.5 text-caption font-bold sm:px-2.5 xl:px-4 ${
                   isActive
                     ? "border-b-[3px] border-accent bg-panel text-foreground"
                     : "text-muted-foreground hover:text-foreground"
@@ -235,13 +235,13 @@ function Shell({ userEmail }: { userEmail?: string | null }) {
               className={({ isActive }) =>
                 // No accent ring on the active state: the chip is identity,
                 // not navigation emphasis — it stays quiet on every page.
-                `flex h-[24px] max-w-[180px] shrink-0 items-center gap-1.5 rounded-sm border border-border px-2 text-label font-extrabold tracking-ticker ${
+                `flex h-[24px] max-w-[180px] shrink-0 items-center gap-1.5 rounded-sm border border-border px-2 text-label font-bold tracking-ticker ${
                   isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 }`
               }
             >
               <span aria-hidden="true"
-                    className="flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-xs bg-info text-label font-extrabold uppercase text-background">
+                    className="flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-xs bg-info text-label font-bold uppercase text-background">
                 {userEmail[0]}
               </span>
               <span className="hidden min-w-0 truncate normal-case sm:inline">{userEmail.split("@")[0]}</span>

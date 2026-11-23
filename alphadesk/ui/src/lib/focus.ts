@@ -24,8 +24,8 @@ export function focusables(root: HTMLElement): HTMLElement[] {
 }
 
 /** A text field keeps its own arrow keys: the menu must not steal them from
- * a price floor being typed into. */
-function isTextEntry(el: Element | null): boolean {
+ * a price floor being typed into. Exported for the rail's basket search. */
+export function isTextEntry(el: Element | null): boolean {
   if (!el) return false
   const tag = el.tagName
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el as HTMLElement).isContentEditable

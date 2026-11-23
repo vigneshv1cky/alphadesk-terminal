@@ -51,7 +51,7 @@ function Side({ symbol }: { symbol: string }) {
   return (
     <div className="min-w-0 flex-1 px-3 py-2.5">
       <div className="flex items-baseline gap-2">
-        <span className="text-figure font-extrabold tracking-tight">{symbol}</span>
+        <span className="text-figure font-bold tracking-tight">{symbol}</span>
         <span className={`num ml-auto shrink-0 text-body font-semibold ${up ? "text-gain" : "text-loss"}`}>
           {q?.change_pct == null ? "—" : `${up ? "+" : ""}${q.change_pct.toFixed(2)}%`}
         </span>
