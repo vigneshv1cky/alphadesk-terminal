@@ -130,6 +130,31 @@ LISTED_ETFS: tuple[tuple[str, str], ...] = MARKET_ETFS + (
 )
 
 
+# COMMODITY FUNDS (2026-11-23, the owner: "only include whats tradable via
+# alpaca"). Alpaca trades no futures, so the commodities list is the
+# exchange-traded funds and trusts that hold a commodity or its futures —
+# what an Alpaca account can actually buy. One-times funds only: a leveraged
+# product resets daily and is a different instrument. Each row is (symbol,
+# what it holds, group). Many futures have no tradable fund at all any more
+# (coffee, cocoa, cotton, cattle, hogs, lumber: their exchange-traded notes
+# were closed), so they are simply not on the list. Spot gold (XAU/USD) is
+# not an Alpaca instrument either; tokenised gold (PAXG) is on the Crypto
+# list, where its 24-hour change belongs.
+COMMODITY_FUNDS: tuple[tuple[str, str, str], ...] = (
+    ("GLD", "Gold", "Precious metals"), ("IAU", "Gold", "Precious metals"),
+    ("SLV", "Silver", "Precious metals"), ("PPLT", "Platinum", "Precious metals"),
+    ("PALL", "Palladium", "Precious metals"),
+    ("CPER", "Copper futures", "Industrial metals"), ("DBB", "Aluminum, zinc and copper futures", "Industrial metals"),
+    ("USO", "WTI crude oil futures", "Energy"), ("BNO", "Brent crude oil futures", "Energy"),
+    ("UNG", "Natural gas futures", "Energy"), ("UGA", "Gasoline futures", "Energy"),
+    ("CORN", "Corn futures", "Agriculture"), ("WEAT", "Wheat futures", "Agriculture"),
+    ("SOYB", "Soybean futures", "Agriculture"), ("CANE", "Sugar futures", "Agriculture"),
+    ("DBA", "Agriculture futures basket", "Agriculture"),
+    ("DBC", "Broad commodity futures index", "Broad"), ("GSG", "S&P GSCI commodity index", "Broad"),
+    ("PDBC", "Diversified commodity futures", "Broad"),
+)
+
+
 def coin_pair(symbol: str) -> str | None:
     """The Alpaca pair for a coin symbol ("BTC-USD", "BTC/USD", "BTCUSD"),
     or None for anything that is not one."""
@@ -1770,6 +1795,45 @@ class AlpacaPrices:
                     f" · gainers and losers from {OPTION_MOVERS_MIN_VOLUME:,} contracts"
                     + (" · indicative feed" if feeds == {"indicative"} else "")}
 
+    def tradable_on_alpaca(self, symbols: list[str]) -> dict[str, bool | None]:
+        """Whether this account can trade each symbol, from its asset record
+        (kept a day by `asset`): True, False, or None when the record could
+        not be read. Read-only — never an order. Eight lookups at a time."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        def one(sym: str) -> tuple[str, bool | None]:
+            a = self.asset(sym)
+            return sym, (None if a is None else bool(getattr(a, "tradable", False)))
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            return dict(pool.map(one, symbols))
+
+    def _commodity_movers(self) -> dict | None:
+        """Commodity funds this Alpaca account can trade (COMMODITY_FUNDS),
+        priced like any listed fund: the consolidated quote, its change since
+        the last close, its own volume. A fund the asset record says is NOT
+        tradable is left out, and so is one whose record could not be read —
+        the list promises only what can be traded, and an unconfirmed row
+        would break that promise; the note says how many were left out."""
+        from alphadesk.ingest.movers import _row, tabs_from_list
+        can = self.tradable_on_alpaca([s for s, _, _ in COMMODITY_FUNDS])
+        kept = tuple((s, name) for s, name, _ in COMMODITY_FUNDS if can.get(s))
+        group = {s: g for s, _, g in COMMODITY_FUNDS}
+        rows = []
+        for r in self.listed_quotes(kept) if kept else []:
+            row = _row(r["symbol"], r["price"], r.get("change_pct"), r.get("volume"), name=r["name"])
+            row["group"] = group.get(r["symbol"])
+            if r.get("extended_hours"):
+                row["extended"] = True
+            rows.append(row)
+        left_out = len(COMMODITY_FUNDS) - len(kept)
+        unread = sum(1 for v in can.values() if v is None)
+        note = "funds this Alpaca account can trade"
+        if left_out:
+            note += f" · {left_out} left out: " + (f"{unread} could not be checked" if unread == left_out
+                                                     else "not tradable here" if not unread
+                                                     else f"{left_out - unread} not tradable, {unread} could not be checked")
+        return {"tabs": tabs_from_list(rows, with_active=True), "source": "alpaca", "note": note}
+
     def category_movers(self, category: str, top: int = 20) -> dict | None:
         """The movers categories a free Alpaca key carries: stocks from the
         screener, ETFs and the market ETFs from snapshots of a broad list,
@@ -1820,6 +1884,8 @@ class AlpacaPrices:
             return {"tabs": tabs_from_list(rows, with_active=True), "source": "alpaca",
                     "note": "ETFs standing in for the indices — an index level is licensed data" if category == "indices" else None,
                     "filling": category == "etfs" and etf_filling}
+        if category == "commodities":
+            return self._commodity_movers()
         if category == "crypto":
             c = self.crypto_movers(top)
             if not c:

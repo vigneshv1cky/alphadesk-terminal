@@ -435,10 +435,8 @@ export function MoversTable({ rows, empty, changeHead = "1D", changeTip, linkabl
               <TD align="right" mono>
                 {r.price != null ? <Flash value={r.price}>{bonds ? `${num(r.price, 2)}%` : num(r.price, decimals)}</Flash> : "—"}
               </TD>
-              <TD align="right" mono className={`font-semibold ${up ? "text-gain" : "text-loss"} ${r.earlier_session ? "opacity-50" : ""}`}
-                  title={r.earlier_session
-                    ? `Last traded ${r.traded_at ? new Date(r.traded_at).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "in an earlier session"} — this is that session's move, so the row is left off Gainers and Losers`
-                    : r.corporate_action
+              <TD align="right" mono className={`font-semibold ${up ? "text-gain" : "text-loss"}`}
+                  title={r.corporate_action
                     ? (r.price_change_pct != null && r.price_change_pct !== r.change_pct
                       ? `Corporate action that day${r.corporate_action_type ? ` (${r.corporate_action_type})` : ""}: the price moved ${moveText(r.price_change_pct)} on the chart; a holder's move, counting what was handed out, was ${moveText(r.change_pct ?? 0)}${r.spin_off ? ` — ${r.spin_off.shares_per_share} ${r.spin_off.new_symbol} per share, closing at ${r.spin_off.new_close}` : ""}`
                       : `Corporate action that day${r.corporate_action_type ? `: ${r.corporate_action_type}` : ""}. The move is the price chart's and may not be what a holder made`)
@@ -655,7 +653,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
       : spans ? (query.state.data?.live ? 120_000 : false)
       : query.state.data?.filling ? 3_000
       : category === "bonds" ? 900_000
-      : category === "stocks" || category === "crypto" || category === "indices" ? 30_000 : 120_000,
+      : category === "stocks" || category === "crypto" || category === "indices" || category === "commodities" ? 30_000 : 120_000,
     refetchIntervalInBackground: true,
   })
   // HALTS SIT BESIDE THE MOVERS FOR STOCKS (2026-09-23). A halt is market
@@ -685,7 +683,7 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
   // with this second's tick and leave the volume beside it untouched.
   // NOR OVER A PERIOD: the overlay re-derives a row's change from the close
   // its DAILY change implies, which over a week is the wrong close entirely.
-  const streamable = (category === "stocks" || category === "etfs") && !session && !spans
+  const streamable = (category === "stocks" || category === "etfs" || category === "commodities") && !session && !spans
   const symbols = useMemo(() => (streamable ? rows.map(r => r.symbol) : []), [rows, streamable])
   const live = useLiveQuotes(symbols)
   // The coins on screen, and none for any other category.
@@ -733,7 +731,6 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
     : q.data?.source
     ? `${q.data.change_label === "24h" ? "rolling 24h" : q.data.change_label === "1D bp" ? "daily curve · change in bp"
         : category === "currencies" ? "since 5pm New York"
-        : category === "commodities" ? "front-month futures · since the last settlement"
         : q.data.session_label ? `${q.data.session_label.toLowerCase()} · since the last close` : "session"} · ${SOURCE_LABELS[q.data.source] ?? q.data.source}${q.data.official === false ? " · scraped" : ""}${q.data.filling ? " · filling in…" : ""}`
     : q.isPending ? "loading…" : isNeedsKey(q.error) ? "needs a data key" : "unavailable right now"
   return (
@@ -825,7 +822,6 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
         : <>
         {halted ? <HaltsTable /> : <MoversTable rows={shown} changeHead={q.data?.change_label ?? "1D"} session={q.data?.session_label ?? null}
                        changeTip={category === "currencies" ? "Change since the 5pm New York rollover, where the currency trading day begins"
-                         : category === "commodities" ? "Change since the previous session's settlement price. The contracts trade different hours: a dimmed row last traded in an earlier session, so its change is that session's, and it is left off Gainers and Losers"
                          : undefined}
                        {...(category === "crypto" ? {
                          volTip: session ? `Annualised volatility of daily returns over the twenty days ending ${session}` : "Annualised volatility of daily returns over the last twenty days — coins trade every day, so a year is 365 of them",
@@ -834,9 +830,6 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
                            : "Dollar volume traded worldwide over the last 24 hours",
                        } : category === "currencies" ? {
                          volTip: "Annualised volatility of daily returns over the last twenty trading days",
-                         liquidity: false,
-                       } : category === "commodities" ? {
-                         volTip: "Annualised volatility of the front-month contract's last twenty daily closes. A roll into the next contract month counts as a move. A dash: your FMP plan does not include that contract's daily history",
                          liquidity: false,
                        } : category === "bonds" ? {
                          volTip: "How much the yield moves in a year, in basis points: the standard deviation of its last twenty daily changes, annualised",
@@ -849,10 +842,8 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
                          volTip: `Annualised volatility of daily returns over the twenty sessions ending ${q.data.session}`,
                          liqTip: `Average dollar volume a day over the twenty sessions ending ${q.data.session}`,
                        } : {})}
-                       nameHead={category === "stocks" ? "Company" : category === "currencies" ? "Currency" : category === "commodities" ? "Commodity" : "Name"}
-                       // A future is not a symbol the board can chart yet (no
-                       // chart vendor here carries one), so its row opens nothing.
-                       linkable={category !== "options" && category !== "currencies" && category !== "bonds" && category !== "commodities"} options={category === "options"}
+                       nameHead={category === "stocks" ? "Company" : category === "currencies" ? "Currency" : category === "commodities" ? "Holds" : "Name"}
+                       linkable={category !== "options" && category !== "currencies" && category !== "bonds"} options={category === "options"}
                        rank={active?.id === "dollar_volume" ? "dollars"
                          : active?.id === "most_active"
                            // A coin list's Active tab ranks by dollars traded on Alpaca's venue.
