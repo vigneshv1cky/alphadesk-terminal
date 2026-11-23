@@ -87,3 +87,34 @@ export function matchesStory(
   // A company's name is matched exactly, word for word: "Arm", never "arms".
   return companies.names.some(n => phraseIn(words(n).map(w => [w, true] as [string, boolean]), words(story.title)))
 }
+
+/** TAGGED ONLY (2026-11-23, the owner: "I am not able to search only based on
+ * symbols"). The ordinary search treats a ticker as a search for the COMPANY:
+ * it also keeps headlines naming it (an "Nvidia" downgrade the feed tagged
+ * only with the broker's ticker) and, once typing pauses, stories related in
+ * meaning — and it reads several words as ONE PHRASE, so "NVDA AAPL" looked
+ * for the two side by side in a headline and fell back to meaning alone. With
+ * the toggle on, the box is a list of tickers and a story is kept only when a
+ * feed TAGGED it with one of them. */
+
+/** The tickers typed: separated by spaces, commas or semicolons, in any case,
+ * with or without a leading $. A share class keeps its dot or dash (BRK.B,
+ * BRK-B) and a coin its pair (BTC-USD). Anything that cannot be a ticker is
+ * left out. */
+export function tickersIn(query: string): string[] {
+  const out: string[] = []
+  for (const raw of query.split(/[\s,;]+/)) {
+    const t = raw.replace(/^\$+/, "").toUpperCase()
+    if (/^[A-Z][A-Z0-9]{0,5}([.-][A-Z0-9]{1,4})?$/.test(t) && !out.includes(t)) out.push(t)
+  }
+  return out
+}
+
+/** A story a feed tagged with any of `tickers`. BRK.B and BRK-B are one
+ * share class, whichever spelling a feed used. */
+export function taggedWith(story: { tickers: string[] }, tickers: string[]): boolean {
+  if (!tickers.length) return false
+  const norm = (t: string) => t.toUpperCase().replace(".", "-")
+  const want = new Set(tickers.map(norm))
+  return story.tickers.some(t => want.has(norm(t)))
+}
