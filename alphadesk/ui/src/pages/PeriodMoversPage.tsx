@@ -6,6 +6,7 @@ import { Menu } from "@/components/ChartToolbar"
 import { isNeedsKey, on, type MoverCategory, type MoverPeriod } from "@/lib/api"
 import { useKeptState } from "@/lib/keptState"
 import { cn } from "@/lib/utils"
+import { PeriodChart } from "@/components/PeriodChart"
 import { FloorsPopover, MoversTable, SOURCE_LABELS, TabStrip, readFloors, writeFloors, type Floors } from "@/widgets/market"
 
 /** GAINERS AND LOSERS OVER ANY PERIOD (2026-11-23, the owner: "I need a
@@ -78,6 +79,10 @@ export default function PeriodMoversPage() {
   })
   const d = q.data
   const rows = useMemo(() => d?.tabs?.find(t => t.id === tab)?.rows ?? [], [d, tab])
+  // THE CHART FOLLOWS A PICKED ROW, and the first row of the tab until one is
+  // picked — so the page opens on the period's largest move, drawn.
+  const [pickedSym, setPicked] = useState<string | null>(null)
+  const picked = rows.find(r => r.symbol === pickedSym) ?? rows[0] ?? null
 
   const subtitle = !ready ? "pick a start date"
     : q.isPending ? "loading"
@@ -164,11 +169,17 @@ export default function PeriodMoversPage() {
             : q.isPending ? <Empty>loading</Empty>
             : q.isError ? <QueryFailure error={q.error}>the period list is unavailable right now</QueryFailure>
             : d?.unavailable ? <Empty>{d.note ?? "unavailable right now"}</Empty>
-            : <MoversTable rows={rows} changeHead={d?.change_label ?? "Change"} changeTip={changeTip}
+            : <>
+              {picked && d?.period_from && d.period_to && (
+                <PeriodChart symbol={picked.symbol} label={picked.name} from={d.period_from} to={d.period_to}
+                             live={!!d.live} listChange={picked.change_pct ?? null} />
+              )}
+              <MoversTable rows={rows} onPick={r => setPicked(r.symbol)} picked={picked?.symbol ?? null} changeHead={d?.change_label ?? "Change"} changeTip={changeTip}
                            nameHead={category === "stocks" ? "Company" : "Name"}
                            volTip={`Annualised volatility of daily returns over the last twenty sessions${statsTip}`}
                            liqTip={`Average dollar volume a day over the last twenty sessions${statsTip}`}
-                           empty={tab === "gainers" ? "nothing is up over this period" : "nothing is down over this period"} />}
+                           empty={tab === "gainers" ? "nothing is up over this period" : "nothing is down over this period"} />
+            </>}
           {d?.note && !d.unavailable && (
             <p className="px-3 py-2 text-caption text-muted-foreground">{d.note}</p>
           )}
