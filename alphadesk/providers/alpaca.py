@@ -153,6 +153,16 @@ COMMODITY_FUNDS: tuple[tuple[str, str, str], ...] = (
     ("DBC", "Broad commodity futures index", "Broad"), ("GSG", "S&P GSCI commodity index", "Broad"),
     ("PDBC", "Diversified commodity futures", "Broad"),
 )
+# Commodity TOKENS an Alpaca account can trade on its crypto venue (2026-11-23,
+# the owner: "Add PAXG to the commodities tab"). PAX Gold is one troy ounce of
+# London Good Delivery gold per token, held by Paxos — the nearest thing
+# Alpaca trades to spot gold (XAU/USD), which it does not: 3,627.37 against
+# spot's 3,618.68 that morning, where GLD is a fraction of an ounce and keeps
+# stock-market hours. Each row is (symbol as the board writes it, name,
+# group, and the fund it sits after in the list).
+COMMODITY_COINS: tuple[tuple[str, str, str, str], ...] = (
+    ("PAXG-USD", "Gold token, one troy oz (PAX Gold)", "Precious metals", "IAU"),
+)
 
 
 def coin_pair(symbol: str) -> str | None:
@@ -1816,6 +1826,7 @@ class AlpacaPrices:
         would break that promise; the note says how many were left out."""
         from alphadesk.ingest.movers import _row, tabs_from_list
         can = self.tradable_on_alpaca([s for s, _, _ in COMMODITY_FUNDS])
+        coins = self._commodity_coin_rows()
         kept = tuple((s, name) for s, name, _ in COMMODITY_FUNDS if can.get(s))
         group = {s: g for s, _, g in COMMODITY_FUNDS}
         rows = []
@@ -1825,14 +1836,47 @@ class AlpacaPrices:
             if r.get("extended_hours"):
                 row["extended"] = True
             rows.append(row)
-        left_out = len(COMMODITY_FUNDS) - len(kept)
+        left_out = len(COMMODITY_FUNDS) - len(kept) + len(COMMODITY_COINS) - len(coins)
         unread = sum(1 for v in can.values() if v is None)
         note = "funds this Alpaca account can trade"
         if left_out:
             note += f" · {left_out} left out: " + (f"{unread} could not be checked" if unread == left_out
                                                      else "not tradable here" if not unread
                                                      else f"{left_out - unread} not tradable, {unread} could not be checked")
-        return {"tabs": tabs_from_list(rows, with_active=True), "source": "alpaca", "note": note}
+        tabs = tabs_from_list(rows, with_active=True)
+        # A COIN'S CHANGE IS ANOTHER WINDOW. Alpaca measures a coin against its
+        # previous DAILY bar, which closes at 00:00 UTC (20:00 New York), and
+        # a coin trades every day; the funds measure from the last 4pm close
+        # on a trading day. Ranking the two against each other would rank two
+        # different windows, so a token is on All, in its place, and on none
+        # of the ranked tabs (its volume is in tokens, so not Active either).
+        for coin, after in coins:
+            at = next((i + 1 for i, r in enumerate(tabs[0]["rows"]) if r["symbol"] == after), len(tabs[0]["rows"]))
+            tabs[0]["rows"].insert(at, coin)
+        return {"tabs": tabs, "source": "alpaca", "note": note}
+
+    def _commodity_coin_rows(self) -> list[tuple[dict, str]]:
+        """COMMODITY_COINS the account can trade on Alpaca's crypto venue,
+        priced from their snapshot, as (row, the fund it follows). Empty when
+        the pair list or the snapshot cannot be read — a token not confirmed
+        tradable is not listed."""
+        from alphadesk.ingest.movers import _row
+        try:
+            pairs = set(self.crypto_pairs() or [])
+            want = [c for c in COMMODITY_COINS if coin_pair(c[0]) in pairs]
+            quoted = self.quotes([c[0] for c in want]) if want else {}
+        except Exception as exc:
+            log.debug("commodity tokens: %s", exc)
+            return []
+        out = []
+        for sym, name, group, after in want:
+            q = quoted.get(sym)
+            if not q or q.get("price") is None:
+                continue
+            row = _row(sym, q["price"], q.get("change_pct"), 0, name=name, display=sym.split("-")[0])
+            row.update({"group": group, "change_basis": "utc_day"})
+            out.append((row, after))
+        return out
 
     def category_movers(self, category: str, top: int = 20) -> dict | None:
         """The movers categories a free Alpaca key carries: stocks from the

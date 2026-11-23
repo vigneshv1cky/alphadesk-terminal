@@ -1189,6 +1189,9 @@ export interface CategoryMoverRow {
   extended_at?: string | null
   /** A commodity fund's kind: precious metals, energy, agriculture… (2026-11-23). */
   group?: string | null
+  /** "utc_day": a token's change since its 00:00 UTC daily close, not the
+   * last 4pm close the funds beside it measure from; it is on All only. */
+  change_basis?: "utc_day" | null
   spark: number[]
 }
 /** One fund on the Sectors page (/api/sectors). Returns are percent. */

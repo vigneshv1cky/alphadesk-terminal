@@ -308,8 +308,8 @@ def _normalize_tabs(got: dict, category: str) -> list[dict]:
                       # A price struck outside the regular session, and the
                       # closed session's own move (2026-09-22).
                       "extended", "regular_pct", "extended_at",
-                      # A commodity fund's group (2026-11-23).
-                      "group"):
+                      # A commodity fund's group, and a token's change window (2026-11-23).
+                      "group", "change_basis"):
                 if r.get(k) is not None:
                     row[k] = r[k]
             # A vendor's own figure wins: an option's premium, or the dollar
@@ -331,6 +331,24 @@ def _enrich_stats(router, tabs: list[dict], category: str, venue: bool = False) 
     if category not in ("stocks", "etfs", "indices", "commodities"):
         return
     syms = sorted({r["symbol"] for t in tabs for r in t["rows"] if r.get("volatility") is None})
+    if category == "commodities":
+        # A gold token rides the commodity list (2026-11-23): its twenty days
+        # are coin bars, a year of them 365 (it trades every day). Never sent
+        # to the stock bars, where one coin symbol fails the whole request.
+        coins = [s for s in syms if s.endswith("-USD")]
+        syms = [s for s in syms if not s.endswith("-USD")]
+        if coins:
+            try:
+                cbars = router.get("crypto_daily_history", coins, STATS_DAYS + 1) or {}
+            except Exception as exc:
+                log.debug("commodity tokens: no daily bars (%s)", exc)
+                cbars = {}
+            for t in tabs:
+                for r in t["rows"]:
+                    b = cbars.get(r["symbol"])
+                    if b and r.get("volatility") is None:
+                        r["volatility"] = stats_from_bars([x["close"] for x in b], [x["volume"] for x in b],
+                                                          periods=365)["volatility"]
     if not syms:
         return
     bars = adjust_for_spin_offs(router, router.get("daily_history", syms, STATS_DAYS + 1) or {})
