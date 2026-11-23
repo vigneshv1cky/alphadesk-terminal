@@ -1066,7 +1066,7 @@ function Glyph({ kind }: { kind: Kind | "cursor" | "magnet" | "eye" | "eyeoff" |
     ellipse: <ellipse cx="8" cy="8" rx="6" ry="4.5" {...p} />,
     arrow: <><path d="M3 13L13 3M13 3H7M13 3V9" {...p} /></>,
     fib: <><path d="M2 3.5h12M2 7h8M2 10h10M2 13h6" {...p} /></>,
-    text: <text x="8" y="12.5" textAnchor="middle" fontSize="12" fontWeight="700" fill="currentColor">T</text>,
+    text: <text x="8" y="12.5" textAnchor="middle" fontSize="12" fontWeight="500" fill="currentColor">T</text>,
     measure: <><rect x="2.5" y="4.5" width="11" height="7" {...p} /><path d="M5.5 4.5v2M8 4.5v3M10.5 4.5v2" {...p} /></>,
     pricerange: <><path d="M8 2v12M5 5l3-3 3 3M5 11l3 3 3-3" {...p} /></>,
     daterange: <><path d="M2 8h12M5 5L2 8l3 3M11 5l3 3-3 3" {...p} /></>,
@@ -1148,9 +1148,11 @@ export function DrawingToolbar({
     setOpen(null)
   }
 
-  const cell = (on: boolean, extra = "") =>
-    `group relative flex h-[28px] w-[30px] items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:hover:bg-transparent disabled:[&>svg]:opacity-35 ${
-      on ? "bg-foreground/10 !text-foreground" : ""} ${extra}`
+  // The shared ghost button (2026-11-23): its faint hover and soft grey
+  // selection, 5px corners. A disabled cell keeps taking the pointer so its
+  // tip still says what the control is, and fades its icon, not the tip.
+  const cell = (on: boolean, extra = "") => btnCls({ variant: "ghost", icon: true, active: on },
+    cn("group relative h-[28px] w-[30px] rounded-sm font-normal disabled:pointer-events-auto disabled:opacity-100 disabled:hover:bg-transparent disabled:[&>svg]:opacity-35", extra))
 
   return (
     <div ref={box} data-drawing-ui
