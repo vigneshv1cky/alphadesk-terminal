@@ -956,8 +956,10 @@ function DrawingProps({ d, box, plotW, plotH, onPatch, onRemove, onEditText }: {
   const color = st.color ?? DEFAULT_COLOR
   const setStyle = (p: Partial<Style>) => onPatch({ style: { ...st, ...p } })
   const fillable = ["rect", "ellipse", "channel", "fib"].includes(d.kind)
-  const icon = (active: boolean) => btnCls({ variant: "ghost", icon: true, active })
-  const word = (active: boolean) => btnCls({ variant: "ghost", active })
+  // The chart toolbar's softer button: 5px corners, medium weight, no
+  // letter-spacing (2026-11-23).
+  const icon = (active: boolean) => btnCls({ variant: "ghost", icon: true, active }, "rounded-sm")
+  const word = (active: boolean) => btnCls({ variant: "ghost", active }, "rounded-sm font-medium tracking-normal")
 
   // The strip's own size, measured once it is on screen, so the placement
   // can centre it and keep it inside the plot.
