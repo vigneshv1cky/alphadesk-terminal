@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
-import { Activity, Building2, CalendarDays, CalendarRange, ChartCandlestick, ChevronDown, ChevronLeft, FileText, TrendingUp, Layers3, LayoutGrid, LineChart, MessageSquare, Newspaper, Plus, LayoutDashboard, Plug, Star, UserRound,
+import { Activity, Building2, CalendarDays, CalendarRange, ChartCandlestick, ChevronDown, ChevronLeft, FileText, Layers3, LayoutGrid, LineChart, MessageSquare, Newspaper, Plus, LayoutDashboard, Plug, Star, UserRound,
 } from "lucide-react"
 import { useAuthMe, useRail, useThemes } from "@/lib/queries"
 import { useBoardSymbols } from "@/lib/boardSymbols"
@@ -33,7 +33,6 @@ const VIEWS = [
   { to: "/markets", label: "Markets", Icon: Activity },
   { to: "/sectors", label: "Sectors", Icon: LayoutGrid },
   // The market over a stretch of time rather than a day (2026-11-23).
-  { to: "/periods", label: "Period movers", Icon: TrendingUp },
   { to: "/analysis", label: "Analysis", Icon: LineChart },
   { to: "/profile", label: "Profile", Icon: Building2 },
   { to: "/news", label: "News", Icon: Newspaper },
