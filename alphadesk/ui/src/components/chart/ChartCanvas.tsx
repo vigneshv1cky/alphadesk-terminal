@@ -9,7 +9,7 @@ import { useSmoothedRange } from "@/lib/smoothRange"
 import { paneAxisLabel, paneExtent, sessionLayout, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
 import { CANDLES, cornerRadius, rectPath } from "@/lib/candleShape"
 import { heikinAshi, type SeriesKind } from "@/lib/series"
-import { barCloseCountdown, countdownLabel, thinTicks, timeAxisTicks, timeParts } from "@/lib/chartTime"
+import { barCloseCountdown, barStamp, countdownLabel, thinTicks, timeAxisTicks, timeParts } from "@/lib/chartTime"
 import { provisionalSlots } from "@/lib/provisional"
 
 export type { SeriesKind }
@@ -984,11 +984,7 @@ export function ChartCanvas({
   // tabular figures at 11px are ~6.4px a character) and kept inside the
   // plot; and a time label the chip would touch is not drawn — the same rule
   // the price axis applies under its tags.
-  const chipText = hovered
-    ? new Date(hovered.t).toLocaleString("en-US", intraday
-      ? { timeZone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
-      : { timeZone, month: "short", day: "numeric", year: "numeric" })
-    : ""
+  const chipText = hovered ? barStamp(hovered.t, timeZone, intraday) : ""
   const chipW = chipText ? Math.round(chipText.length * 6.4 + 14) : 0
   const chipX = cursor && chipText ? Math.max(0, Math.min(plotW - chipW, cursor.x - chipW / 2)) : 0
   const chipHides = (x: number, label: string) =>
