@@ -1087,6 +1087,15 @@ def save_articles(articles: list[dict], owner: str = "") -> list[str]:
     return folded
 
 
+def count_articles_between(owner: str, start_iso: str, end_iso: str) -> int:
+    """How many of the reader's stories were PUBLISHED in [start, end)."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM news_articles WHERE owner = ? AND published_at >= ? AND published_at < ?",
+            (owner, start_iso, end_iso)).fetchone()
+    return int(row[0] if row else 0)
+
+
 def feed_counts(owner: str, since_iso: str) -> dict[str, int]:
     """Stories each of the reader's feeds delivered since `since_iso`, a story
     delivered by two feeds counting for both — how the Account page shows

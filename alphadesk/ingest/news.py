@@ -745,6 +745,73 @@ def fill_gap(user_id: str, since: datetime, now: datetime | None = None) -> int:
     return stored
 
 
+# ── windows the store is known to have lost (2026-11-26) ─────────────────
+#
+# The owner: "Yes, fill the gap". fill_gap only covers a gap from the moment
+# it shipped (#174); the days before it were never walked. Nothing was stored
+# from 15 November 12:07 UTC to 19 November 22:31 UTC (the reader away).
+# Walked once per reader on the news loop's first cycle after a start, on the
+# reader's own news keys, and only while the window holds fewer than
+# PAST_GAP_FULL stories — so once it is filled it never asks again, and a
+# window the feed itself has nothing for costs one walk per restart.
+
+PAST_GAPS: tuple[tuple[str, str], ...] = (
+    ("2026-11-15T12:00:00+00:00", "2026-11-20T00:00:00+00:00"),
+)
+PAST_GAP_FULL = 200
+
+
+def fill_window(user_id: str, start: datetime, end: datetime) -> int:
+    """Walk every news feed of the reader's backwards from `end` to `start`,
+    storing what comes back. Returns the stories stored. Never raises."""
+    stored = 0
+    days = max(1.0, (end - start).total_seconds() / 86400)
+    for row in store.get_user_keys(user_id, "news"):
+        try:
+            provider = _user_news_provider(user_id, row["created_at"], row["provider"], row["config"])
+        except Exception as exc:
+            log.info("past gap %s for %s: %s", row["provider"], user_id[:8], exc)
+            continue
+        if "until" not in inspect.signature(provider.fetch).parameters:
+            continue
+        cursor = end
+        for _page in range(int(BACKFILL_PAGES_PER_DAY * math.ceil(days))):
+            try:
+                got = provider.fetch(start, limit=BACKFILL_PAGE, until=cursor)
+            except Exception as exc:
+                log.info("past gap %s for %s: %s", row["provider"], user_id[:8], exc)
+                break
+            stored += len(_save(_merge_feeds([_article_dicts(got, row["provider"])]), user_id, news_owner(user_id)))
+            if len(got) < BACKFILL_PAGE:
+                break
+            try:
+                oldest = min(datetime.fromisoformat(a.published_at.replace("Z", "+00:00")) for a in got if a.published_at)
+            except ValueError:
+                break
+            if oldest >= cursor or oldest <= start:
+                break
+            cursor = oldest
+    return stored
+
+
+def fill_past_gaps(user_id: str) -> int:
+    """Fill each of PAST_GAPS the reader's store is still missing. Never raises."""
+    stored = 0
+    owner = news_owner(user_id)
+    for start_iso, end_iso in PAST_GAPS:
+        try:
+            have = store.count_articles_between(owner, start_iso, end_iso)
+            if have >= PAST_GAP_FULL:
+                continue
+            got = fill_window(user_id, datetime.fromisoformat(start_iso), datetime.fromisoformat(end_iso))
+            stored += got
+            log.info("past news gap %s to %s for reader %s: had %d, stored %d",
+                     start_iso[:16], end_iso[:16], user_id[:8], have, got)
+        except Exception as exc:
+            log.info("past news gap for %s: %s", user_id[:8], exc)
+    return stored
+
+
 def full_story(user_id: str, article_id: str) -> Optional[dict]:
     """The reader's stored story with its text. A story stored without it
     (before the feed was asked for text, 2026-09-15) is fetched again from
