@@ -4,6 +4,8 @@ import { useQueries, useQuery } from "@tanstack/react-query"
 import { on, type ChartBar, type ChartRange, type CompareRow, type Peers, type Quote } from "@/lib/api"
 import { keys, useQuotes } from "@/lib/queries"
 import { compact } from "@/components/Treemap"
+import { rangeCls } from "@/components/ChartToolbar"
+import { cn } from "@/lib/utils"
 import { Empty, fieldCls, Table, TD, TH, THead, Widget, btnCls } from "@/components/terminal"
 
 /** The board's chips against each other — theirs' "Comparison Analysis"
@@ -148,7 +150,11 @@ export function RelativePerformancePanel({ symbols, span = 12, title = "Relative
               <div className="flex items-center gap-0.5">
                 {RANGES.map(r => (
                   <button key={r} type="button" onClick={() => setRange(r)}
-                          className={btnCls({ variant: "ghost", active: r === range }, "num px-1.5")}>
+                          // The chart toolbar's own range button, so this chart's
+                          // range row reads like every other (2026-11-23).
+                          // Tighter sides: this row shares the header with the
+                          // title, which truncated at 375px with the full padding.
+                          className={cn(rangeCls(r === range), "px-1.5")}>
                     {r}
                   </button>
                 ))}
