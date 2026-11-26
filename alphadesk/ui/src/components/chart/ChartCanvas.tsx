@@ -977,6 +977,22 @@ export function ChartCanvas({
     ? Math.max(0, Math.min(bars.length - 1, Math.round(xToIndex(s, cursor.x) - 0.5)))
     : -1
   const hovered = cursor ? bars[hoveredIdx] : null
+  // THE DATE CHIP ON THE TIME AXIS, and the labels it would cover
+  // (2026-11-26, the owner: the chip overlapped the month labels on daily
+  // charts). A daily bar has no time of day, so it reads as a date with its
+  // year rather than "12:00 AM"; the chip is sized to its text (Geist's
+  // tabular figures at 11px are ~6.4px a character) and kept inside the
+  // plot; and a time label the chip would touch is not drawn — the same rule
+  // the price axis applies under its tags.
+  const chipText = hovered
+    ? new Date(hovered.t).toLocaleString("en-US", intraday
+      ? { timeZone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
+      : { timeZone, month: "short", day: "numeric", year: "numeric" })
+    : ""
+  const chipW = chipText ? Math.round(chipText.length * 6.4 + 14) : 0
+  const chipX = cursor && chipText ? Math.max(0, Math.min(plotW - chipW, cursor.x - chipW / 2)) : 0
+  const chipHides = (x: number, label: string) =>
+    !!chipText && Math.abs(x - (chipX + chipW / 2)) < chipW / 2 + label.length * 3.2 + 4
 
   /** Time labels, thinned to whatever fits without collision. */
   /** Session shading and day breaks. Memoized on the bars because it walks
@@ -1110,7 +1126,7 @@ export function ChartCanvas({
                   stroke={grid} strokeWidth={1} />
             {/* A label centred within 20px of the plot's left edge would be
                 cut to its tail ("p 2"); the tick still marks the instant. */}
-            {t.x >= 20 && (
+            {t.x >= 20 && !chipHides(t.x, t.label) && (
               <text x={t.x} y={priceH + panesH + 16} fill={t.major ? (ink ?? text) : text} fontSize={11}
                 fontWeight={t.major ? 500 : 400} textAnchor="middle" className="tnum">
                 {t.label}
@@ -1500,14 +1516,11 @@ export function ChartCanvas({
             </text>
             {hovered && (
               <>
-                <rect x={cursor.x - 42} y={priceH + panesH + 3} width={84} height={16} rx={TAG_RX}
+                <rect x={chipX} y={priceH + panesH + 3} width={chipW} height={16} rx={TAG_RX}
                   fill={tagBg} stroke={tagBorder} strokeWidth={1} />
-                <text x={cursor.x} y={priceH + panesH + 14.5} fill={tagFg} fontSize={11}
+                <text x={chipX + chipW / 2} y={priceH + panesH + 14.5} fill={tagFg} fontSize={11}
                   textAnchor="middle" className="tnum">
-                  {new Date(hovered.t).toLocaleString("en-US", {
-                    timeZone, month: "short", day: "numeric",
-                    hour: "numeric", minute: "2-digit",
-                  })}
+                  {chipText}
                 </text>
               </>
             )}
