@@ -106,3 +106,40 @@ def test_other_publishers_tags_are_not_checked(universe, monkeypatch):
     monkeypatch.setattr(config, "company_name", lambda s: "CNA FINANCIAL CORP")
     rows = [{**_story(1, ["CNA"]), "title": "Insurers Brace for a Costly Storm Season", "source": "The Motley Fool"}]
     assert news.us_listed_only(rows, "u")[0]["tickers"] == ["CNA"]
+
+
+def test_a_known_past_gap_is_walked_once_it_is_found_short(monkeypatch):
+    """15-19 November 2026 was never stored (2026-11-26). The fill walks it
+    only while the window is short, so a filled window is never asked again."""
+    calls = []
+    monkeypatch.setattr(news.store, "count_articles_between", lambda o, a, b: 12)
+    monkeypatch.setattr(news, "fill_window", lambda uid, a, b: calls.append((a, b)) or 900)
+    assert news.fill_past_gaps("u") == 900
+    assert [(a.isoformat()[:13], b.isoformat()[:13]) for a, b in calls] == [("2026-11-15T12", "2026-11-20T00")]
+
+    calls.clear()
+    monkeypatch.setattr(news.store, "count_articles_between", lambda o, a, b: news.PAST_GAP_FULL)
+    assert news.fill_past_gaps("u") == 0 and calls == []
+
+
+def test_the_window_is_walked_backwards_to_its_start(monkeypatch):
+    """Each ask ends where the last one's oldest story began, and stops at the
+    window's start."""
+    from types import SimpleNamespace
+    start = datetime(2026, 11, 15, 12, tzinfo=timezone.utc)
+    end = datetime(2026, 11, 20, tzinfo=timezone.utc)
+    asked = []
+
+    class Feed:
+        def fetch(self, since, limit=0, until=None):
+            asked.append(until)
+            oldest = until - timedelta(days=2)
+            return [SimpleNamespace(published_at=(oldest if i == 0 else until - timedelta(minutes=i)).isoformat())
+                    for i in range(limit)]
+
+    monkeypatch.setattr(news.store, "get_user_keys", lambda uid, kind: [{"provider": "alpaca", "created_at": "", "config": None}])
+    monkeypatch.setattr(news, "_user_news_provider", lambda *a: Feed())
+    monkeypatch.setattr(news, "_article_dicts", lambda got, name: [{"id": str(i)} for i in range(len(got))])
+    monkeypatch.setattr(news, "_save", lambda rows, uid, owner: rows)
+    news.fill_window("u", start, end)
+    assert asked == [end, end - timedelta(days=2), end - timedelta(days=4)]

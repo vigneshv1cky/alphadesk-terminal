@@ -110,6 +110,9 @@ async def _serve() -> None:
         # "window backfills on arrival" behavior, and it costs little because
         # enrichment_cache already holds most of what the backfill re-fetches.
         user_last: dict[str, object] = {}
+        # Readers whose known past gaps were checked since this start
+        # (news.fill_past_gaps, 2026-11-26).
+        past_checked: set[str] = set()
         # Vendor data past its use is deleted hourly (store.prune_vendor_data,
         # 2026-09-18): only a database write, no vendor call. The first cycle
         # prunes at once: the monotonic clock counts from the machine's boot,
@@ -155,6 +158,9 @@ async def _serve() -> None:
                     # November 2026 without it).
                     if news.gap_days(u_since, now_et()):
                         await loop.run_in_executor(None, news.fill_gap, uid, u_since, now_et())
+                    if uid not in past_checked:
+                        past_checked.add(uid)
+                        await loop.run_in_executor(None, news.fill_past_gaps, uid)
                     asked_at = now_et()
                     un = await loop.run_in_executor(None, news.poll_user, uid, u_since)
                     # The cursor moves on only when the feeds answered: after a
