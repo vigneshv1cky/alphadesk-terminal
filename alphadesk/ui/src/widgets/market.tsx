@@ -902,6 +902,7 @@ registerWidget({ id: "currency-movers", label: "Currency movers", order: 18.1, c
 registerWidget({ id: "commodity-movers", label: "Commodity movers", order: 18.15, component: CommodityMovers })
 // In the place Market ETFs held, beside Stock movers (2026-09-15).
 registerWidget({ id: "related-funds", label: "Funds on this stock", order: 14.5, component: RelatedFundsTile })
-registerWidget({ id: "etf-movers", label: "ETF movers", order: 16, component: EtfMovers })
+// Below Stock movers (2026-11-26, the owner: "lets stock mover be ablove etf").
+registerWidget({ id: "etf-movers", label: "ETF movers", order: 17.5, component: EtfMovers })
 registerWidget({ id: "option-movers", label: "Option movers", order: 18.5, component: OptionMovers })
 registerWidget({ id: "bond-movers", label: "Treasury yields", order: 18.6, component: BondMovers })
