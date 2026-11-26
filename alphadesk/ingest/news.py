@@ -146,9 +146,38 @@ def us_listed_only(rows: list[dict], user_id: str) -> list[dict]:
     out = []
     for r in rows:
         tags = [t for t in (r.get("tickers") or []) if t and in_universe(str(t))]
+        # A US ticker on a story about ANOTHER company with the same code is
+        # dropped too (2026-11-26): see newsquery.tag_is_named.
+        tags = [t for t in tags if _names_tag(str(t), r)]
         if tags:
             out.append(r if len(tags) == len(r.get("tickers") or []) else {**r, "tickers": tags})
     return out
+
+
+def _aliases_for(symbol: str) -> tuple[str, ...]:
+    from alphadesk.config import _ALIASES
+    return tuple(k for k, syms in _ALIASES.items() if symbol in syms)
+
+
+# PUBLISHERS WHOSE TAGS ARE CHECKED AGAINST THE STORY (2026-11-26). fiscal.ai
+# (Alpaca's feed since ~2026-11-19) tags a company by its HOME-MARKET code, so
+# Centrica landed under CNA and Amplifon under AMP. Measured on 806 of its live
+# stories: 136 of 804 tags dropped, nearly all of them another company. NOT
+# applied to every feed: Polygon and FMP tag companies an article names only in
+# its BODY, and the same check cut 36% of their tags, almost all correct.
+CHECKED_SOURCES = frozenset({"fiscal.ai"})
+
+
+def _names_tag(symbol: str, row: dict) -> bool:
+    """Keep the tag unless the story plainly names some other company: True
+    where the story names it, it cannot be judged, or its publisher is not
+    one whose tags are checked."""
+    if (row.get("source") or "").strip().lower() not in CHECKED_SOURCES:
+        return True
+    from alphadesk.config import company_name
+    from alphadesk.newsquery import tag_is_named
+    return tag_is_named(symbol, company_name(symbol), row.get("title"), row.get("summary"),
+                        _aliases_for(symbol)) is not False
 
 
 def _save(rows: list[dict], user_id: str, owner: str | None = None) -> list[dict]:

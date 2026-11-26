@@ -83,3 +83,26 @@ def test_after_a_restart_the_cursor_is_read_from_the_store(monkeypatch):
     assert news.resume_point("u", NOW) == datetime(2026, 11, 15, 13, 20, tzinfo=timezone.utc)
     monkeypatch.setattr(news.store, "get_user_keys", lambda uid, seam: [{"provider": "alpaca", "last_used_at": None}])
     assert news.resume_point("u", NOW) is None
+
+
+def test_a_fiscal_ai_tag_on_another_company_is_dropped(universe, monkeypatch):
+    """Centrica's own news, tagged CNA (CNA Financial in New York), and a
+    story naming Mizuho: only the second keeps its tag (2026-11-26)."""
+    import alphadesk.config as config
+    universe.add("CNA")
+    names = {"CNA": "CNA FINANCIAL CORP", "MFG": "MIZUHO FINANCIAL GROUP INC"}
+    monkeypatch.setattr(config, "company_name", lambda s: names.get(s))
+    rows = [{**_story(1, ["CNA"]), "title": "Centrica plc Director/PDMR Share Transaction", "source": "fiscal.ai"},
+            {**_story(2, ["MFG"]), "title": "Mizuho Raises Its Outlook", "source": "fiscal.ai"}]
+    kept = {r["id"]: r["tickers"] for r in news.us_listed_only(rows, "u")}
+    assert kept == {"s2": ["MFG"]}
+
+
+def test_other_publishers_tags_are_not_checked(universe, monkeypatch):
+    """Polygon and FMP tag companies an article names only in its body; the
+    check would cut a third of their correct tags, so it does not run."""
+    import alphadesk.config as config
+    universe.add("CNA")
+    monkeypatch.setattr(config, "company_name", lambda s: "CNA FINANCIAL CORP")
+    rows = [{**_story(1, ["CNA"]), "title": "Insurers Brace for a Costly Storm Season", "source": "The Motley Fool"}]
+    assert news.us_listed_only(rows, "u")[0]["tickers"] == ["CNA"]

@@ -173,3 +173,91 @@ def expand(query: str) -> dict:
         if n and n not in names:
             names.append(n)
     return {"tickers": tickers, "names": names}
+
+
+# ── A TAG MUST BE ABOUT THE COMPANY THAT OWNS THE TICKER (2026-11-26) ────────
+# The owner: "Fix wrong-company tags". A feed tags a story with a company's
+# HOME-MARKET code, and where that code is also a US ticker the story lands
+# under a different company: Danish RTX A/S's results under RTX Corp, a Danone
+# lawsuit under BN (Brookfield in New York). The US-listed filter cannot see
+# it — the code really is a US ticker. So a tag on a company is kept only when
+# the story's own headline or summary NAMES that company: its name as
+# headlines write it, its full name, a known alias, or the ticker itself in
+# capitals. A name followed by a FOREIGN legal form ("RTX A/S") while the SEC
+# record carries a US one ("RTX Corp") is another company with the same word.
+#
+# NOT JUDGED, so always kept: funds and trusts (a story about rates is fairly
+# tagged SPY without naming it), symbols with no SEC name (coin pairs, funds
+# the broker lists that the SEC file lacks), and names too generic to search.
+
+# How headlines write a company where its SEC name does not say it. Found by
+# reading every tag the check dropped from 806 live stories (2026-11-26): these
+# were the real ones among 147. Lower case; matched as whole words.
+TAG_ALIASES: dict[str, tuple[str, ...]] = {
+    "RY": ("rbc",), "CM": ("cibc",), "BNS": ("scotiabank",), "ON": ("onsemi",),
+    "PG": ("p&g",), "CART": ("instacart",), "SID": ("csn",), "NNOX": ("nanox",),
+    "EXLS": ("exl",), "SPCX": ("spacex",),
+}
+
+_FUND_MARKERS = (" ETF", " ETN", " FUND", " TRUST", "ISHARES", "SPDR", "PORTFOLIO", " INDEX",
+                 "PROSHARES", "DIREXION", "VANGUARD", "INVESCO", "LEVERAGED", "INVERSE")
+_US_FORM = re.compile(r"\b(INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LLC|L\.?P)\b\.?")
+_FOREIGN_FORM = re.compile(
+    r"^\s*,?\s*(a/s|asa|ab|ag|se|s\.a\.?|sa|s\.p\.a\.?|spa|n\.v\.?|nv|oyj|gmbh|kgaa|plc"
+    r"|ltd\.?|limited|pty|bhd|tbk|k\.k\.?|s\.a\.b\.?|sab|aktiengesellschaft)\b", re.I)
+
+
+def _tag_phrases(symbol: str, name: str, aliases: tuple[str, ...]) -> list[str]:
+    base = _NAME_TAIL.sub("", name.upper()).strip(" .,-")
+    out = []
+    short = short_name(name)
+    if short:
+        out.append(short)
+    if base and len(base) >= 3 and base.lower() not in _GENERIC:
+        out.append(base.lower())
+    # Each distinctive word of the name on its own as well: headlines say
+    # "Disney" for Walt Disney Co and "Brookfield" for Brookfield Corp. A
+    # word matching too much only ever KEEPS a tag, which is today's state.
+    for w in words(base):
+        if len(w) >= 4 and w not in _GENERIC and not _FOREIGN_FORM.match(w) and not _US_FORM.match(w.upper()):
+            out.append(w)
+    out.extend(a.lower() for a in aliases)
+    return list(dict.fromkeys(p for p in out if p))
+
+
+def tag_is_named(symbol: str, name: str | None, title: str | None, summary: str | None,
+                 aliases: tuple[str, ...] = ()) -> bool | None:
+    """Does the story NAME the company `symbol` belongs to? None when the tag
+    cannot be judged (no SEC name, a fund, a name too generic to look for) —
+    the caller keeps those. Pure."""
+    if not name:
+        return None
+    upper = f" {name.upper()} "
+    if any(m in upper for m in _FUND_MARKERS):
+        return None
+    phrases = _tag_phrases(symbol, name, aliases + TAG_ALIASES.get(symbol, ()))
+    # Words matched exactly, in capitals: the ticker, and a name of one or two
+    # letters ("HP" for HP Inc), which in lower case would be any "hp".
+    base = _NAME_TAIL.sub("", name.upper()).strip(" .,-")
+    caps = [w for w in (symbol, base) if 2 <= len(w) <= 5 and w.isalnum()]
+    if not phrases and not caps:
+        return None
+    us_form = bool(_US_FORM.search(name.upper()))
+    texts = []
+    for t in (title, summary):
+        if t:
+            # Read twice: with a possessive dropped ("RTX's" names RTX) and with
+            # every apostrophe dropped ("McDonald's" names MCDONALDS CORP).
+            texts.append(re.sub(r"['\u2019]s\b", "", t))
+            texts.append(t.replace("'", "").replace("\u2019", ""))
+    for text in texts:
+        low = text.lower()
+        spans = []
+        for p in phrases:
+            spans += [m.end() for m in re.finditer(r"(?<![a-z0-9])" + re.escape(p) + r"(?![a-z0-9])", low)]
+        for w in dict.fromkeys(caps):
+            spans += [m.end() for m in re.finditer(r"(?<![A-Za-z0-9])" + re.escape(w) + r"(?![A-Za-z0-9])", text)]
+        for end in spans:
+            if not (us_form and _FOREIGN_FORM.match(text[end:])):
+                return True
+    return False
