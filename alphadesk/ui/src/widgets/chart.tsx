@@ -5,7 +5,6 @@ import { OhlcvStrip } from "@/components/chart/OhlcvStrip"
 import { ChartSurface } from "@/components/chart/ChartSurface"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { resetChartPrefs } from "@/lib/chartPrefs"
-import type { ChartRange } from "@/lib/api"
 import { ChartRanges, ChartToolbar } from "@/components/ChartToolbar"
 import { Empty, HEADER_BAND, HeightOverride, useScreenBand, Widget } from "@/components/terminal"
 import { TILE_PX, stepFor } from "@/lib/tileHeight"
@@ -201,12 +200,9 @@ function useCanvasHeight(ref: React.RefObject<HTMLDivElement | null>, ready: boo
 // HALF THE ROW BY DEFAULT, beside the news tile on the Markets board
 // (2026-09-29). Analysis, Portfolio, Earnings and the theme page all pass
 // their own span, so this default is the registry's render alone.
-export function MarketChart({ span = 6, symbol: symbolProp, range: pageRange }: {
+export function MarketChart({ span = 6, symbol: symbolProp }: {
   span?: number
   symbol?: string
-  /** Open on this range and follow it, without saving it as the reader's
-   * range (the period page, 2026-11-23). */
-  range?: ChartRange
 } = {}) {
   const [params] = useSearchParams()
   const symbol = (symbolProp ?? params.get("symbol") ?? "").toUpperCase()
@@ -218,7 +214,7 @@ export function MarketChart({ span = 6, symbol: symbolProp, range: pageRange }: 
   // hook is told whether a chart is on screen yet — see its note.
   const [drawn, setDrawn] = useState(false)
   const priceHeight = useCanvasHeight(bodyRef, drawn)
-  const e = useChartEngine(symbol, { priceHeight }, { range: pageRange })
+  const e = useChartEngine(symbol, { priceHeight })
   const { data: caps } = useChartCapabilities()
   const { data, bars, err, isFetching, live, hovered, hoverAt } = e
   // Once a chart has been drawn it stays drawn: a refetch must not put the

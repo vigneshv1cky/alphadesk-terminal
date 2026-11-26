@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react"
 import { useSearchParams } from "react-router-dom"
-import { byRecency } from "@/lib/boardOrder"
 import { whichWins } from "@/lib/boardSync"
 import { normalize } from "@/lib/symbols"
 
@@ -28,22 +27,7 @@ const KEY = "alphadesk.board"
  * a starting point, not a recommendation. */
 export const DEFAULT_SYMBOL = "NVDA"
 
-type StoredBoard = { symbols: string[]; active: string; seen?: string[]; at?: string }
-
-/** The symbols most recently SCOPED TO, newest first — what orders the strip
- * (2026-09-20, the owner: "show the most recent viewed stocks on left most
- * side"). Held here rather than in the URL: it is how this reader has been
- * working, not part of the board a link describes, and writing it into
- * `?symbols=` would reshuffle a shared link every time someone clicked a
- * chip. Every change to it arrives with a change to the active symbol, so
- * the strip re-renders without this needing to be React state. */
-let seen: string[] = []
-
-function noteSeen(symbol: string) {
-  const sym = normalize(symbol)
-  if (!sym) return
-  seen = [sym, ...seen.filter(s => s !== sym)].slice(0, 50)
-}
+type StoredBoard = { symbols: string[]; active: string; at?: string }
 
 function readStored(): StoredBoard | null {
   try {
@@ -51,15 +35,13 @@ function readStored(): StoredBoard | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as StoredBoard
     const symbols = (parsed.symbols ?? []).map(normalize).filter(Boolean)
-    const order = (parsed.seen ?? []).map(normalize).filter(Boolean)
-    if (order.length && !seen.length) seen = order
     // `at` MUST come back out. This rebuilt the board field by field and
     // dropped it, so every comparison saw an undated local board — which by
     // the rule in boardSync loses to the account's saved row. The account
     // therefore always won: a symbol you added vanished a moment later, and
     // what looked like two devices converging was really both of them being
     // overwritten by whatever the account last held.
-    return { symbols, active: normalize(parsed.active || ""), seen: order,
+    return { symbols, active: normalize(parsed.active || ""),
              ...(parsed.at ? { at: parsed.at } : {}) }
   } catch {
     return null
@@ -76,7 +58,7 @@ function writeStored(board: StoredBoard, mirror = true) {
   // so the symbol you had just added vanished and the old board came back.
   const at = board.at ?? readStored()?.at
   try {
-    localStorage.setItem(KEY, JSON.stringify({ ...board, ...(at ? { at } : {}), seen }))
+    localStorage.setItem(KEY, JSON.stringify({ ...board, ...(at ? { at } : {}) }))
   } catch { /* private mode */ }
   // ADOPTING IS NOT ARRANGING (2026-09-21). Taking the account's board and
   // writing it straight back bumped the account's `updated_at` to now, which
@@ -224,14 +206,9 @@ function fetchAccountBoard(): Promise<{ board: StoredBoard; at: string } | null>
  * arrives here as a one-chip strip with NVDA active — no redirect, no
  * migration.
  *
- * THE ACTIVE CHIP RENDERS FIRST. The strip used to hold insertion order on the
- * grounds that a chip which moves when you click it can move out from under a
- * second click — a real hazard, and the reason it was built the other way. It
- * is ordered active-first now because the one chip that scopes the entire
- * board should not be somewhere in the middle of the row, and reading it at a
- * glance matters more often than double-clicking a chip does. The underlying
- * `?symbols=` order is untouched, so the ordering is presentation only and a
- * shared link still restores the same strip.
+ * THE STRIP KEEPS THE ORDER SYMBOLS WERE ADDED IN (2026-11-26); see `ordered`
+ * below. It was active-first and then most-recently-viewed-first, and the
+ * owner found the moving chips worse than either was worth.
  *
  * URL state first, storage second: `?symbol=` is already how the pages and
  * the agent panel talk to each other, and a board you can send someone is
@@ -258,8 +235,6 @@ export function useBoardSymbols() {
   }, [raw, active])
 
   const commit = useCallback((next: string[], nextActive: string) => {
-    // Whatever the board is scoped to now is the most recently viewed.
-    noteSeen(nextActive)
     const p = new URLSearchParams(params)
     if (next.length) p.set("symbols", next.join(","))
     else p.delete("symbols")
@@ -288,9 +263,6 @@ export function useBoardSymbols() {
    * the restore is a no-op after the first one lands. */
   useEffect(() => {
     if (symbols.length) {
-      // An inbound link is a view too: arriving at ?symbol= counts, so a
-      // symbol opened from a movers row leads the strip on the next screen.
-      noteSeen(active)
       // Storage only. Opening a page is not arranging a board, and a write
       // to the account stamps it "newest" — so a device left on a stale
       // board would overwrite a newer one from another device just by being
@@ -426,29 +398,18 @@ export function useBoardSymbols() {
     commit([DEFAULT_SYMBOL], DEFAULT_SYMBOL)
   }, [symbols, commit])
 
-  /** The strip AS RENDERED: MOST RECENTLY VIEWED FIRST (2026-09-20), which
-   * puts the active chip at the left because scoping the board to it is the
-   * most recent view there is. Symbols this browser has never opened — a
-   * shared link's — keep the link's own order behind them. Separate from
-   * `symbols` on purpose: add/activate/remove all reason about the real
-   * order, and only the tab bar reads this one, so `?symbols=` still
-   * restores a link exactly as it was sent.
+  /** The strip AS RENDERED: THE ORDER THE SYMBOLS WERE ADDED IN, a new one
+   * joining at the right (2026-11-26, the owner: "i dont like the order
+   * changing in board"). Clicking a chip never moves it.
    *
-   * It used to be insertion order behind the active chip. The hazard that
-   * argued for that — a chip which moves when clicked can move out from
-   * under a second click — is unchanged, and is the reason this is worth
-   * knowing about rather than assuming. The owner asked for recency anyway:
-   * the names you are working between should be the ones nearest the left,
-   * not the ones you happened to add first. */
-  const ordered = useMemo(
-    () => {
-      const by = byRecency(symbols, seen)
-      return active && symbols.includes(active)
-        ? [active, ...by.filter(s => s !== active)]
-        : by
-    },
-    [symbols, active],
-  )
+   * Two earlier rules moved chips and both are undone: active-first (the
+   * scoped chip jumped to the left end) and most-recently-viewed-first
+   * (2026-09-20, "show the most recent viewed stocks on left most side").
+   * The hazard both were weighed against is the reason: a chip that moves
+   * when clicked moves out from under the next click, and a row that
+   * reshuffles has to be read again every time. The active chip is marked
+   * by its fill, not by its place. */
+  const ordered = symbols
 
   return { symbols, ordered, active, add, activate, remove, clear }
 }
