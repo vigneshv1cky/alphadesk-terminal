@@ -608,7 +608,7 @@ const MOVERS_RESERVE = MOVERS_TOP * MOVERS_ROW_H + MOVERS_ROW_H
  * five-a-minute limit, is asked first for a day not yet recorded. */
 const SESSIONS_BACK = 5
 
-function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title: string }) {
+function CategoryMoversTile({ initial, title, span = 12 }: { initial: MoverCategory; title: string; span?: number }) {
   const category = initial
   const [tab, setTab] = useState<string | null>(null)
   const [floors, setFloorsState] = useState<Floors | null>(() => readFloors(initial, initial))
@@ -744,9 +744,11 @@ function CategoryMoversTile({ initial, title }: { initial: MoverCategory; title:
     : q.isPending ? "loading…" : isNeedsKey(q.error) ? "needs a data key" : "unavailable right now"
   return (
     <Widget
-      // Two tiles to a row: five columns at a third of the board truncated
-      // the liquidity figures (the reader's call, 2026-09-13).
-      span={6}
+      // THE FULL ROW ON MARKETS (2026-11-26, the owner: "make every movers
+      // in market full width"). It was two to a row (2026-09-13), after five
+      // columns at a third of the board truncated the liquidity figures. A
+      // width set in the board editor still wins over this default.
+      span={span}
       title={title}
       subtitle={subtitle}
       actions={q.data ? (
@@ -884,7 +886,8 @@ const StockMovers = () => <CategoryMoversTile initial="stocks" title="Stock Move
 /** The Sectors page's Market ETFs panel. Not a Markets board tile since
  * 2026-09-15 (the reader's call): it lives on Sectors only, and a saved
  * board or view that named it simply no longer shows it. */
-export const IndexMovers = () => <CategoryMoversTile initial="indices" title="Market ETFs" />
+// Half the row on the Sectors page, where it is not one of the Markets movers.
+export const IndexMovers = () => <CategoryMoversTile initial="indices" title="Market ETFs" span={6} />
 const CryptoMovers = () => <CategoryMoversTile initial="crypto" title="Crypto Movers" />
 const CurrencyMovers = () => <CategoryMoversTile initial="currencies" title="Currency Movers" />
 const CommodityMovers = () => <CategoryMoversTile initial="commodities" title="Commodity Movers" />
