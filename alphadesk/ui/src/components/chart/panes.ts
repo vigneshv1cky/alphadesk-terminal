@@ -264,12 +264,14 @@ export function indicatorPane(
 export function volumeColumns(
 entries: { i: number; v: number; up: boolean }[],
 s: Scale, plotW: number, minPx: number,
+/** Column width as a share of its slot — the candles' own, so the two match. */
+ratio = 0.7,
 ): { x: number; w: number; v: number; up: boolean }[] {
 if (!entries.length) return []
 const natural = plotW / entries.length
 if (natural >= minPx) {
   return entries.map(e => ({
-    x: indexToX(s, e.i + 0.5), w: Math.max(1, natural * 0.7), v: e.v, up: e.up,
+    x: indexToX(s, e.i + 0.5), w: Math.max(1, natural * ratio), v: e.v, up: e.up,
   }))
 }
 // Buckets are anchored to the ABSOLUTE bar index (bucket k holds bars

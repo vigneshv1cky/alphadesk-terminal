@@ -7,6 +7,7 @@ import {
 import { bucketBars } from "@/lib/chartBuckets"
 import { useSmoothedRange } from "@/lib/smoothRange"
 import { paneAxisLabel, paneExtent, sessionLayout, volumeColumns, type Pane, type PaneSeries } from "@/components/chart/panes"
+import { CANDLES, cornerRadius, rectPath } from "@/lib/candleShape"
 import { heikinAshi, type SeriesKind } from "@/lib/series"
 import { barCloseCountdown, countdownLabel, thinTicks, timeAxisTicks, timeParts } from "@/lib/chartTime"
 import { provisionalSlots } from "@/lib/provisional"
@@ -705,13 +706,17 @@ export function ChartCanvas({
   const leave = () => { if (!drag.current) stop(); setCursor(null); onHover?.(null, null) }
 
   // ── geometry, built as path strings ─────────────────────────────────────
-  const barW0 = Math.max(1, (seriesW / Math.max(1, to - from)) * 0.7)
+  const st = CANDLES
+  const barW0 = Math.max(1, (seriesW / Math.max(1, to - from)) * st.width)
   const barW = barW0
   const half = barW / 2
 
   const paths = useMemo(() => {
     const upBody: string[] = [], downBody: string[] = []
     const upWick: string[] = [], downWick: string[] = []
+    // Zoomed out, merged: each candle's high–low range as a soft column at
+    // the body's width, drawn behind the body in place of a 1px wick.
+    const upRange: string[] = [], downRange: string[] = []
     // Hollow candles: colour by close against the PREVIOUS close, fill by
     // close against open — four buckets, so a rising bar that closed under
     // its open reads as "up, but filled".
@@ -733,7 +738,11 @@ export function ChartCanvas({
     const items = bucketBars(drawBars, lo, hi, Math.floor(seriesW / 2))
     const folded = items.some(b => b.n > 1)
     const slot = items.length > 1 ? items[1].i - items[0].i : 1                 // bars from one candle to the next
-    const barW = folded ? Math.max(1, (seriesW / Math.max(1, to - from)) * slot * 0.7) : barW0
+    const slotPx = (seriesW / Math.max(1, to - from)) * (folded ? slot : 1)
+    let barW = folded ? Math.max(1, slotPx * st.width) : barW0
+    const narrow = !!st.narrowBelow && barW < st.narrowBelow
+    if (narrow && st.narrowGap) barW = Math.max(1, Math.min(barW, slotPx - st.narrowGap))
+    const merge = narrow && !!st.narrowMerge && kind !== "bars"
     const half = barW / 2
     let prevClose: number | null = null
 
@@ -749,8 +758,12 @@ export function ChartCanvas({
       if (firstX == null) firstX = x
       lastX = x
       if (kind === "candles" || kind === "heikin" || kind === "bars" || kind === "hollow") {
-        const wick = `M${X},${yH.toFixed(1)}L${X},${yL.toFixed(1)}`
-        ;((kind === "hollow" ? rising : up) ? upWick : downWick).push(wick)
+        const wickUp = kind === "hollow" ? rising : up
+        if (merge) {
+          ;(wickUp ? upRange : downRange).push(rectPath(x - half, yH, barW, Math.max(1, yL - yH)))
+        } else {
+          ;(wickUp ? upWick : downWick).push(`M${X},${yH.toFixed(1)}L${X},${yL.toFixed(1)}`)
+        }
         if (kind === "bars") {
           // OHLC bars: ticks left for open, right for close.
           ;(up ? upBody : downBody).push(
@@ -759,7 +772,7 @@ export function ChartCanvas({
         } else {
           const top = Math.min(yO, yC)
           const h = Math.max(1, Math.abs(yC - yO))
-          const body = `M${(x - half).toFixed(1)},${top.toFixed(1)}h${barW.toFixed(1)}v${h.toFixed(1)}h${(-barW).toFixed(1)}Z`
+          const body = rectPath(x - half, top, barW, h, cornerRadius(st, barW, h))
           if (kind === "hollow") {
             ;(up ? (rising ? hollowUp : hollowDown) : (rising ? solidUp : solidDown)).push(body)
           } else {
@@ -768,12 +781,10 @@ export function ChartCanvas({
         }
       } else if (kind === "highlow") {
         const h = Math.max(1, yL - yH)
-        ;(up ? upBody : downBody).push(
-          `M${(x - half).toFixed(1)},${yH.toFixed(1)}h${barW.toFixed(1)}v${h.toFixed(1)}h${(-barW).toFixed(1)}Z`)
+        ;(up ? upBody : downBody).push(rectPath(x - half, yH, barW, h, cornerRadius(st, barW, h)))
       } else if (kind === "columns") {
         const h = Math.max(1, priceH - yC)
-        ;(up ? colsUp : colsDown).push(
-          `M${(x - half).toFixed(1)},${yC.toFixed(1)}h${barW.toFixed(1)}v${h.toFixed(1)}h${(-barW).toFixed(1)}Z`)
+        ;(up ? colsUp : colsDown).push(rectPath(x - half, yC, barW, h, cornerRadius(st, barW, h, 1), "top"))
       } else {
         const Y = yC.toFixed(1)
         line.push(`${line.length ? "L" : "M"}${X},${Y}`)
@@ -795,6 +806,8 @@ export function ChartCanvas({
     return {
       upBody: upBody.join(""), downBody: downBody.join(""),
       upWick: upWick.join(""), downWick: downWick.join(""),
+      upRange: upRange.join(""), downRange: downRange.join(""),
+      narrow,
       hollowUp: hollowUp.join(""), hollowDown: hollowDown.join(""),
       solidUp: solidUp.join(""), solidDown: solidDown.join(""),
       colsUp: colsUp.join(""), colsDown: colsDown.join(""),
@@ -808,7 +821,12 @@ export function ChartCanvas({
       baseY,
       hlc: highs.length ? `${highs.join("")}${lowsRev.join("")}Z` : "",
     }
-  }, [drawBars, s, kind, yOf, barW0, seriesW, priceH, from, to])
+  }, [drawBars, s, kind, yOf, barW0, seriesW, priceH, from, to, st])
+  // Zoomed out the candles pack edge to edge, and full strength reads as one
+  // hard block: the narrow way lightens them (lib/candleShape, CANDLES).
+  const bodyOp = paths.narrow ? (st.narrowBodyOpacity ?? st.bodyOpacity) : st.bodyOpacity
+  const wickOp = paths.narrow ? (st.narrowWickOpacity ?? st.wickOpacity) : st.wickOpacity
+  const rangeOp = st.narrowShadowOpacity ?? 0.4
 
   /** Each pane's own geometry: offset, scale and batched paths. */
   const paneLayout = useMemo(() => {
@@ -829,7 +847,7 @@ export function ChartCanvas({
           if (i == null || i < from - 1 || i > to + 1) continue
           entries.push({ i, v: p.v, up: bars[i].c >= bars[i].o })
         }
-        grouped.set(ser, volumeColumns(entries, s, seriesW, 7))
+        grouped.set(ser, volumeColumns(entries, s, seriesW, 7, st.width))
       }
       // Only when EVERY series was grouped — a pane mixing a summed histogram
       // with a plain line would need both to agree on one axis, and they don't.
@@ -856,8 +874,9 @@ export function ChartCanvas({
             const y = yIn(c.v)
             const h = Math.max(1, Math.abs(zeroY - y))
             const half2 = c.w / 2
-            ;(c.up ? up : down).push(
-              `M${(c.x - half2).toFixed(1)},${Math.min(zeroY, y).toFixed(1)}h${c.w.toFixed(1)}v${h.toFixed(1)}h${(-c.w).toFixed(1)}Z`)
+            // The end away from the zero line is the one rounded.
+            ;(c.up ? up : down).push(rectPath(c.x - half2, Math.min(zeroY, y), c.w, h,
+              cornerRadius(st, c.w, h, 1), y <= zeroY ? "top" : "bottom"))
           }
           return { kind: "histogram" as const, up: up.join(""), down: down.join(""),
                    color: ser.color, downColor: ser.downColor ?? ser.color }
@@ -884,7 +903,7 @@ export function ChartCanvas({
             // Shaded: a column shorter than the one before it is fading.
             const weak = !!ser.shade && before != null && Math.abs(p.v) < Math.abs(before)
             ;(isUp ? (weak ? upWeak : up) : (weak ? downWeak : down)).push(
-              `M${(x - half).toFixed(1)},${topY.toFixed(1)}h${barW.toFixed(1)}v${h.toFixed(1)}h${(-barW).toFixed(1)}Z`)
+              rectPath(x - half, topY, barW, h, cornerRadius(st, barW, h, 1), y <= zeroY ? "top" : "bottom"))
           }
           return { kind: "histogram" as const, up: up.join(""), down: down.join(""),
                    upWeak: upWeak.join(""), downWeak: downWeak.join(""), shade: !!ser.shade,
@@ -915,7 +934,7 @@ export function ChartCanvas({
         : null
       return { pane, top, drawn, levels, axis, lookups, colors, band }
     })
-  }, [panes, priceH, bars, s, barW, half, seriesW, from, to, indexByTime])
+  }, [panes, priceH, bars, s, barW, half, seriesW, from, to, indexByTime, st])
 
   /** Axis rows covered by a price tag.
    *
@@ -1205,27 +1224,35 @@ export function ChartCanvas({
         )}
         {kind === "hollow" && (
           <>
-            <path d={paths.upWick} stroke={gain} strokeWidth={1} fill="none" />
-            <path d={paths.downWick} stroke={loss} strokeWidth={1} fill="none" />
+            <path d={paths.upRange} fill={gain} fillOpacity={rangeOp} />
+            <path d={paths.downRange} fill={loss} fillOpacity={rangeOp} />
+            <path d={paths.upWick} stroke={gain} strokeWidth={1} strokeOpacity={wickOp} fill="none" />
+            <path d={paths.downWick} stroke={loss} strokeWidth={1} strokeOpacity={wickOp} fill="none" />
             <path d={paths.hollowUp} stroke={gain} strokeWidth={1} fill={bg} />
             <path d={paths.hollowDown} stroke={loss} strokeWidth={1} fill={bg} />
-            <path d={paths.solidUp} fill={gain} />
-            <path d={paths.solidDown} fill={loss} />
+            <path d={paths.solidUp} fill={gain} fillOpacity={bodyOp} />
+            <path d={paths.solidDown} fill={loss} fillOpacity={bodyOp} />
           </>
         )}
         {(kind === "candles" || kind === "heikin" || kind === "bars") && (
           <>
-            <path d={paths.upWick} stroke={gain} strokeWidth={1} fill="none" />
-            <path d={paths.downWick} stroke={loss} strokeWidth={1} fill="none" />
+            {/* An OHLC bar's stem IS the bar, so it keeps full strength;
+                a candle's wick sits back from its body. */}
+            <path d={paths.upRange} fill={gain} fillOpacity={rangeOp} />
+            <path d={paths.downRange} fill={loss} fillOpacity={rangeOp} />
+            <path d={paths.upWick} stroke={gain} strokeWidth={1} strokeOpacity={kind === "bars" ? 1 : wickOp} fill="none" />
+            <path d={paths.downWick} stroke={loss} strokeWidth={1} strokeOpacity={kind === "bars" ? 1 : wickOp} fill="none" />
             {kind !== "bars" ? (
               <>
-                <path d={paths.upBody} fill={gain} />
-                <path d={paths.downBody} fill={loss} />
+                <path d={paths.upBody} fill={gain} fillOpacity={bodyOp} />
+                <path d={paths.downBody} fill={loss} fillOpacity={bodyOp} />
               </>
             ) : (
               <>
-                <path d={paths.upBody} stroke={gain} strokeWidth={1.2} fill="none" />
-                <path d={paths.downBody} stroke={loss} strokeWidth={1.2} fill="none" />
+                {/* Round ends on the open and close ticks: horizontal, so the
+                    cap lengthens a tick sideways and never moves its price. */}
+                <path d={paths.upBody} stroke={gain} strokeWidth={1.2} strokeLinecap={st.radius > 0 ? "round" : "butt"} fill="none" />
+                <path d={paths.downBody} stroke={loss} strokeWidth={1.2} strokeLinecap={st.radius > 0 ? "round" : "butt"} fill="none" />
               </>
             )}
           </>
