@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { barCloseCountdown, countdownLabel, validTimeZone } from "../chartTime.ts"
+import { barCloseCountdown, barStamp, countdownLabel, isIntradayInterval, validTimeZone } from "../chartTime.ts"
 
 test("intraday countdown runs from the bar start to its close", () => {
   const start = Date.parse("2026-09-04T15:59:00-04:00")
@@ -124,4 +124,20 @@ test("calendar ranges count back from the last bar; All opens on everything", ()
   assert.ok(i1m > 200 && i1m < 230, String(i1m))
   assert.equal(focusIndex(times, "MAX"), 0)
   assert.equal(focusIndex(times, "YTD"), 0)   // all of it is this year
+})
+
+test("a daily bar's stamp is its date and year, never the exchange midnight", () => {
+  // Daily stamps carry the exchange's midnight; written with a time they read "12:00 AM".
+  assert.equal(barStamp("2026-02-12T00:00:00-05:00", "America/New_York", false), "Feb 12, 2026")
+  assert.doesNotMatch(barStamp("2026-02-12T00:00:00-05:00", "America/New_York", false), /AM|PM/)
+})
+
+test("an intraday bar's stamp keeps its time of day", () => {
+  assert.equal(barStamp("2026-11-24T14:35:00Z", "America/New_York", true), "Nov 24, 9:35 AM")
+})
+
+test("only bars shorter than a day count as intraday", () => {
+  for (const iv of ["1m", "5m", "1h", "4h"]) assert.equal(isIntradayInterval(iv), true, iv)
+  for (const iv of ["1d", "1wk", "1mo"]) assert.equal(isIntradayInterval(iv), false, iv)
+  assert.equal(isIntradayInterval(undefined), false)
 })

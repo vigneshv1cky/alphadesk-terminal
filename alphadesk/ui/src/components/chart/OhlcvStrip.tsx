@@ -1,12 +1,15 @@
 import { useMemo } from "react"
 import type { ChartBar } from "@/lib/api"
 import { Flash } from "@/components/terminal"
+import { barStamp } from "@/lib/chartTime"
 
 /** The O/H/L/C/V line above the chart, plus the card that follows the
  * crosshair. Both describe the same bar, so they live together — two
  * components reading one hover state is how they drift apart. */
-export function OhlcvStrip({ bar, live, symbol, first, at, timeZone = "America/New_York", delayMinutes }: {
+export function OhlcvStrip({ bar, live, symbol, first, at, timeZone = "America/New_York", intraday = true, delayMinutes }: {
   timeZone?: string
+  /** Intraday bars show their time; daily and longer show date and year. */
+  intraday?: boolean
   /** The series stops this many minutes short of now (a free plan). */
   delayMinutes?: number
   bar: ChartBar | null
@@ -21,10 +24,7 @@ export function OhlcvStrip({ bar, live, symbol, first, at, timeZone = "America/N
   if (!bar) return null
   const up = bar.c >= bar.o
   const tone = up ? "text-chart-up" : "text-chart-down"
-  const stamp = new Date(bar.t).toLocaleString("en-US", {
-    timeZone, month: "short", day: "numeric",
-    hour: "numeric", minute: "2-digit",
-  })
+  const stamp = barStamp(bar.t, timeZone, intraday)
   const base = first?.c
   const pct = base ? ((bar.c - base) / Math.abs(base)) * 100 : null
 

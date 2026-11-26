@@ -9,7 +9,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { resetChartPrefs } from "@/lib/chartPrefs"
 import { OhlcvStrip } from "@/components/chart/OhlcvStrip"
 import { BAR, BAR_ICON, CHROME, ChartToolbar, Divider, Item, Menu, RANGES, intervalLabel, rangeCls, rangeLabel } from "@/components/ChartToolbar"
-import { TIME_ZONES, offsetLabel } from "@/lib/chartTime"
+import { TIME_ZONES, isIntradayInterval, offsetLabel } from "@/lib/chartTime"
 import { useChartState } from "@/lib/chartState"
 import {
   DEFAULT_LAYOUT, GRIDS, cellCount, makeSavedLayout, makeTemplate,
@@ -113,7 +113,7 @@ function Legend({ e }: { e: ChartEngine }) {
       )}
       {data && (
         <OhlcvStrip bar={hovered ?? last ?? null} live={hovered == null}
-                    symbol={data.symbol} first={bars[0] ?? null} at={hoverAt} timeZone={e.timeZone} delayMinutes={data.delay_minutes} />
+                    symbol={data.symbol} first={bars[0] ?? null} at={hoverAt} timeZone={e.timeZone} intraday={isIntradayInterval(data.interval)} delayMinutes={data.delay_minutes} />
       )}
     </div>
   )

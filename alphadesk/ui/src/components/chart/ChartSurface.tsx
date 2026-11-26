@@ -9,6 +9,7 @@ import { CHROME } from "@/components/ChartToolbar"
 import { useNarrowViewport } from "@/lib/viewport"
 import { previousSessionLastIndex } from "@/lib/percentBase"
 import { useQuote } from "@/lib/queries"
+import { isIntradayInterval } from "@/lib/chartTime"
 
 type MenuAt = { clientX: number; clientY: number; price: number | null; time: string | null }
 
@@ -200,7 +201,7 @@ export function ChartSurface({ e, legendTop, toolsAlwaysOn = false, children }: 
           // Session shading only means something on intraday bars — a
           // daily bar IS a session, so marking its boundaries would draw a
           // divider between every pair of bars.
-          intraday={!!data.interval && !["1d", "1wk", "1mo"].includes(data.interval)}
+          intraday={isIntradayInterval(data.interval)}
           {...e.theme}
         />
         {/* Drawing is the /chart workspace's alone (2026-09-18, the

@@ -49,6 +49,23 @@ export function intervalSeconds(id: string): number | null {
   return Number(m[1]) * ({ s: 1, m: 60, h: 3600 } as Record<string, number>)[m[2]]
 }
 
+/** Whether a served interval is shorter than a day. Daily, weekly and
+ * monthly bars ARE sessions (or runs of them), so they carry no time of day:
+ * their stamp is the exchange's midnight, which would read "12:00 AM". */
+export function isIntradayInterval(interval: string | null | undefined): boolean {
+  return !!interval && !["1d", "1wk", "1mo"].includes(interval)
+}
+
+/** How one bar's time is written wherever the chart names it — the
+ * crosshair's date chip, the O/H/L/C strip and the hover card (2026-11-26):
+ * date and time on an intraday bar, date and year on a daily or longer one.
+ * One function so the three cannot drift apart. */
+export function barStamp(t: string, timeZone: string, intraday: boolean): string {
+  return new Date(t).toLocaleString("en-US", intraday
+    ? { timeZone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }
+    : { timeZone, month: "short", day: "numeric", year: "numeric" })
+}
+
 /** Seconds until the bar that started at `lastT` closes, or null when the
  * interval has no fixed close (weekly, monthly), the bar is already over,
  * or the timestamp cannot be read. A daily bar closes at 16:00 exchange
